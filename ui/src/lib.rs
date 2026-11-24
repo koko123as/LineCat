@@ -4,6 +4,7 @@
 
 pub mod bridge;
 pub mod profile;
+pub mod proxies;
 pub mod store;
 pub mod theme;
 
@@ -23,6 +24,11 @@ const CALL: Duration = Duration::from_secs(30);
 const APPLY: Duration = Duration::from_secs(120);
 const MAX_LOGS: usize = 500;
 const DELAY_WORKERS: usize = 8;
+// The proxies list's measures, as app.slint lays it out.
+const PROXY_PAD: f32 = 8.0;
+const PROXY_GAP: f32 = 8.0;
+const PROXY_HEADER: f32 = 64.0;
+const PROXY_GROUP_GAP: f32 = 10.0;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(target_os = "android")]
@@ -60,6 +66,9 @@ struct App {
     run_state: Mutex<String>,
     groups: Mutex<Value>,
     delays: Mutex<HashMap<String, i32>>,
+    sorted_delays: Mutex<HashMap<String, i32>>,
+    testing_groups: Mutex<HashSet<String>>,
+    proxy_query: Mutex<String>,
     busy: Mutex<HashSet<String>>,
     pending_logs: Mutex<Vec<LogItem>>,
     logs_scheduled: AtomicBool,
@@ -224,96 +233,6 @@ pub fn size(bytes: i64) -> String {
 
 fn profile_ref(path: &std::path::Path) -> Value {
     json!({"path": path.to_string_lossy()})
-}
-
-/// What the proxies page lists in a mode, after `proxy.groups`: Global shows only GLOBAL,
-/// Rule every visible group but GLOBAL, Direct none (as FlClash does).
-pub fn visible_groups(groups: &Value, mode: i32) -> Vec<GroupItem> {
-    if mode == 2 {
-        return vec![];
-    }
-    let list = groups
-        .get("groups")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let by_name: HashMap<&str, &Value> = list
-        .iter()
-        .filter_map(|g| Some((g.get("name")?.as_str()?, g)))
-        .collect();
-    let order: Vec<String> = groups
-        .get("order")
-        .and_then(Value::as_array)
-        .map(|o| {
-            o.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    order
-        .iter()
-        .filter_map(|name| by_name.get(name.as_str()).map(|g| (name, *g)))
-        .filter(|(name, g)| {
-            let hidden = g.get("hidden").and_then(Value::as_bool).unwrap_or(false);
-            if mode == 1 {
-                name.as_str() == "GLOBAL"
-            } else {
-                name.as_str() != "GLOBAL" && !hidden
-            }
-        })
-        .map(|(name, g)| GroupItem {
-            name: name.as_str().into(),
-            kind: g.get("type").and_then(Value::as_str).unwrap_or("").into(),
-            now: g.get("now").and_then(Value::as_str).unwrap_or("").into(),
-            count: g
-                .get("all")
-                .and_then(Value::as_array)
-                .map(|a| a.len())
-                .unwrap_or(0) as i32,
-        })
-        .collect()
-}
-
-pub fn group_nodes(groups: &Value, group: &str, delays: &HashMap<String, i32>) -> Vec<NodeItem> {
-    let list = groups
-        .get("groups")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let Some(g) = list
-        .iter()
-        .find(|g| g.get("name").and_then(Value::as_str) == Some(group))
-    else {
-        return vec![];
-    };
-    let mut kinds: HashMap<String, String> = HashMap::new();
-    for item in groups
-        .get("nodes")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .chain(list.iter())
-    {
-        if let (Some(n), Some(t)) = (
-            item.get("name").and_then(Value::as_str),
-            item.get("type").and_then(Value::as_str),
-        ) {
-            kinds.insert(n.into(), t.into());
-        }
-    }
-    let now = g.get("now").and_then(Value::as_str).unwrap_or("");
-    g.get("all")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(|n| NodeItem {
-            name: n.into(),
-            kind: kinds.get(n).cloned().unwrap_or_default().into(),
-            delay: delays.get(n).copied().unwrap_or(0),
-            selected: n == now,
-        })
-        .collect()
 }
 
 impl App {
@@ -543,6 +462,7 @@ impl App {
         *self.last_apply.lock().unwrap() = Some(params);
         self.configured.store(true, Ordering::SeqCst);
         self.delays.lock().unwrap().clear();
+        self.sorted_delays.lock().unwrap().clear();
         self.refresh_groups();
         Ok(())
     }
@@ -1661,6 +1581,7 @@ impl App {
     }
 
     // ------------------------------------------------------------ proxies
+    // lib/views/proxies and lib/providers/actions/proxies.dart.
 
     fn refresh_groups(self: &Arc<Self>) {
         let Ok(bridge) = self.bridge() else { return };
@@ -1674,90 +1595,137 @@ impl App {
     }
 
     fn publish_groups(self: &Arc<Self>) {
-        let mode = self.store.lock().unwrap().state.settings.mode;
+        let (mode, style) = {
+            let store = self.store.lock().unwrap();
+            (store.state.settings.mode, store.state.settings.proxies.clone())
+        };
         let groups = self.groups.lock().unwrap().clone();
         let delays = self.delays.lock().unwrap().clone();
-        let list = visible_groups(&groups, mode);
-        let hint = if mode == 2 {
-            "直连模式下不经过代理"
-        } else {
-            "暂无数据"
-        };
+        let sorted_by = self.sorted_delays.lock().unwrap().clone();
+        let testing = self.testing_groups.lock().unwrap().clone();
+        let query = self.proxy_query.lock().unwrap().clone();
+        let hint = if mode == 2 { "直连模式下不经过代理" } else { "暂无代理" };
         self.ui(move |ui| {
-            ui.set_groups(ModelRc::new(VecModel::from(list.clone())));
-            ui.set_proxies_hint(hint.into());
-            // The proxies page shows one group at a time behind a row of group tabs, as
-            // FlClash does: keep the open group while it is listed, else open the first.
+            let groups = proxies::Groups::parse(&groups);
+            let list = proxies::View {
+                groups: &groups,
+                mode,
+                delays: &delays,
+                sorted_by: &sorted_by,
+                style: &style,
+                query: &query,
+                testing: &testing,
+            }
+            .build();
+            // The tab style shows one group at a time: keep the open group while it is
+            // listed, else open the first.
             let mut current = ui.get_current_group().to_string();
             if !list.iter().any(|g| g.name.as_str() == current) {
                 current = list.first().map(|g| g.name.to_string()).unwrap_or_default();
                 ui.set_current_group(current.clone().into());
             }
-            ui.set_nodes(ModelRc::new(VecModel::from(if current.is_empty() {
-                Vec::new()
-            } else {
-                group_nodes(&groups, &current, &delays)
-            })));
+            ui.set_testing(testing.contains(&current));
+            ui.set_proxies_hint(hint.into());
+            ui.set_proxy_groups(ModelRc::new(VecModel::from(list)));
+            ui.set_proxy_style(ProxyStyle {
+                kind: style.kind,
+                sort: style.sort,
+                layout: style.layout,
+                card: style.card,
+                icon: style.icon,
+                hide_timeout: style.hide_timeout,
+            });
         });
     }
 
+    /// `selectGroupProxy`: a selector takes the tapped proxy; a group that picks by itself
+    /// takes it as a pin, and a tap on the pin lifts it.
     fn select_node(self: &Arc<Self>, group: String, node: String) {
+        let groups = proxies::Groups::parse(&self.groups.lock().unwrap());
+        let Some(g) = groups.groups.get(&group) else { return };
+        if !g.selectable() {
+            return self.toast("当前代理组无法选中");
+        }
+        let next = if g.computed() && g.fixed == node { String::new() } else { node };
+        if !g.computed() && g.now == next {
+            return;
+        }
         self.spawn(move |app| {
             let r = app
                 .bridge()
-                .and_then(|b| b.call("proxy.select", json!({"group": group, "proxy": node}), CALL));
+                .and_then(|b| b.call("proxy.select", json!({"group": group, "proxy": next}), CALL));
             match r {
-                Ok(_) => {
+                Ok(r) => {
                     {
                         let mut store = app.store.lock().unwrap();
                         if let Some(id) = store.state.active.clone() {
                             if let Some(p) = store.profile_mut(&id) {
-                                p.selection.insert(group.clone(), node.clone());
+                                p.selection.insert(group.clone(), next.clone());
                             }
                             store.save();
                         }
                     }
                     if let Some(params) = app.last_apply.lock().unwrap().as_mut() {
-                        params["selection"][group.as_str()] = node.into();
+                        params["selection"][group.as_str()] = next.into();
+                    }
+                    // `closeConnections` is on by default: the old picks' connections go.
+                    if r.get("changed").and_then(Value::as_bool).unwrap_or(true) {
+                        if let Ok(b) = app.bridge() {
+                            let _ = b.call("connection.close", json!({"all": true}), CALL);
+                        }
                     }
                     app.refresh_groups();
                 }
-                Err(e) => app.toast(e),
+                Err(_) => app.toast("切换代理失败，已恢复上一次的选择"),
             }
         });
     }
 
+    /// `delayTestPageGroup`: the group's nodes the search shows, each measured once as
+    /// the proxy it stands for.
     fn test_group(self: &Arc<Self>, group: String) {
-        let groups = self.groups.lock().unwrap().clone();
-        let names: Vec<String> = group_nodes(&groups, &group, &HashMap::new())
-            .into_iter()
-            .map(|n| n.name.into())
-            .collect();
-        let url = groups
-            .get("groups")
-            .and_then(Value::as_array)
-            .and_then(|l| {
-                l.iter()
-                    .find(|g| g.get("name").and_then(Value::as_str) == Some(group.as_str()))
-            })
-            .and_then(|g| g.get("testUrl").and_then(Value::as_str))
-            .filter(|u| !u.is_empty())
-            .unwrap_or(profile::DEFAULT_TEST_URL)
-            .to_string();
+        if !self.testing_groups.lock().unwrap().insert(group.clone()) {
+            return;
+        }
+        let (targets, url) = {
+            let groups = proxies::Groups::parse(&self.groups.lock().unwrap());
+            let query = self.proxy_query.lock().unwrap().clone();
+            (proxies::targets(&groups, &group, &query), groups.test_url(&group))
+        };
+        self.run_delays(targets, url, Some(group));
+    }
+
+    /// `proxyDelayTest`: the one card's delay.
+    fn test_node(self: &Arc<Self>, group: String, node: String) {
+        let (target, url) = {
+            let groups = proxies::Groups::parse(&self.groups.lock().unwrap());
+            (groups.real(&node), groups.test_url(&group))
+        };
+        if target.is_empty() {
+            return;
+        }
+        self.run_delays(vec![target], url, None);
+    }
+
+    fn run_delays(self: &Arc<Self>, names: Vec<String>, url: String, group: Option<String>) {
         {
             let mut delays = self.delays.lock().unwrap();
             for n in &names {
-                delays.insert(n.clone(), -3);
+                delays.insert(n.clone(), proxies::DELAY_QUEUED);
             }
         }
-        self.ui(|ui| ui.set_testing(true));
         self.publish_groups();
+        let workers = DELAY_WORKERS.min(names.len()).max(1);
         let queue = Arc::new(Mutex::new(VecDeque::from(names)));
-        let left = Arc::new(AtomicU64::new(DELAY_WORKERS as u64));
-        for _ in 0..DELAY_WORKERS {
-            let (queue, left, url) = (queue.clone(), left.clone(), url.clone());
+        let left = Arc::new(AtomicU64::new(workers as u64));
+        let group = Arc::new(group);
+        for _ in 0..workers {
+            let (queue, left, url, group) = (queue.clone(), left.clone(), url.clone(), group.clone());
             self.spawn(move |app| {
-                while let Some(name) = queue.lock().unwrap().pop_front() {
+                loop {
+                    let Some(name) = queue.lock().unwrap().pop_front() else { break };
+                    app.delays.lock().unwrap().insert(name.clone(), proxies::DELAY_RUNNING);
+                    app.publish_groups();
                     let value = app
                         .bridge()
                         .and_then(|b| {
@@ -1774,11 +1742,83 @@ impl App {
                     app.publish_groups();
                 }
                 if left.fetch_sub(1, Ordering::SeqCst) == 1 {
-                    app.ui(|ui| ui.set_testing(false));
+                    // `sortNum`: sorting by delay moves the cards once the test is done.
+                    let snapshot = app.delays.lock().unwrap().clone();
+                    *app.sorted_delays.lock().unwrap() = snapshot;
+                    if let Some(g) = group.as_ref() {
+                        app.testing_groups.lock().unwrap().remove(g);
+                    }
+                    app.publish_groups();
                 }
             });
         }
     }
+
+    fn set_proxy_style(self: &Arc<Self>, key: &str, value: i32) {
+        {
+            let mut store = self.store.lock().unwrap();
+            let s = &mut store.state.settings.proxies;
+            match key {
+                "kind" => s.kind = value,
+                "sort" => s.sort = value,
+                "layout" => s.layout = value,
+                "card" => s.card = value,
+                "icon" => s.icon = value,
+                "hide" => s.hide_timeout = value != 0,
+                _ => return,
+            }
+            store.save();
+        }
+        self.publish_groups();
+    }
+
+    /// The list style's unfold toggle (`unfoldSet`).
+    fn toggle_group(self: &Arc<Self>, group: String) {
+        {
+            let mut store = self.store.lock().unwrap();
+            let unfold = &mut store.state.settings.proxies.unfold;
+            if let Some(i) = unfold.iter().position(|g| *g == group) {
+                unfold.remove(i);
+            } else {
+                unfold.push(group);
+            }
+            store.save();
+        }
+        self.publish_groups();
+    }
+
+    fn search_proxies(self: &Arc<Self>, query: String) {
+        *self.proxy_query.lock().unwrap() = query;
+        self.publish_groups();
+    }
+}
+
+/// Where the selected card of a group sits in the proxies list, from the top of its
+/// content, by the same measures the page lays the list out with.
+fn locate_offset(ui: &AppWindow, group: &str) -> f32 {
+    let cols = ui.get_proxy_columns().max(1) as usize;
+    let card = ui.get_proxy_card_height() + PROXY_GAP;
+    let groups = ui.get_proxy_groups();
+    let selected = |g: &ProxyGroup| g.nodes.iter().position(|n| n.selected).unwrap_or(0);
+    if ui.get_proxy_style().kind == 0 {
+        return groups
+            .iter()
+            .find(|g| g.name == group)
+            .map(|g| PROXY_PAD + (selected(&g) / cols) as f32 * card)
+            .unwrap_or(0.0);
+    }
+    let mut y = PROXY_PAD;
+    for g in groups.iter() {
+        if g.name == group {
+            return y + PROXY_HEADER + PROXY_GAP + (selected(&g) / cols) as f32 * card;
+        }
+        y += PROXY_HEADER + PROXY_GROUP_GAP;
+        if g.expanded {
+            let rows = g.nodes.row_count().div_ceil(cols);
+            y += PROXY_GAP + rows as f32 * card - PROXY_GAP;
+        }
+    }
+    0.0
 }
 
 /// Builds the window, starts the shell connection and runs the event loop until the
@@ -1798,6 +1838,9 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         run_state: Mutex::new("OFFLINE".into()),
         groups: Mutex::new(Value::Null),
         delays: Mutex::new(HashMap::new()),
+        sorted_delays: Mutex::new(HashMap::new()),
+        testing_groups: Mutex::new(HashSet::new()),
+        proxy_query: Mutex::new(String::new()),
         busy: Mutex::new(HashSet::new()),
         pending_logs: Mutex::new(Vec::new()),
         logs_scheduled: AtomicBool::new(false),
@@ -1892,6 +1935,19 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     let a = app.clone();
     ui.on_test_group(move |g| a.test_group(g.into()));
     let a = app.clone();
+    ui.on_test_node(move |g, n| a.test_node(g.into(), n.into()));
+    let a = app.clone();
+    ui.on_toggle_group(move |g| a.toggle_group(g.into()));
+    let a = app.clone();
+    ui.on_proxy_style_changed(move |k, v| a.set_proxy_style(&k, v));
+    let a = app.clone();
+    ui.on_search_proxies(move |q| a.search_proxies(q.into()));
+    let w = ui.as_weak();
+    ui.on_locate(move |group| {
+        let Some(ui) = w.upgrade() else { return 0.0 };
+        locate_offset(&ui, &group)
+    });
+    let a = app.clone();
     ui.on_tab_changed(move |tab| {
         // Tabs follow FlClash's mobile bar: 0 dashboard, 1 proxies, 2 profiles, 3 tools.
         if tab == 1 {
@@ -1951,47 +2007,6 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn sample() -> Value {
-        json!({
-            "order": ["GLOBAL", "节点选择", "隐藏"],
-            "groups": [
-                {"name": "GLOBAL", "type": "Selector", "now": "节点选择", "all": ["节点选择", "DIRECT"], "testUrl": "", "hidden": false, "icon": "", "emptyFallback": ""},
-                {"name": "节点选择", "type": "Selector", "now": "香港", "all": ["香港", "日本"], "testUrl": "", "hidden": false, "icon": "", "emptyFallback": ""},
-                {"name": "隐藏", "type": "URLTest", "now": "日本", "all": ["日本"], "testUrl": "", "hidden": true, "icon": "", "emptyFallback": ""}
-            ],
-            "nodes": [{"name": "香港", "type": "Shadowsocks"}, {"name": "日本", "type": "Trojan"}, {"name": "DIRECT", "type": "Direct"}]
-        })
-    }
-
-    #[test]
-    fn groups_follow_the_mode() {
-        let g = sample();
-        let rule: Vec<String> = visible_groups(&g, 0)
-            .iter()
-            .map(|g| g.name.to_string())
-            .collect();
-        assert_eq!(rule, ["节点选择"]);
-        let global: Vec<String> = visible_groups(&g, 1)
-            .iter()
-            .map(|g| g.name.to_string())
-            .collect();
-        assert_eq!(global, ["GLOBAL"]);
-        assert!(visible_groups(&g, 2).is_empty());
-    }
-
-    #[test]
-    fn nodes_carry_type_delay_and_pick() {
-        let mut delays = HashMap::new();
-        delays.insert("日本".to_string(), 120);
-        let nodes = group_nodes(&sample(), "节点选择", &delays);
-        assert_eq!(nodes.len(), 2);
-        assert!(nodes[0].selected);
-        assert_eq!(nodes[0].kind.as_str(), "Shadowsocks");
-        assert_eq!(nodes[1].delay, 120);
-        let global = group_nodes(&sample(), "GLOBAL", &delays);
-        assert_eq!(global[0].kind.as_str(), "Selector");
-    }
 
     #[test]
     fn speeds_read_like_flclash() {

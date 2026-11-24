@@ -100,51 +100,36 @@ fn main() {
     ui.set_editor_title("我的机场".into());
     ui.set_editor_text("mixed-port: 7890\nmode: rule\nproxies:\n  - name: 香港 01\n    type: ss\n    server: hk.example.com\n    port: 443\n".into());
     ui.set_editor_readonly(true);
-    ui.set_groups(ModelRc::new(VecModel::from(vec![
-        GroupItem {
-            name: "节点选择".into(),
-            kind: "Selector".into(),
-            now: "香港 01".into(),
-            count: 24,
-        },
-        GroupItem {
-            name: "自动选择".into(),
-            kind: "URLTest".into(),
-            now: "日本 03".into(),
-            count: 23,
-        },
-        GroupItem {
-            name: "流媒体".into(),
-            kind: "Selector".into(),
-            now: "节点选择".into(),
-            count: 3,
-        },
-    ])));
-    ui.set_nodes(ModelRc::new(VecModel::from(vec![
-        NodeItem {
-            name: "香港 01".into(),
-            kind: "Shadowsocks".into(),
-            delay: 86,
-            selected: true,
-        },
-        NodeItem {
-            name: "日本 03".into(),
-            kind: "Trojan".into(),
-            delay: 1203,
-            selected: false,
-        },
-        NodeItem {
-            name: "美国 洛杉矶 高速".into(),
-            kind: "VMess".into(),
-            delay: -1,
-            selected: false,
-        },
-        NodeItem {
-            name: "新加坡".into(),
-            kind: "Hysteria2".into(),
-            delay: -3,
-            selected: false,
-        },
+    let node = |name: &str, kind: &str, delay: i32, selected: bool, pinned: bool| NodeItem {
+        name: name.into(),
+        kind: kind.into(),
+        delay,
+        selected,
+        pinned,
+    };
+    let nodes = vec![
+        node("自动选择", "URLTest(日本 03)", 92, false, false),
+        node("香港 01", "Shadowsocks", 86, true, false),
+        node("日本 03", "Trojan", 1203, false, false),
+        node("美国 洛杉矶 高速 IPLC 专线", "VMess", -1, false, false),
+        node("新加坡", "Hysteria2", -3, false, false),
+        node("台湾", "VLESS", -4, false, false),
+        node("韩国", "Shadowsocks", 0, false, false),
+    ];
+    let group = |name: &str, kind: &str, now: &str, expanded: bool, nodes: Vec<NodeItem>| ProxyGroup {
+        name: name.into(),
+        kind: kind.into(),
+        now: now.into(),
+        count: nodes.len() as i32,
+        monogram: name.chars().next().unwrap().to_string().into(),
+        expanded,
+        testing: false,
+        nodes: ModelRc::new(VecModel::from(nodes)),
+    };
+    ui.set_proxy_groups(ModelRc::new(VecModel::from(vec![
+        group("节点选择", "Selector", "香港 01", true, nodes.clone()),
+        group("自动选择", "URLTest", "日本 03", false, vec![node("日本 03", "Trojan", 1203, true, true)]),
+        group("流媒体", "Selector", "节点选择", false, vec![]),
     ])));
     let logs = VecModel::<LogItem>::default();
     for (level, text) in [("info", "[TCP] 192.168.1.5:51234 --> www.google.com:443 match RuleSet(proxy) using 节点选择[香港 01]"), ("warning", "dns: lookup timeout for example.invalid"), ("error", "dial 美国 洛杉矶 高速 failed: connection refused")] {
@@ -157,6 +142,10 @@ fn main() {
     let shots: &[(&str, i32, &str, &str, i32, &str)] = &[
         ("dashboard", 0, "", "", 1, ""),
         ("proxies", 1, "节点选择", "", 1, ""),
+        ("proxies-tab", 1, "节点选择", "", 1, "tab"),
+        ("proxies-tab-loose", 1, "节点选择", "", 1, "loose"),
+        ("proxies-options", 1, "节点选择", "", 1, "options"),
+        ("proxies-search", 1, "节点选择", "", 1, "search"),
         ("profiles", 2, "", "", 1, ""),
         ("profiles-add-menu", 2, "", "", 1, "add-menu"),
         ("profiles-link", 2, "", "", 1, "link"),
@@ -169,6 +158,7 @@ fn main() {
         ("logs", 3, "", "logs", 1, ""),
         ("theme", 3, "", "theme", 1, ""),
         ("dashboard-dark", 0, "", "", 2, ""),
+        ("proxies-dark", 1, "节点选择", "", 2, ""),
         ("profiles-dark", 2, "", "", 2, ""),
     ];
     ui.show().unwrap();
@@ -182,6 +172,16 @@ fn main() {
             ui.set_tools_page((*page).into());
             ui.set_profiles_page("".into());
         }
+        ui.set_proxy_style(ProxyStyle {
+            kind: if matches!(*overlay, "tab" | "loose") { 0 } else { 1 },
+            sort: 0,
+            layout: 1,
+            card: if *overlay == "loose" { 2 } else { 1 },
+            icon: 0,
+            hide_timeout: false,
+        });
+        ui.set_proxy_options_open(*overlay == "options");
+        ui.set_proxy_searching(*overlay == "search");
         ui.set_add_menu_open(*overlay == "add-menu");
         ui.set_link_open(*overlay == "link");
         ui.set_menu_open(*overlay == "menu");

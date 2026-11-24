@@ -47,19 +47,38 @@ export struct ProfileItem {
     is-url: bool,
 }
 
-export struct GroupItem {
+export struct NodeItem {
+    name: string,
+    // The type, or for a group the type and the proxy it stands for.
+    kind: string,
+    // >0 ms, 0 untested, -1 timeout, -2 failed, -3 running, -4 queued
+    delay: int,
+    // In use by its group.
+    selected: bool,
+    // Pinned in a group that picks by itself.
+    pinned: bool,
+}
+
+export struct ProxyGroup {
     name: string,
     kind: string,
     now: string,
     count: int,
+    monogram: string,
+    expanded: bool,
+    testing: bool,
+    nodes: [NodeItem],
 }
 
-export struct NodeItem {
-    name: string,
-    kind: string,
-    // >0 ms, 0 untested, -1 timeout, -2 failed, -3 testing
-    delay: int,
-    selected: bool,
+// ProxiesStyleProps: kind 0 tab 1 list; sort 0 default 1 delay 2 name; layout 0 tight
+// 1 standard 2 loose; card 0 compact 1 standard 2 loose; icon 0 filled 1 plain 2 hidden.
+export struct ProxyStyle {
+    kind: int,
+    sort: int,
+    layout: int,
+    card: int,
+    icon: int,
+    hide-timeout: bool,
 }
 
 export struct LogItem {
@@ -106,6 +125,12 @@ global Icons {
     out property <string> cloud: "M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.5 1.5A3.8 3.8 0 0 1 17.5 18z M12 10v6 M9.5 13.5 12 16l2.5-2.5";
     out property <string> upload: "M12 16V4 M7 9l5-5 5 5 M5 20h14";
     out property <string> close: "M6 6l12 12 M18 6 6 18";
+    out property <string> search: "M10.5 4a6.5 6.5 0 1 0 0.01 0z M15.5 15.5 20 20";
+    out property <string> locate: "M12 6a6 6 0 1 0 0.01 0z M12 2v4 M12 18v4 M2 12h4 M18 12h4 M12 10.5a1.5 1.5 0 1 0 0.01 0z";
+    out property <string> clock: "M12 3a9 9 0 1 0 0.01 0z M12 7v5l3 2";
+    out property <string> pin: "M9 4h6l-1 6 3 3v1H7v-1l3-3z M12 14v6";
+    out property <string> unfold: "M6 9l6 6 6-6";
+    out property <string> fold: "M6 15l6-6 6 6";
 }
 
 component Icon inherits Path {
@@ -438,109 +463,386 @@ component Dashboard inherits Rectangle {
 
 // ---------------------------------------------------------------- Proxies
 
-component DelayText inherits Text {
+// The delay on a card (`_DelayText`): a bolt to test while untested, a clock while queued,
+// dots while running, then the value; a tap tests the card again.
+component DelayBadge inherits Rectangle {
     in property <int> delay;
-    font-size: 12px;
-    text: delay == -3 ? "…" : delay == -1 ? "超时" : delay == -2 ? "失败" : delay > 0 ? delay + " ms" : "";
-    color: delay > 0 && delay < 800 ? Theme.success : delay > 0 && delay < 1500 ? Theme.warning : Theme.s.error;
+    in property <color> idle: Theme.s.on-surface-variant;
+    callback test();
+    property <bool> busy: delay == -3 || delay == -4;
+    width: delay > 0 || delay == -1 || delay == -2 ? label.preferred-width + 4px : 18px;
+    height: 18px;
+    if root.delay == 0: Icon { glyph: Icons.bolt; size: 15px; tint: root.idle; }
+    if root.delay == -4: Icon { glyph: Icons.clock; size: 15px; tint: root.idle.with-alpha(0.5); }
+    if root.delay == -3: Text { text: "···"; font-size: 13px; font-weight: 700; color: Theme.s.primary; horizontal-alignment: center; vertical-alignment: center; }
+    label := Text {
+        visible: root.delay > 0 || root.delay == -1 || root.delay == -2;
+        text: root.delay == -1 ? "超时" : root.delay == -2 ? "失败" : root.delay + " ms";
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        color: root.delay > 0 && root.delay < 800 ? Theme.success : root.delay > 0 && root.delay < 1500 ? Theme.warning : Theme.s.error;
+    }
+    TouchArea {
+        enabled: !root.busy;
+        clicked => { root.test(); }
+    }
 }
 
+// FlClash's ProxyCard: the name (two lines, or one when compact), the type and the delay
+// below, and a badge for the proxy in use or the pin.
 component NodeCard inherits Card {
     in property <NodeItem> item;
+    // 0 compact, 1 standard, 2 loose.
+    in property <int> size: 1;
     callback clicked();
+    callback test();
     selected: item.selected;
     background: item.selected ? Theme.s.primary-container : (ta.pressed ? Theme.s.block : Theme.s.card);
+    property <color> fg: item.selected ? Theme.s.on-primary-container : Theme.s.on-surface;
+    property <color> fg2: item.selected ? Theme.s.on-primary-container : Theme.s.on-surface-variant;
+    ta := TouchArea { clicked => { root.clicked(); } }
     VerticalLayout {
-        padding: 12px;
-        spacing: 6px;
-        Text {
-            text: root.item.name;
-            font-size: 14px;
-            color: root.item.selected ? Theme.s.on-primary-container : Theme.s.on-surface;
-            overflow: elide;
-        }
+        padding-left: 12px;
+        padding-right: 10px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: root.size == 2 ? 4px : 6px;
         HorizontalLayout {
+            spacing: 4px;
+            vertical-stretch: 1;
+            Text {
+                text: root.item.name;
+                font-size: 14px;
+                color: root.fg;
+                wrap: root.size == 0 ? no-wrap : word-wrap;
+                overflow: elide;
+                vertical-alignment: top;
+                horizontal-stretch: 1;
+            }
+            if root.item.pinned || root.item.selected: Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: root.item.selected ? Theme.s.primary : Theme.s.primary.with-alpha(0.15);
+                Icon {
+                    glyph: root.item.pinned ? Icons.pin : Icons.check;
+                    size: 13px;
+                    tint: root.item.selected ? Theme.s.on-primary : Theme.s.primary;
+                }
+            }
+        }
+        if root.size == 2: Text { text: root.item.kind; font-size: 12px; color: root.fg2; overflow: elide; }
+        if root.size == 2: HorizontalLayout {
+            DelayBadge { delay: root.item.delay; idle: root.fg2; test => { root.test(); } }
+            Rectangle { }
+        }
+        if root.size != 2: HorizontalLayout {
+            spacing: 6px;
+            height: 18px;
             Text {
                 horizontal-stretch: 1;
                 text: root.item.kind;
                 font-size: 12px;
-                color: root.item.selected ? Theme.s.on-primary-container : Theme.s.on-surface-variant;
+                color: root.fg2;
                 overflow: elide;
+                vertical-alignment: center;
             }
-            DelayText { delay: root.item.delay; horizontal-alignment: right; }
+            DelayBadge { delay: root.item.delay; idle: root.fg2; test => { root.test(); } }
         }
     }
-    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+// A group's cards in rows of `columns`.
+component NodeGrid inherits Rectangle {
+    in property <[NodeItem]> nodes;
+    in property <int> columns: 2;
+    in property <length> card-height;
+    in property <int> size;
+    callback select(string);
+    callback test(string);
+    property <length> gap: 8px;
+    property <length> cell-w: (self.width - (columns - 1) * gap) / columns;
+    height: max(0px, ceil(nodes.length / columns) * (card-height + gap) - gap);
+    for n[i] in root.nodes: NodeCard {
+        x: mod(i, root.columns) * (root.cell-w + root.gap);
+        y: floor(i / root.columns) * (root.card-height + root.gap);
+        width: root.cell-w;
+        height: root.card-height;
+        item: n;
+        size: root.size;
+        clicked => { root.select(n.name); }
+        test => { root.test(n.name); }
+    }
+}
+
+// The list style's group header (`ListHeader`): icon, name and its pick, then the
+// locate and test buttons while unfolded or the type while folded, and the fold toggle.
+component GroupHeader inherits Card {
+    in property <ProxyGroup> group;
+    // 0 filled, 1 plain, 2 hidden.
+    in property <int> icon;
+    callback toggle();
+    callback test();
+    callback locate();
+    height: 64px;
+    border-radius: 16px;
+    ta := TouchArea { clicked => { root.toggle(); } }
+    HorizontalLayout {
+        padding-left: root.icon == 2 ? 14px : 10px;
+        padding-right: 6px;
+        spacing: 10px;
+        if root.icon == 0: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 42px;
+                height: 42px;
+                border-radius: 10px;
+                background: Theme.s.block;
+                Text { text: root.group.monogram; font-size: 18px; font-weight: 600; color: Theme.s.on-surface-variant; }
+            }
+        }
+        if root.icon == 1: VerticalLayout {
+            alignment: center;
+            Text { text: root.group.monogram; width: 28px; font-size: 22px; font-weight: 700; color: Theme.s.primary; horizontal-alignment: center; }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text { text: root.group.name; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+            if root.group.now != "": Text { text: root.group.now; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+        }
+        if root.group.expanded: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 84px;
+                height: 36px;
+                border-radius: 18px;
+                background: Theme.s.block;
+                HorizontalLayout {
+                    IconButton { width: 42px; height: 36px; glyph: Icons.locate; clicked => { root.locate(); } }
+                    IconButton {
+                        width: 42px;
+                        height: 36px;
+                        glyph: root.group.testing ? Icons.clock : Icons.bolt;
+                        enabled: !root.group.testing;
+                        clicked => { root.test(); }
+                    }
+                }
+            }
+        }
+        if !root.group.expanded: Text { text: root.group.kind; font-size: 12px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        VerticalLayout {
+            alignment: center;
+            IconButton { glyph: root.group.expanded ? Icons.fold : Icons.unfold; clicked => { root.toggle(); } }
+        }
+    }
 }
 
 component Proxies inherits Rectangle {
-    in property <[GroupItem]> groups;
-    in property <string> current-group;
-    in property <[NodeItem]> nodes;
+    in property <[ProxyGroup]> groups;
+    in property <ProxyStyle> style;
+    in-out property <string> current-group;
     in property <bool> testing;
     in property <string> hint;
+    in-out property <bool> searching;
+    in-out property <string> query;
+    // `getProxiesColumns` and the card heights of `getItemHeight`.
+    out property <int> columns: max(ceil((self.width - 32px) / 250px), 2) + (style.layout == 0 ? 1 : style.layout == 2 ? -1 : 0);
+    out property <length> card-height: style.card == 0 ? 58px : style.card == 2 ? 94px : 76px;
     callback open-group(string);
     callback select-node(string, string);
     callback test-group(string);
-    property <length> gap: 10px;
-    property <length> cell-w: (self.width - 2 * 16px - gap) / 2;
-    property <length> cell-h: 64px;
+    callback test-node(string, string);
+    callback toggle-group(string);
+    callback search(string);
+    callback open-options();
+    callback locate(string) -> length;
+
+    changed query => { root.search(root.query); }
+
+    function go-to(group: string) {
+        flick.content-y = -min(max(0px, root.locate(group) - 8px), max(0px, flick.content-height - flick.height));
+    }
 
     VerticalLayout {
-        AppBar { title: "代理"; }
-        if root.groups.length == 0: Empty { text: root.hint; }
-        if root.groups.length > 0: VerticalLayout {
-            // Group tabs, FlClash's scrollable tab bar.
-            Rectangle {
-                height: 44px;
-                Flickable {
-                    content-width: tabs.preferred-width;
-                    tabs := HorizontalLayout {
-                        padding-left: 8px;
-                        padding-right: 8px;
-                        for g in root.groups: Rectangle {
-                            property <bool> active: g.name == root.current-group;
-                            width: label.preferred-width + 24px;
-                            label := Text {
-                                text: g.name;
-                                font-size: 14px;
-                                color: parent.active ? Theme.s.primary : Theme.s.on-surface-variant;
-                                vertical-alignment: center;
+        if !root.searching: AppBar {
+            title: "代理";
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
+            if root.style.kind == 0 && root.groups.length > 0: VerticalLayout {
+                alignment: center;
+                IconButton { glyph: Icons.locate; tint: Theme.s.on-surface; clicked => { root.go-to(root.current-group); } }
+            }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-options(); } } }
+        }
+        if root.searching: HorizontalLayout {
+            height: 56px;
+            padding-left: 4px;
+            padding-right: 12px;
+            spacing: 4px;
+            VerticalLayout {
+                alignment: center;
+                IconButton { glyph: Icons.back; tint: Theme.s.on-surface; clicked => { root.query = ""; root.searching = false; } }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Rectangle {
+                    height: 44px;
+                    border-radius: 22px;
+                    background: Theme.s.block;
+                    Text {
+                        x: 16px;
+                        visible: search-input.text == "";
+                        text: "搜索";
+                        color: Theme.s.on-surface-variant;
+                        font-size: 15px;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                    search-input := TextInput {
+                        x: 16px;
+                        width: parent.width - 32px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        single-line: true;
+                        font-size: 15px;
+                        color: Theme.s.on-surface;
+                        text <=> root.query;
+                        init => { self.focus(); }
+                    }
+                }
+            }
+            if root.style.kind == 0 && root.groups.length > 0: VerticalLayout {
+                alignment: center;
+                IconButton { glyph: root.testing ? Icons.clock : Icons.bolt; enabled: !root.testing; tint: Theme.s.on-surface; clicked => { root.test-group(root.current-group); } }
+            }
+        }
+
+        // Group tabs, FlClash's scrollable tab bar.
+        if root.style.kind == 0 && root.groups.length > 0: Rectangle {
+            height: 44px;
+            Flickable {
+                content-width: max(tabs.preferred-width, self.width);
+                tabs := HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    for g in root.groups: Rectangle {
+                        property <bool> active: g.name == root.current-group;
+                        width: label.preferred-width + 24px;
+                        label := Text {
+                            text: g.name;
+                            font-size: 14px;
+                            font-weight: parent.active ? 600 : 400;
+                            color: parent.active ? Theme.s.primary : Theme.s.on-surface-variant;
+                            vertical-alignment: center;
+                        }
+                        Rectangle {
+                            y: parent.height - 3px;
+                            width: label.preferred-width;
+                            height: 3px;
+                            border-radius: 1.5px;
+                            background: parent.active ? Theme.s.primary : transparent;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.current-group = g.name;
+                                flick.content-y = 0;
+                                root.open-group(g.name);
                             }
-                            Rectangle {
-                                y: parent.height - 3px;
-                                width: label.preferred-width;
-                                height: 3px;
-                                border-radius: 1.5px;
-                                background: parent.active ? Theme.s.primary : transparent;
-                            }
-                            TouchArea { clicked => { root.open-group(g.name); } }
                         }
                     }
                 }
-                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.s.outline-variant; }
             }
-            Flickable {
-                content-height: ceil(root.nodes.length / 2) * (root.cell-h + root.gap) + 12px + 88px;
-                for n[i] in root.nodes: NodeCard {
-                    x: 16px + mod(i, 2) * (root.cell-w + root.gap);
-                    y: 12px + floor(i / 2) * (root.cell-h + root.gap);
-                    width: root.cell-w;
-                    height: root.cell-h;
-                    item: n;
-                    clicked => { root.select-node(root.current-group, n.name); }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.s.outline-variant; }
+        }
+
+        Rectangle {
+            flick := Flickable {
+                content-height: max(content.preferred-height, self.height);
+                content := VerticalLayout {
+                    alignment: start;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 8px;
+                    padding-bottom: root.style.kind == 0 ? 96px : 24px;
+                    spacing: 10px;
+                    if root.style.kind == 1: VerticalLayout {
+                        spacing: 10px;
+                        for g in root.groups: VerticalLayout {
+                            spacing: 8px;
+                            GroupHeader {
+                                group: g;
+                                icon: root.style.icon;
+                                toggle => { root.toggle-group(g.name); }
+                                test => { root.test-group(g.name); }
+                                locate => { root.go-to(g.name); }
+                            }
+                            if g.expanded: NodeGrid {
+                                nodes: g.nodes;
+                                columns: root.columns;
+                                card-height: root.card-height;
+                                size: root.style.card;
+                                select(n) => { root.select-node(g.name, n); }
+                                test(n) => { root.test-node(g.name, n); }
+                            }
+                        }
+                    }
+                    if root.style.kind == 0: VerticalLayout {
+                        for g in root.groups: VerticalLayout {
+                            if g.name == root.current-group: NodeGrid {
+                                nodes: g.nodes;
+                                columns: root.columns;
+                                card-height: root.card-height;
+                                size: root.style.card;
+                                select(n) => { root.select-node(g.name, n); }
+                                test(n) => { root.test-node(g.name, n); }
+                            }
+                        }
+                    }
                 }
             }
+            if root.groups.length == 0: Empty { text: root.searching && root.query != "" ? "没有匹配的代理" : root.hint; }
         }
     }
 
-    if root.groups.length > 0: Fab {
+    if root.style.kind == 0 && root.groups.length > 0 && !root.searching: Fab {
         x: parent.width - self.width - 16px;
         y: parent.height - self.height - 16px;
         glyph: Icons.bolt;
         enabled: !root.testing;
         label: root.testing ? "测试中…" : "";
         clicked => { root.test-group(root.current-group); }
+    }
+}
+
+// One option of the proxies menu: its name, then its choices as chips.
+component OptionRow inherits VerticalLayout {
+    in property <string> label;
+    in property <[string]> options;
+    in property <int> value;
+    callback picked(int);
+    padding-left: 20px;
+    padding-right: 20px;
+    spacing: 8px;
+    Text { text: root.label; font-size: 13px; color: Theme.s.on-surface-variant; }
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        for o[i] in root.options: Rectangle {
+            height: 34px;
+            width: chip.preferred-width + 28px;
+            border-radius: 17px;
+            background: i == root.value ? Theme.s.primary-container : Theme.s.block;
+            chip := Text {
+                text: o;
+                font-size: 14px;
+                color: i == root.value ? Theme.s.on-primary-container : Theme.s.on-surface;
+            }
+            TouchArea { clicked => { root.picked(i); } }
+        }
     }
 }
 
@@ -1226,9 +1528,18 @@ export component AppWindow inherits Window {
     in-out property <string> confirm-arg;
     callback confirm-answer(string, string, bool);
     // Proxies
-    in property <[GroupItem]> groups;
+    in property <[ProxyGroup]> proxy-groups;
+    in property <ProxyStyle> proxy-style: { kind: 1, sort: 0, layout: 1, card: 1, icon: 0, hide-timeout: false };
+    out property <int> proxy-columns: proxies-page.columns;
+    out property <length> proxy-card-height: proxies-page.card-height;
+    in-out property <bool> proxy-options-open;
+    in-out property <bool> proxy-searching;
+    callback test-node(string, string);
+    callback toggle-group(string);
+    callback proxy-style-changed(string, int);
+    callback search-proxies(string);
+    callback locate(string) -> length;
     in-out property <string> current-group;
-    in property <[NodeItem]> nodes;
     in property <bool> testing;
     in property <string> proxies-hint: "暂无数据";
     callback open-group(string);
@@ -1272,6 +1583,8 @@ export component AppWindow inherits Window {
         key-pressed(event) => {
             if (event.text == Key.Back) {
                 if (root.alert-open) { root.alert-open = false; return accept; }
+                if (root.proxy-options-open) { root.proxy-options-open = false; return accept; }
+                if (root.tab == 1 && root.proxy-searching) { root.proxy-searching = false; root.search-proxies(""); return accept; }
                 if (root.confirm-open) {
                     root.confirm-open = false;
                     root.confirm-answer(root.confirm-action, root.confirm-arg, false);
@@ -1314,17 +1627,25 @@ export component AppWindow inherits Window {
                     set-mode(m) => { root.set-mode(m); }
                     open-profiles => { root.go(2); }
                 }
-                if root.tab == 1: Proxies {
+                // Kept in the tree so its measures stay readable and its scroll stays put.
+                proxies-page := Proxies {
+                    visible: root.tab == 1;
                     width: parent.width;
                     height: parent.height;
-                    groups: root.groups;
-                    current-group: root.current-group;
-                    nodes: root.nodes;
+                    groups: root.proxy-groups;
+                    style: root.proxy-style;
+                    current-group <=> root.current-group;
+                    searching <=> root.proxy-searching;
                     testing: root.testing;
                     hint: root.proxies-hint;
-                    open-group(g) => { root.current-group = g; root.open-group(g); }
+                    open-group(g) => { root.open-group(g); }
                     select-node(g, n) => { root.select-node(g, n); }
                     test-group(g) => { root.test-group(g); }
+                    test-node(g, n) => { root.test-node(g, n); }
+                    toggle-group(g) => { root.toggle-group(g); }
+                    search(q) => { root.search-proxies(q); }
+                    open-options => { root.proxy-options-open = true; }
+                    locate(g) => { return root.locate(g); }
                 }
                 if root.tab == 2 && root.profiles-page == "": Profiles {
                     width: parent.width;
@@ -1423,6 +1744,40 @@ export component AppWindow inherits Window {
                     NavItem { label: "代理"; glyph: Icons.proxies; active: root.tab == 1; clicked => { root.go(1); } }
                     NavItem { label: "配置"; glyph: Icons.profiles; active: root.tab == 2; clicked => { root.go(2); } }
                     NavItem { label: "工具"; glyph: Icons.tools; active: root.tab == 3; clicked => { root.go(3); } }
+                }
+            }
+        }
+
+        // The proxies page's menu (`_buildMenuItems`), as a sheet from the bottom.
+        if root.proxy-options-open: Rectangle {
+            background: #00000066;
+            TouchArea { clicked => { root.proxy-options-open = false; } }
+            Rectangle {
+                y: parent.height - self.height;
+                height: opts.preferred-height + root.bottom-inset;
+                background: Theme.s.card;
+                border-top-left-radius: 24px;
+                border-top-right-radius: 24px;
+                TouchArea { }
+                opts := VerticalLayout {
+                    padding-top: 20px;
+                    padding-bottom: 12px;
+                    spacing: 16px;
+                    OptionRow { label: "风格"; options: ["标签页", "列表"]; value: root.proxy-style.kind; picked(i) => { root.proxy-style-changed("kind", i); } }
+                    OptionRow { label: "排序"; options: ["默认", "延迟", "名称"]; value: root.proxy-style.sort; picked(i) => { root.proxy-style-changed("sort", i); } }
+                    OptionRow { label: "布局"; options: ["紧凑", "标准", "宽松"]; value: root.proxy-style.layout; picked(i) => { root.proxy-style-changed("layout", i); } }
+                    OptionRow { label: "尺寸"; options: ["紧凑", "标准", "宽松"]; value: root.proxy-style.card; picked(i) => { root.proxy-style-changed("card", i); } }
+                    if root.proxy-style.kind == 1: OptionRow { label: "图标样式"; options: ["色块", "纯图标", "隐藏"]; value: root.proxy-style.icon; picked(i) => { root.proxy-style-changed("icon", i); } }
+                    HorizontalLayout {
+                        padding-left: 20px;
+                        padding-right: 20px;
+                        height: 48px;
+                        Text { text: "隐藏超时代理"; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                        VerticalLayout {
+                            alignment: center;
+                            Switch { checked: root.proxy-style.hide-timeout; toggled(on) => { root.proxy-style-changed("hide", on ? 1 : 0); } }
+                        }
+                    }
                 }
             }
         }

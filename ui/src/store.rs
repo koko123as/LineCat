@@ -15,6 +15,32 @@ pub struct Settings {
     pub theme_mode: i32,
     /// 0 rule, 1 global, 2 direct.
     pub mode: i32,
+    pub proxies: ProxiesStyle,
+}
+
+/// `ProxiesStyleProps` in lib/models/config.dart.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ProxiesStyle {
+    /// 0 tab, 1 list.
+    pub kind: i32,
+    /// 0 default, 1 delay, 2 name.
+    pub sort: i32,
+    /// 0 tight, 1 standard, 2 loose.
+    pub layout: i32,
+    /// 0 compact, 1 standard, 2 loose.
+    pub card: i32,
+    /// 0 filled, 1 plain, 2 hidden.
+    pub icon: i32,
+    pub hide_timeout: bool,
+    /// The groups unfolded in the list style (`unfoldSet`).
+    pub unfold: Vec<String>,
+}
+
+impl Default for ProxiesStyle {
+    fn default() -> Self {
+        ProxiesStyle { kind: 1, sort: 0, layout: 1, card: 1, icon: 0, hide_timeout: false, unfold: Vec::new() }
+    }
 }
 
 /// `SubscriptionInfo` in lib/models/profile.dart, from the `subscription-userinfo` header.
