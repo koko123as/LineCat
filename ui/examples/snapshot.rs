@@ -94,10 +94,16 @@ fn main() {
         busy: false,
     });
     ui.set_dash_widgets(ModelRc::new(VecModel::from(
-        dashboard::default_widgets().into_iter().map(slint::SharedString::from).collect::<Vec<_>>(),
+        dashboard::default_widgets()
+            .into_iter()
+            .map(slint::SharedString::from)
+            .collect::<Vec<_>>(),
     )));
     ui.set_dash_hidden(ModelRc::new(VecModel::from(
-        ["vpn", "ip", "memory"].iter().map(|s| slint::SharedString::from(*s)).collect::<Vec<_>>(),
+        ["vpn", "ip", "memory"]
+            .iter()
+            .map(|s| slint::SharedString::from(*s))
+            .collect::<Vec<_>>(),
     )));
     ui.set_dash_local_ip("192.168.1.10".into());
     ui.set_dash_memory("228.8 MB".into());
@@ -168,19 +174,26 @@ fn main() {
         node("台湾", "VLESS", -4, false, false),
         node("韩国", "Shadowsocks", 0, false, false),
     ];
-    let group = |name: &str, kind: &str, now: &str, expanded: bool, nodes: Vec<NodeItem>| ProxyGroup {
-        name: name.into(),
-        kind: kind.into(),
-        now: now.into(),
-        count: nodes.len() as i32,
-        monogram: name.chars().next().unwrap().to_string().into(),
-        expanded,
-        testing: false,
-        nodes: ModelRc::new(VecModel::from(nodes)),
-    };
+    let group =
+        |name: &str, kind: &str, now: &str, expanded: bool, nodes: Vec<NodeItem>| ProxyGroup {
+            name: name.into(),
+            kind: kind.into(),
+            now: now.into(),
+            count: nodes.len() as i32,
+            monogram: name.chars().next().unwrap().to_string().into(),
+            expanded,
+            testing: false,
+            nodes: ModelRc::new(VecModel::from(nodes)),
+        };
     ui.set_proxy_groups(ModelRc::new(VecModel::from(vec![
         group("节点选择", "Selector", "香港 01", true, nodes.clone()),
-        group("自动选择", "URLTest", "日本 03", false, vec![node("日本 03", "Trojan", 1203, true, true)]),
+        group(
+            "自动选择",
+            "URLTest",
+            "日本 03",
+            false,
+            vec![node("日本 03", "Trojan", 1203, true, true)],
+        ),
         group("流媒体", "Selector", "节点选择", false, vec![]),
     ])));
     ui.set_dash_groups(ModelRc::new(VecModel::from(vec![
@@ -245,7 +258,11 @@ fn main() {
             ui.set_profiles_page("".into());
         }
         ui.set_proxy_style(ProxyStyle {
-            kind: if matches!(*overlay, "tab" | "loose") { 0 } else { 1 },
+            kind: if matches!(*overlay, "tab" | "loose") {
+                0
+            } else {
+                1
+            },
             sort: 0,
             layout: 1,
             card: if *overlay == "loose" { 2 } else { 1 },

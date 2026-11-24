@@ -142,7 +142,10 @@ fn dash_profile(p: &store::Profile, busy: bool) -> DashProfile {
             let days = ((e - now_secs() as i64).max(0) + 86_399) / 86_400;
             (format!("剩余 {days} 天"), days <= 7)
         }
-        None => ((if p.is_url() { "远程" } else { "本地" }).to_string(), false),
+        None => (
+            (if p.is_url() { "远程" } else { "本地" }).to_string(),
+            false,
+        ),
     };
     let usage = sub.and_then(|s| dashboard::usage(s.upload + s.download, s.total));
     let (percent, used, ratio) = usage.clone().unwrap_or_default();
@@ -151,7 +154,11 @@ fn dash_profile(p: &store::Profile, busy: bool) -> DashProfile {
         name: p.label().into(),
         end: end.into(),
         warn,
-        updated: if p.updated == 0 { SharedString::new() } else { format!("更新于 {}", ago_short(p.updated)).into() },
+        updated: if p.updated == 0 {
+            SharedString::new()
+        } else {
+            format!("更新于 {}", ago_short(p.updated)).into()
+        },
         usage: usage.is_some(),
         percent: percent.into(),
         used: used.into(),
@@ -544,7 +551,11 @@ impl App {
             down_line: down_line.into(),
             down_fill: down_fill.into(),
         };
-        let run = self.started_at.lock().unwrap().map(|t| dashboard::run_time(t.elapsed().as_secs()));
+        let run = self
+            .started_at
+            .lock()
+            .unwrap()
+            .map(|t| dashboard::run_time(t.elapsed().as_secs()));
         let memory = dashboard::resident_memory().map(size).unwrap_or_default();
         let (us, ds) = (speed(up), speed(down));
         self.ui(move |ui| {
@@ -562,7 +573,11 @@ impl App {
     /// and directly otherwise, then what kind of address it is.
     fn probe_ip(self: &Arc<Self>) {
         let seq = self.ip_seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let proxy = if self.run_state.lock().unwrap().as_str() == "STARTED" { "" } else { "DIRECT" };
+        let proxy = if self.run_state.lock().unwrap().as_str() == "STARTED" {
+            ""
+        } else {
+            "DIRECT"
+        };
         self.ui(|ui| {
             let mut s = ui.get_dash_status();
             s.probing = true;
@@ -586,20 +601,30 @@ impl App {
             }
             let Some((ip, cc)) = found else {
                 app.ui(|ui| {
-                    ui.set_dash_status(DashStatus { ip: "获取失败".into(), ..Default::default() });
+                    ui.set_dash_status(DashStatus {
+                        ip: "获取失败".into(),
+                        ..Default::default()
+                    });
                 });
                 return;
             };
             let (ip2, cc2) = (ip.clone(), cc.clone());
             app.ui(move |ui| {
-                ui.set_dash_status(DashStatus { ip: ip2.into(), country: cc2.into(), probing: true, ..Default::default() });
+                ui.set_dash_status(DashStatus {
+                    ip: ip2.into(),
+                    country: cc2.into(),
+                    probing: true,
+                    ..Default::default()
+                });
             });
             let quality = dashboard::lookup_quality(&ip);
             if app.ip_seq.load(Ordering::SeqCst) != seq {
                 return;
             }
             app.ui(move |ui| {
-                let (org, kind, level) = quality.map(|q| (q.org, q.kind, q.level)).unwrap_or_else(|| (String::new(), "类型未知".into(), 0));
+                let (org, kind, level) = quality
+                    .map(|q| (q.org, q.kind, q.level))
+                    .unwrap_or_else(|| (String::new(), "类型未知".into(), 0));
                 ui.set_dash_status(DashStatus {
                     ip: ip.into(),
                     country: cc.into(),
@@ -613,8 +638,20 @@ impl App {
     }
 
     fn publish_dashboard_widgets(self: &Arc<Self>) {
-        let list = self.store.lock().unwrap().state.settings.dashboard.clone().unwrap_or_else(dashboard::default_widgets);
-        let hidden: Vec<SharedString> = dashboard::WIDGETS.iter().filter(|w| !list.iter().any(|l| l == *w)).map(|w| (*w).into()).collect();
+        let list = self
+            .store
+            .lock()
+            .unwrap()
+            .state
+            .settings
+            .dashboard
+            .clone()
+            .unwrap_or_else(dashboard::default_widgets);
+        let hidden: Vec<SharedString> = dashboard::WIDGETS
+            .iter()
+            .filter(|w| !list.iter().any(|l| l == *w))
+            .map(|w| (*w).into())
+            .collect();
         let list: Vec<SharedString> = list.into_iter().map(Into::into).collect();
         let ip = dashboard::local_ip().unwrap_or_else(|| "未知".into());
         let has_start = list.iter().any(|w| w == "status" || w == "vpn");
@@ -630,10 +667,17 @@ impl App {
     fn edit_dashboard(self: &Arc<Self>, action: &str, widget: &str) {
         {
             let mut store = self.store.lock().unwrap();
-            let mut list = store.state.settings.dashboard.clone().unwrap_or_else(dashboard::default_widgets);
+            let mut list = store
+                .state
+                .settings
+                .dashboard
+                .clone()
+                .unwrap_or_else(dashboard::default_widgets);
             let at = list.iter().position(|w| w == widget);
             match (action, at) {
-                ("add", None) if dashboard::WIDGETS.contains(&widget) => list.push(widget.to_string()),
+                ("add", None) if dashboard::WIDGETS.contains(&widget) => {
+                    list.push(widget.to_string())
+                }
                 ("remove", Some(i)) => {
                     list.remove(i);
                 }
@@ -750,8 +794,15 @@ impl App {
                 .iter()
                 .map(|p| self.profile_item(&store, p, &busy))
                 .collect();
-            let dash = store.active().map(|p| dash_profile(p, busy.contains(&p.id))).unwrap_or_default();
-            (items, store.active().map(|p| p.label()).unwrap_or_default(), dash)
+            let dash = store
+                .active()
+                .map(|p| dash_profile(p, busy.contains(&p.id)))
+                .unwrap_or_default();
+            (
+                items,
+                store.active().map(|p| p.label()).unwrap_or_default(),
+                dash,
+            )
         };
         let count = items.len() as i32;
         self.ui(move |ui| {
@@ -1785,14 +1836,21 @@ impl App {
     fn publish_groups(self: &Arc<Self>) {
         let (mode, style) = {
             let store = self.store.lock().unwrap();
-            (store.state.settings.mode, store.state.settings.proxies.clone())
+            (
+                store.state.settings.mode,
+                store.state.settings.proxies.clone(),
+            )
         };
         let groups = self.groups.lock().unwrap().clone();
         let delays = self.delays.lock().unwrap().clone();
         let sorted_by = self.sorted_delays.lock().unwrap().clone();
         let testing = self.testing_groups.lock().unwrap().clone();
         let query = self.proxy_query.lock().unwrap().clone();
-        let hint = if mode == 2 { "直连模式下不经过代理" } else { "暂无代理" };
+        let hint = if mode == 2 {
+            "直连模式下不经过代理"
+        } else {
+            "暂无代理"
+        };
         self.ui(move |ui| {
             let groups = proxies::Groups::parse(&groups);
             let list = proxies::View {
@@ -1821,7 +1879,13 @@ impl App {
                     kind: g.kind.as_str().into(),
                     now: g.now.as_str().into(),
                     count: g.all.len() as i32,
-                    monogram: g.name.chars().next().map(String::from).unwrap_or_default().into(),
+                    monogram: g
+                        .name
+                        .chars()
+                        .next()
+                        .map(String::from)
+                        .unwrap_or_default()
+                        .into(),
                     expanded: false,
                     testing: false,
                     nodes: ModelRc::default(),
@@ -1845,11 +1909,17 @@ impl App {
     /// takes it as a pin, and a tap on the pin lifts it.
     fn select_node(self: &Arc<Self>, group: String, node: String) {
         let groups = proxies::Groups::parse(&self.groups.lock().unwrap());
-        let Some(g) = groups.groups.get(&group) else { return };
+        let Some(g) = groups.groups.get(&group) else {
+            return;
+        };
         if !g.selectable() {
             return self.toast("当前代理组无法选中");
         }
-        let next = if g.computed() && g.fixed == node { String::new() } else { node };
+        let next = if g.computed() && g.fixed == node {
+            String::new()
+        } else {
+            node
+        };
         if !g.computed() && g.now == next {
             return;
         }
@@ -1894,7 +1964,10 @@ impl App {
         let (targets, url) = {
             let groups = proxies::Groups::parse(&self.groups.lock().unwrap());
             let query = self.proxy_query.lock().unwrap().clone();
-            (proxies::targets(&groups, &group, &query), groups.test_url(&group))
+            (
+                proxies::targets(&groups, &group, &query),
+                groups.test_url(&group),
+            )
         };
         self.run_delays(targets, url, Some(group));
     }
@@ -1924,7 +1997,8 @@ impl App {
         let left = Arc::new(AtomicU64::new(workers as u64));
         let group = Arc::new(group);
         for _ in 0..workers {
-            let (queue, left, url, group) = (queue.clone(), left.clone(), url.clone(), group.clone());
+            let (queue, left, url, group) =
+                (queue.clone(), left.clone(), url.clone(), group.clone());
             self.spawn(move |app| {
                 loop {
                     let Some(name) = queue.lock().unwrap().pop_front() else { break };
@@ -2144,9 +2218,14 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     let a = app.clone();
     ui.on_copy_text(move |text| {
         let text = text.to_string();
-        a.spawn(move |app| match app.bridge().and_then(|b| b.shell("clipboard.set", json!({"text": text}), CALL)) {
-            Ok(_) => app.toast("复制成功"),
-            Err(e) => app.toast(e),
+        a.spawn(move |app| {
+            match app
+                .bridge()
+                .and_then(|b| b.shell("clipboard.set", json!({"text": text}), CALL))
+            {
+                Ok(_) => app.toast("复制成功"),
+                Err(e) => app.toast(e),
+            }
         });
     });
     app.publish_dashboard_widgets();

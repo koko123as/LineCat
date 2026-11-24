@@ -41,7 +41,15 @@ pub struct ProxiesStyle {
 
 impl Default for ProxiesStyle {
     fn default() -> Self {
-        ProxiesStyle { kind: 1, sort: 0, layout: 1, card: 1, icon: 0, hide_timeout: false, unfold: Vec::new() }
+        ProxiesStyle {
+            kind: 1,
+            sort: 0,
+            layout: 1,
+            card: 1,
+            icon: 0,
+            hide_timeout: false,
+            unfold: Vec::new(),
+        }
     }
 }
 

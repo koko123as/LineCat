@@ -4,11 +4,16 @@ use serde_json::Value;
 use std::collections::VecDeque;
 
 /// The cards a dashboard can hold, by the names settings keep (`DashboardWidget`).
-pub const WIDGETS: &[&str] = &["status", "speed", "mode", "vpn", "profile", "groups", "ip", "memory"];
+pub const WIDGETS: &[&str] = &[
+    "status", "speed", "mode", "vpn", "profile", "groups", "ip", "memory",
+];
 
 /// `platformDefaultDashboardWidgets` on Android.
 pub fn default_widgets() -> Vec<String> {
-    ["status", "speed", "mode", "profile", "groups"].iter().map(|s| s.to_string()).collect()
+    ["status", "speed", "mode", "profile", "groups"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 /// `ipInfoSources`: the sites `probe.outboundIp` asks, in order.
@@ -95,7 +100,13 @@ pub struct Quality {
 }
 
 /// `IpQualityExt.level`: Tor or an abuser is risky, hosting is normal, the rest good.
-fn quality(kind: Option<&'static str>, inferred: bool, org: Option<String>, tor: bool, abuser: bool) -> Option<Quality> {
+fn quality(
+    kind: Option<&'static str>,
+    inferred: bool,
+    org: Option<String>,
+    tor: bool,
+    abuser: bool,
+) -> Option<Quality> {
     let kind = kind?;
     let level = if tor || abuser {
         3
@@ -104,27 +115,44 @@ fn quality(kind: Option<&'static str>, inferred: bool, org: Option<String>, tor:
     } else {
         1
     };
-    Some(Quality { org: org.unwrap_or_default(), kind: type_label(kind).into(), level, inferred })
+    Some(Quality {
+        org: org.unwrap_or_default(),
+        kind: type_label(kind).into(),
+        level,
+        inferred,
+    })
 }
 
 fn obj<'a>(json: &'a Value, key: &str) -> &'a Value {
-    json.get(key).filter(|v| v.is_object()).unwrap_or(&Value::Null)
+    json.get(key)
+        .filter(|v| v.is_object())
+        .unwrap_or(&Value::Null)
 }
 fn flag(json: &Value, key: &str) -> bool {
     json.get(key).and_then(Value::as_bool).unwrap_or(false)
 }
 fn text(json: &Value, key: &str) -> Option<String> {
-    json.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from)
+    json.get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
 }
 
 /// `lookupIpQuality`'s sources, in `_waves` order.
-pub const QUALITY_WAVES: &[&[&str]] = &[&["identMe", "ipApiCom", "ipQuery"], &["ipLocate"], &["ipApiIs"], &["proxyCheck"]];
+pub const QUALITY_WAVES: &[&[&str]] = &[
+    &["identMe", "ipApiCom", "ipQuery"],
+    &["ipLocate"],
+    &["ipApiIs"],
+    &["proxyCheck"],
+];
 
 fn quality_url(source: &str, ip: &str) -> String {
     match source {
         "identMe" => "https://ident.me/json".into(),
         // ip-api.com serves HTTPS only on its paid plan.
-        "ipApiCom" => format!("http://ip-api.com/json/{ip}?fields=status,isp,org,as,mobile,proxy,hosting"),
+        "ipApiCom" => {
+            format!("http://ip-api.com/json/{ip}?fields=status,isp,org,as,mobile,proxy,hosting")
+        }
         "ipQuery" => format!("https://api.ipquery.io/{ip}?format=json"),
         "ipLocate" => format!("https://iplocate.io/api/lookup/{ip}"),
         "proxyCheck" => format!("https://proxycheck.io/v3/{ip}"),
@@ -139,23 +167,43 @@ pub fn parse_quality(source: &str, ip: &str, json: &Value) -> Option<Quality> {
             if json.get("ip").and_then(Value::as_str) != Some(ip) {
                 return None;
             }
-            quality(declared_type(json.get("type")), false, text(json, "aso"), false, false)
+            quality(
+                declared_type(json.get("type")),
+                false,
+                text(json, "aso"),
+                false,
+                false,
+            )
         }
         "ipApiCom" => {
             if json.get("status").and_then(Value::as_str) != Some("success") {
                 return None;
             }
             let t = pick_type(flag(json, "hosting"), flag(json, "mobile"), None);
-            quality(Some(t.unwrap_or("residential")), t.is_none(), text(json, "org").or_else(|| text(json, "isp")), false, false)
+            quality(
+                Some(t.unwrap_or("residential")),
+                t.is_none(),
+                text(json, "org").or_else(|| text(json, "isp")),
+                false,
+                false,
+            )
         }
         "ipQuery" => {
             let (risk, isp) = (obj(json, "risk"), obj(json, "isp"));
             let t = pick_type(flag(risk, "is_datacenter"), flag(risk, "is_mobile"), None);
-            quality(Some(t.unwrap_or("residential")), t.is_none(), text(isp, "org").or_else(|| text(isp, "isp")), flag(risk, "is_tor"), false)
+            quality(
+                Some(t.unwrap_or("residential")),
+                t.is_none(),
+                text(isp, "org").or_else(|| text(isp, "isp")),
+                flag(risk, "is_tor"),
+                false,
+            )
         }
         "ipLocate" => {
-            let (privacy, company, asn) = (obj(json, "privacy"), obj(json, "company"), obj(json, "asn"));
-            let declared = declared_type(company.get("type")).or_else(|| declared_type(asn.get("type")));
+            let (privacy, company, asn) =
+                (obj(json, "privacy"), obj(json, "company"), obj(json, "asn"));
+            let declared =
+                declared_type(company.get("type")).or_else(|| declared_type(asn.get("type")));
             quality(
                 pick_type(flag(privacy, "is_hosting"), false, declared),
                 false,
@@ -178,7 +226,11 @@ pub fn parse_quality(source: &str, ip: &str, json: &Value) -> Option<Quality> {
                 _ => None,
             };
             quality(
-                pick_type(flag(detections, "hosting") || nt == Some("Hosting"), nt == Some("Wireless"), declared),
+                pick_type(
+                    flag(detections, "hosting") || nt == Some("Hosting"),
+                    nt == Some("Wireless"),
+                    declared,
+                ),
                 false,
                 text(network, "organisation"),
                 flag(detections, "tor"),
@@ -187,9 +239,14 @@ pub fn parse_quality(source: &str, ip: &str, json: &Value) -> Option<Quality> {
         }
         _ => {
             let (company, asn) = (obj(json, "company"), obj(json, "asn"));
-            let declared = declared_type(company.get("type")).or_else(|| declared_type(asn.get("type")));
+            let declared =
+                declared_type(company.get("type")).or_else(|| declared_type(asn.get("type")));
             quality(
-                pick_type(flag(json, "is_datacenter"), flag(json, "is_mobile"), declared),
+                pick_type(
+                    flag(json, "is_datacenter"),
+                    flag(json, "is_mobile"),
+                    declared,
+                ),
                 false,
                 text(company, "name").or_else(|| text(asn, "org")),
                 flag(json, "is_tor"),
@@ -240,7 +297,11 @@ pub fn lookup_quality(ip: &str) -> Option<Quality> {
             if in_flight == 0 {
                 break;
             }
-            let until = if wave < QUALITY_WAVES.len() { hedge } else { deadline };
+            let until = if wave < QUALITY_WAVES.len() {
+                hedge
+            } else {
+                deadline
+            };
             let now = Instant::now();
             if now >= until {
                 break;
@@ -286,7 +347,10 @@ const MIN_SCALE: f64 = 8.0 * 1024.0;
 /// quiet line low).
 pub fn sparkline(samples: &VecDeque<i64>) -> (String, String) {
     if samples.len() < 2 {
-        return ("M0 19 L100 19".into(), "M0 20 L0 19 L100 19 L100 20 Z".into());
+        return (
+            "M0 19 L100 19".into(),
+            "M0 20 L0 19 L100 19 L100 20 Z".into(),
+        );
     }
     let max = samples.iter().copied().max().unwrap_or(0).max(0) as f64;
     let scale = max.max(MIN_SCALE);
@@ -295,14 +359,22 @@ pub fn sparkline(samples: &VecDeque<i64>) -> (String, String) {
     let points: Vec<(f64, f64)> = samples
         .iter()
         .enumerate()
-        .map(|(i, v)| (start + i as f64 * step, 19.0 - (*v).max(0) as f64 / scale * 16.0))
+        .map(|(i, v)| {
+            (
+                start + i as f64 * step,
+                19.0 - (*v).max(0) as f64 / scale * 16.0,
+            )
+        })
         .collect();
     let mut line = String::new();
     for (i, (x, y)) in points.iter().enumerate() {
         line.push_str(&format!("{}{x:.1} {y:.1} ", if i == 0 { "M" } else { "L" }));
     }
     let (first, last) = (points[0].0, points[points.len() - 1].0);
-    let fill = format!("M{first:.1} 20 L{} L{last:.1} 20 Z", line.trim_start_matches('M').trim_end());
+    let fill = format!(
+        "M{first:.1} 20 L{} L{last:.1} 20 Z",
+        line.trim_start_matches('M').trim_end()
+    );
     (line.trim_end().to_string(), fill)
 }
 
@@ -343,9 +415,21 @@ mod tests {
 
     #[test]
     fn ip_sources_read() {
-        assert_eq!(parse_ip(IP_SOURCES[0], "fl=1\nip=203.0.113.42\nloc=US\n"), Some(("203.0.113.42".into(), "US".into())));
-        assert_eq!(parse_ip(IP_SOURCES[2], r#"{"ip":"1.2.3.4","country":"JP"}"#), Some(("1.2.3.4".into(), "JP".into())));
-        assert_eq!(parse_ip(IP_SOURCES[6], r#"{"ip":"1.2.3.4","location":{"country_code":"HK"}}"#), Some(("1.2.3.4".into(), "HK".into())));
+        assert_eq!(
+            parse_ip(IP_SOURCES[0], "fl=1\nip=203.0.113.42\nloc=US\n"),
+            Some(("203.0.113.42".into(), "US".into()))
+        );
+        assert_eq!(
+            parse_ip(IP_SOURCES[2], r#"{"ip":"1.2.3.4","country":"JP"}"#),
+            Some(("1.2.3.4".into(), "JP".into()))
+        );
+        assert_eq!(
+            parse_ip(
+                IP_SOURCES[6],
+                r#"{"ip":"1.2.3.4","location":{"country_code":"HK"}}"#
+            ),
+            Some(("1.2.3.4".into(), "HK".into()))
+        );
         assert_eq!(parse_ip(IP_SOURCES[1], "nope"), None);
     }
 
@@ -353,17 +437,52 @@ mod tests {
     fn quality_reads_sources() {
         let q = parse_quality("ipApiCom", "1.2.3.4", &json!({"status": "success", "org": "Example Broadband", "hosting": false, "mobile": false, "proxy": true})).unwrap();
         assert_eq!((q.kind.as_str(), q.level, q.inferred), ("住宅", 1, true));
-        let q = parse_quality("ipApiCom", "1.2.3.4", &json!({"status": "success", "org": "", "isp": "Cloud", "hosting": true})).unwrap();
-        assert_eq!((q.org.as_str(), q.kind.as_str(), q.level, q.inferred), ("Cloud", "机房", 2, false));
-        assert_eq!(parse_quality("ipApiCom", "1.2.3.4", &json!({"status": "fail"})), None);
-        let q = parse_quality("identMe", "1.2.3.4", &json!({"ip": "1.2.3.4", "type": "hosting", "aso": "CLOUDFLARENET"})).unwrap();
+        let q = parse_quality(
+            "ipApiCom",
+            "1.2.3.4",
+            &json!({"status": "success", "org": "", "isp": "Cloud", "hosting": true}),
+        )
+        .unwrap();
+        assert_eq!(
+            (q.org.as_str(), q.kind.as_str(), q.level, q.inferred),
+            ("Cloud", "机房", 2, false)
+        );
+        assert_eq!(
+            parse_quality("ipApiCom", "1.2.3.4", &json!({"status": "fail"})),
+            None
+        );
+        let q = parse_quality(
+            "identMe",
+            "1.2.3.4",
+            &json!({"ip": "1.2.3.4", "type": "hosting", "aso": "CLOUDFLARENET"}),
+        )
+        .unwrap();
         assert_eq!((q.kind.as_str(), q.level), ("机房", 2));
-        assert_eq!(parse_quality("identMe", "1.2.3.4", &json!({"ip": "9.9.9.9", "type": "hosting"})), None);
+        assert_eq!(
+            parse_quality(
+                "identMe",
+                "1.2.3.4",
+                &json!({"ip": "9.9.9.9", "type": "hosting"})
+            ),
+            None
+        );
         let q = parse_quality("ipApiIs", "1.2.3.4", &json!({"is_datacenter": false, "is_tor": true, "company": {"type": "isp", "name": "Home"}})).unwrap();
         assert_eq!((q.kind.as_str(), q.level), ("住宅", 3));
-        let q = parse_quality("proxyCheck", "1.2.3.4", &json!({"status": "ok", "1.2.3.4": {"network": {"type": "Wireless"}}})).unwrap();
+        let q = parse_quality(
+            "proxyCheck",
+            "1.2.3.4",
+            &json!({"status": "ok", "1.2.3.4": {"network": {"type": "Wireless"}}}),
+        )
+        .unwrap();
         assert_eq!(q.kind, "移动网络");
-        assert_eq!(parse_quality("ipLocate", "1.2.3.4", &json!({"privacy": {}, "company": {}})), None);
+        assert_eq!(
+            parse_quality(
+                "ipLocate",
+                "1.2.3.4",
+                &json!({"privacy": {}, "company": {}})
+            ),
+            None
+        );
     }
 
     #[test]

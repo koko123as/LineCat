@@ -12,7 +12,15 @@ pub const DELAY_RUNNING: i32 = -3;
 pub const DELAY_QUEUED: i32 = -4;
 
 /// Built-in adapters whose delay probe always fails, so a timeout says nothing.
-const UNPROBEABLE: &[&str] = &["Reject", "RejectDrop", "Pass", "PassRule", "Rematch", "Compatible", "Dns"];
+const UNPROBEABLE: &[&str] = &[
+    "Reject",
+    "RejectDrop",
+    "Pass",
+    "PassRule",
+    "Rematch",
+    "Compatible",
+    "Dns",
+];
 
 /// One group of `proxy.groups`.
 #[derive(Clone, Debug, Default)]
@@ -46,10 +54,16 @@ pub struct Groups {
 
 impl Groups {
     pub fn parse(v: &Value) -> Groups {
-        let str_of = |g: &Value, k: &str| g.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let str_of =
+            |g: &Value, k: &str| g.get(k).and_then(Value::as_str).unwrap_or("").to_string();
         let mut groups = HashMap::new();
         let mut kinds = HashMap::new();
-        for g in v.get("groups").and_then(Value::as_array).into_iter().flatten() {
+        for g in v
+            .get("groups")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             let group = Group {
                 name: str_of(g, "name"),
                 kind: str_of(g, "type"),
@@ -58,7 +72,11 @@ impl Groups {
                 all: g
                     .get("all")
                     .and_then(Value::as_array)
-                    .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default(),
                 test_url: str_of(g, "testUrl"),
                 hidden: g.get("hidden").and_then(Value::as_bool).unwrap_or(false),
@@ -66,17 +84,33 @@ impl Groups {
             kinds.insert(group.name.clone(), group.kind.clone());
             groups.insert(group.name.clone(), group);
         }
-        for n in v.get("nodes").and_then(Value::as_array).into_iter().flatten() {
-            if let (Some(name), Some(kind)) = (n.get("name").and_then(Value::as_str), n.get("type").and_then(Value::as_str)) {
+        for n in v
+            .get("nodes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let (Some(name), Some(kind)) = (
+                n.get("name").and_then(Value::as_str),
+                n.get("type").and_then(Value::as_str),
+            ) {
                 kinds.entry(name.into()).or_insert_with(|| kind.into());
             }
         }
         let order = v
             .get("order")
             .and_then(Value::as_array)
-            .map(|o| o.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            .map(|o| {
+                o.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
-        Groups { order, groups, kinds }
+        Groups {
+            order,
+            groups,
+            kinds,
+        }
     }
 
     /// The groups the page lists in a mode: Global only GLOBAL, Rule every visible group
@@ -88,7 +122,13 @@ impl Groups {
         self.order
             .iter()
             .filter_map(|n| self.groups.get(n))
-            .filter(|g| if mode == 1 { g.name == "GLOBAL" } else { g.name != "GLOBAL" && !g.hidden })
+            .filter(|g| {
+                if mode == 1 {
+                    g.name == "GLOBAL"
+                } else {
+                    g.name != "GLOBAL" && !g.hidden
+                }
+            })
             .collect()
     }
 
@@ -107,14 +147,20 @@ impl Groups {
     }
 
     pub fn test_url(&self, group: &str) -> String {
-        self.groups.get(group).map(|g| g.test_url.clone()).filter(|u| !u.is_empty()).unwrap_or_else(|| crate::profile::DEFAULT_TEST_URL.to_string())
+        self.groups
+            .get(group)
+            .map(|g| g.test_url.clone())
+            .filter(|u| !u.is_empty())
+            .unwrap_or_else(|| crate::profile::DEFAULT_TEST_URL.to_string())
     }
 }
 
 /// `SearchQuery.matches`: every word, case-insensitive.
 pub fn matches(query: &str, name: &str) -> bool {
     let name = name.to_lowercase();
-    query.split_whitespace().all(|w| name.contains(&w.to_lowercase()))
+    query
+        .split_whitespace()
+        .all(|w| name.contains(&w.to_lowercase()))
 }
 
 fn priority(delay: i32) -> i32 {
@@ -153,7 +199,11 @@ impl View<'_> {
         let searching = !self.query.trim().is_empty();
         let mut out = Vec::new();
         for g in self.groups.visible(self.mode) {
-            let mut names: Vec<&String> = g.all.iter().filter(|n| !searching || matches(self.query, n)).collect();
+            let mut names: Vec<&String> = g
+                .all
+                .iter()
+                .filter(|n| !searching || matches(self.query, n))
+                .collect();
             if searching && names.is_empty() {
                 continue;
             }
@@ -181,7 +231,11 @@ impl View<'_> {
                     let is_group = self.groups.groups.contains_key(*n);
                     let real = self.groups.real(n);
                     // `_ProxyDesc`: a group names the proxy it stands for.
-                    let desc = if is_group && !real.is_empty() && &real != *n { format!("{kind}({real})") } else { kind };
+                    let desc = if is_group && !real.is_empty() && &real != *n {
+                        format!("{kind}({real})")
+                    } else {
+                        kind
+                    };
                     NodeItem {
                         name: n.as_str().into(),
                         kind: desc.into(),
@@ -195,7 +249,12 @@ impl View<'_> {
             out.push(ProxyGroup {
                 name: g.name.as_str().into(),
                 kind: g.kind.as_str().into(),
-                now: if g.computed() { g.now.as_str() } else { g.now.as_str() }.into(),
+                now: if g.computed() {
+                    g.now.as_str()
+                } else {
+                    g.now.as_str()
+                }
+                .into(),
                 count: g.all.len() as i32,
                 monogram: first.into(),
                 expanded: self.style.unfold.iter().any(|u| u == &g.name),
@@ -210,7 +269,9 @@ impl View<'_> {
 /// The proxies a group's delay test measures: its nodes (only the ones the search shows),
 /// each as the proxy it stands for, once.
 pub fn targets(groups: &Groups, group: &str, query: &str) -> Vec<String> {
-    let Some(g) = groups.groups.get(group) else { return vec![] };
+    let Some(g) = groups.groups.get(group) else {
+        return vec![];
+    };
     let mut seen = HashSet::new();
     g.all
         .iter()
@@ -251,8 +312,23 @@ mod tests {
         }))
     }
 
-    fn view<'a>(g: &'a Groups, d: &'a HashMap<String, i32>, s: &'a ProxiesStyle, q: &'a str, t: &'a HashSet<String>) -> Vec<ProxyGroup> {
-        View { groups: g, mode: 0, delays: d, sorted_by: d, style: s, query: q, testing: t }.build()
+    fn view<'a>(
+        g: &'a Groups,
+        d: &'a HashMap<String, i32>,
+        s: &'a ProxiesStyle,
+        q: &'a str,
+        t: &'a HashSet<String>,
+    ) -> Vec<ProxyGroup> {
+        View {
+            groups: g,
+            mode: 0,
+            delays: d,
+            sorted_by: d,
+            style: s,
+            query: q,
+            testing: t,
+        }
+        .build()
     }
 
     fn names(g: &ProxyGroup) -> Vec<String> {
@@ -263,7 +339,12 @@ mod tests {
     #[test]
     fn groups_follow_the_mode() {
         let g = sample();
-        let names = |m| g.visible(m).iter().map(|x| x.name.clone()).collect::<Vec<_>>();
+        let names = |m| {
+            g.visible(m)
+                .iter()
+                .map(|x| x.name.clone())
+                .collect::<Vec<_>>()
+        };
         assert_eq!(names(0), ["节点选择", "自动"]);
         assert_eq!(names(1), ["GLOBAL"]);
         assert!(names(2).is_empty());
@@ -292,9 +373,16 @@ mod tests {
     #[test]
     fn search_sort_and_hide() {
         let g = sample();
-        let d = HashMap::from([("香港".to_string(), 300), ("日本".to_string(), 80), ("美国".to_string(), -1)]);
+        let d = HashMap::from([
+            ("香港".to_string(), 300),
+            ("日本".to_string(), 80),
+            ("美国".to_string(), -1),
+        ]);
         let t = HashSet::new();
-        let mut s = ProxiesStyle { sort: 1, ..Default::default() };
+        let mut s = ProxiesStyle {
+            sort: 1,
+            ..Default::default()
+        };
         let v = view(&g, &d, &s, "", &t);
         assert_eq!(names(&v[0]), ["自动", "日本", "香港", "美国"]);
         s.sort = 2;
