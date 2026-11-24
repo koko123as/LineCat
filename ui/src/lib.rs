@@ -599,7 +599,7 @@ impl App {
                 return;
             }
             app.ui(move |ui| {
-                let (org, kind, level) = quality.unwrap_or_else(|| (String::new(), "类型未知".into(), 0));
+                let (org, kind, level) = quality.map(|q| (q.org, q.kind, q.level)).unwrap_or_else(|| (String::new(), "类型未知".into(), 0));
                 ui.set_dash_status(DashStatus {
                     ip: ip.into(),
                     country: cc.into(),

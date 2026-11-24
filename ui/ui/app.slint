@@ -521,7 +521,7 @@ component StatusCard inherits DashCard {
                         if root.status.kind != "": Chip { text: root.status.kind; }
                         if root.status.quality > 0: Chip {
                             text: root.status.quality == 1 ? "质量 优" : root.status.quality == 2 ? "质量 普通" : "质量 风险";
-                            tone: root.status.quality == 1 ? Theme.success : root.status.quality == 2 ? Theme.warning : Theme.s.error;
+                            tone: root.status.quality == 1 ? Theme.success : root.status.quality == 2 ? Theme.s.on-surface-variant : Theme.s.error;
                         }
                     }
                 }
@@ -606,12 +606,14 @@ component SpeedTile inherits Rectangle {
         }
         HorizontalLayout {
             spacing: 4px;
-            alignment: start;
-            Text { text: root.upload ? root.traffic.up-value : root.traffic.down-value; font-size: 28px; font-weight: 700; color: Theme.s.on-surface; }
+            // Device fonts can draw bold digits wider than they measure, so
+            // the value gets slack and the unit takes the rest of the row.
+            Text { text: root.upload ? root.traffic.up-value : root.traffic.down-value; font-size: 28px; font-weight: 700; color: Theme.s.on-surface; min-width: self.preferred-width + 12px; }
             VerticalLayout {
                 alignment: end;
                 padding-bottom: 5px;
-                Text { text: root.upload ? root.traffic.up-unit : root.traffic.down-unit; font-size: 12px; font-weight: 600; color: Theme.s.on-surface-variant; }
+                horizontal-stretch: 1;
+                Text { text: root.upload ? root.traffic.up-unit : root.traffic.down-unit; font-size: 12px; font-weight: 600; color: Theme.s.on-surface-variant; min-width: self.preferred-width + 6px; }
             }
         }
         Text { text: root.upload ? root.traffic.up-total : root.traffic.down-total; font-size: 12px; color: Theme.s.on-surface-variant; }

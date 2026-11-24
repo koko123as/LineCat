@@ -52,42 +52,217 @@ pub fn parse_ip(url: &str, body: &str) -> Option<(String, String)> {
     Some((ip, cc))
 }
 
-/// What `_fromIpApiCom` reads from ip-api.com: the organization, the type and
-/// the quality level (0 unknown, 1 good, 2 normal, 3 risky).
-pub fn parse_quality(json: &Value) -> Option<(String, String, i32)> {
-    if json.get("status").and_then(Value::as_str) != Some("success") {
-        return None;
+/// `IpType`'s label (`ipTypeResidential` ...).
+fn type_label(kind: &str) -> &'static str {
+    match kind {
+        "residential" => "住宅",
+        "mobile" => "移动网络",
+        "business" => "商业",
+        "hosting" => "机房",
+        _ => "类型未知",
     }
-    let flag = |k: &str| json.get(k).and_then(Value::as_bool).unwrap_or(false);
-    let org = json
-        .get("org")
-        .and_then(Value::as_str)
-        .filter(|s| !s.trim().is_empty())
-        .or_else(|| json.get("isp").and_then(Value::as_str))
-        .unwrap_or("")
-        .to_string();
-    // `_pickType`: hosting before mobile, else a home line.
-    let (kind, level) = if flag("hosting") {
-        ("机房", 2)
-    } else if flag("mobile") {
-        ("移动网络", 1)
-    } else {
-        ("住宅", 1)
-    };
-    let level = if flag("proxy") && level == 1 { 2 } else { level };
-    Some((org, kind.to_string(), level))
 }
 
-/// `lookupIpQuality`'s ip-api.com wave, asked directly.
-pub fn lookup_quality(ip: &str) -> Option<(String, String, i32)> {
+/// `_declaredType`.
+fn declared_type(value: Option<&Value>) -> Option<&'static str> {
+    match value?.as_str()? {
+        "isp" => Some("residential"),
+        "business" | "education" | "government" | "banking" => Some("business"),
+        "hosting" => Some("hosting"),
+        _ => None,
+    }
+}
+
+/// `_pickType`: hosting first, then mobile, then what the source declared.
+fn pick_type(hosting: bool, mobile: bool, declared: Option<&'static str>) -> Option<&'static str> {
+    if hosting || declared == Some("hosting") {
+        Some("hosting")
+    } else if mobile {
+        Some("mobile")
+    } else {
+        declared
+    }
+}
+
+/// One source's answer: organization, type label, level (1 good, 2 normal, 3 risky),
+/// and whether the type was only inferred (silence taken as residential).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Quality {
+    pub org: String,
+    pub kind: String,
+    pub level: i32,
+    pub inferred: bool,
+}
+
+/// `IpQualityExt.level`: Tor or an abuser is risky, hosting is normal, the rest good.
+fn quality(kind: Option<&'static str>, inferred: bool, org: Option<String>, tor: bool, abuser: bool) -> Option<Quality> {
+    let kind = kind?;
+    let level = if tor || abuser {
+        3
+    } else if kind == "hosting" {
+        2
+    } else {
+        1
+    };
+    Some(Quality { org: org.unwrap_or_default(), kind: type_label(kind).into(), level, inferred })
+}
+
+fn obj<'a>(json: &'a Value, key: &str) -> &'a Value {
+    json.get(key).filter(|v| v.is_object()).unwrap_or(&Value::Null)
+}
+fn flag(json: &Value, key: &str) -> bool {
+    json.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+fn text(json: &Value, key: &str) -> Option<String> {
+    json.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()).map(String::from)
+}
+
+/// `lookupIpQuality`'s sources, in `_waves` order.
+pub const QUALITY_WAVES: &[&[&str]] = &[&["identMe", "ipApiCom", "ipQuery"], &["ipLocate"], &["ipApiIs"], &["proxyCheck"]];
+
+fn quality_url(source: &str, ip: &str) -> String {
+    match source {
+        "identMe" => "https://ident.me/json".into(),
+        // ip-api.com serves HTTPS only on its paid plan.
+        "ipApiCom" => format!("http://ip-api.com/json/{ip}?fields=status,isp,org,as,mobile,proxy,hosting"),
+        "ipQuery" => format!("https://api.ipquery.io/{ip}?format=json"),
+        "ipLocate" => format!("https://iplocate.io/api/lookup/{ip}"),
+        "proxyCheck" => format!("https://proxycheck.io/v3/{ip}"),
+        _ => format!("https://api.ipapi.is/?q={ip}"),
+    }
+}
+
+/// `_parse`: what each source says about `ip`; None when it states no type or fails.
+pub fn parse_quality(source: &str, ip: &str, json: &Value) -> Option<Quality> {
+    match source {
+        "identMe" => {
+            if json.get("ip").and_then(Value::as_str) != Some(ip) {
+                return None;
+            }
+            quality(declared_type(json.get("type")), false, text(json, "aso"), false, false)
+        }
+        "ipApiCom" => {
+            if json.get("status").and_then(Value::as_str) != Some("success") {
+                return None;
+            }
+            let t = pick_type(flag(json, "hosting"), flag(json, "mobile"), None);
+            quality(Some(t.unwrap_or("residential")), t.is_none(), text(json, "org").or_else(|| text(json, "isp")), false, false)
+        }
+        "ipQuery" => {
+            let (risk, isp) = (obj(json, "risk"), obj(json, "isp"));
+            let t = pick_type(flag(risk, "is_datacenter"), flag(risk, "is_mobile"), None);
+            quality(Some(t.unwrap_or("residential")), t.is_none(), text(isp, "org").or_else(|| text(isp, "isp")), flag(risk, "is_tor"), false)
+        }
+        "ipLocate" => {
+            let (privacy, company, asn) = (obj(json, "privacy"), obj(json, "company"), obj(json, "asn"));
+            let declared = declared_type(company.get("type")).or_else(|| declared_type(asn.get("type")));
+            quality(
+                pick_type(flag(privacy, "is_hosting"), false, declared),
+                false,
+                text(company, "name").or_else(|| text(asn, "name")),
+                flag(privacy, "is_tor"),
+                flag(privacy, "is_abuser"),
+            )
+        }
+        "proxyCheck" => {
+            let status = json.get("status").and_then(Value::as_str);
+            if status != Some("ok") && status != Some("warning") {
+                return None;
+            }
+            let result = obj(json, ip);
+            let (network, detections) = (obj(result, "network"), obj(result, "detections"));
+            let nt = network.get("type").and_then(Value::as_str);
+            let declared = match nt {
+                Some("Residential") => Some("residential"),
+                Some("Business") => Some("business"),
+                _ => None,
+            };
+            quality(
+                pick_type(flag(detections, "hosting") || nt == Some("Hosting"), nt == Some("Wireless"), declared),
+                false,
+                text(network, "organisation"),
+                flag(detections, "tor"),
+                false,
+            )
+        }
+        _ => {
+            let (company, asn) = (obj(json, "company"), obj(json, "asn"));
+            let declared = declared_type(company.get("type")).or_else(|| declared_type(asn.get("type")));
+            quality(
+                pick_type(flag(json, "is_datacenter"), flag(json, "is_mobile"), declared),
+                false,
+                text(company, "name").or_else(|| text(asn, "org")),
+                flag(json, "is_tor"),
+                flag(json, "is_abuser"),
+            )
+        }
+    }
+}
+
+/// `lookupIpQuality`: asks the sources wave by wave (a later wave starts after a
+/// one-second hedge or once the earlier ones have all answered). The first stated type
+/// wins; an inferred one only stands in when no source states a type.
+pub fn lookup_quality(ip: &str) -> Option<Quality> {
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
     let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(std::time::Duration::from_secs(8)))
+        .timeout_global(Some(Duration::from_secs(8)))
+        .http_status_as_error(false)
         .build()
         .into();
-    // ip-api.com serves HTTPS only on its paid plan.
-    let url = format!("http://ip-api.com/json/{ip}?fields=status,isp,org,as,mobile,proxy,hosting");
-    let body = agent.get(&url).call().ok()?.body_mut().read_to_string().ok()?;
-    parse_quality(&serde_json::from_str(&body).ok()?)
+    let (tx, rx) = mpsc::channel::<Option<Quality>>();
+    let mut fallback: Option<Quality> = None;
+    let mut in_flight = 0usize;
+    let mut wave = 0usize;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if wave < QUALITY_WAVES.len() {
+            for source in QUALITY_WAVES[wave] {
+                let (tx, agent, ip) = (tx.clone(), agent.clone(), ip.to_string());
+                in_flight += 1;
+                std::thread::spawn(move || {
+                    let answer = (|| {
+                        let mut res = agent.get(&quality_url(source, &ip)).call().ok()?;
+                        if res.status() != 200 {
+                            return None;
+                        }
+                        let body = res.body_mut().read_to_string().ok()?;
+                        parse_quality(source, &ip, &serde_json::from_str(&body).ok()?)
+                    })();
+                    let _ = tx.send(answer);
+                });
+            }
+            wave += 1;
+        }
+        let hedge = Instant::now() + Duration::from_secs(1);
+        // Wait for answers until the hedge passes (with waves left) or none are out.
+        loop {
+            if in_flight == 0 {
+                break;
+            }
+            let until = if wave < QUALITY_WAVES.len() { hedge } else { deadline };
+            let now = Instant::now();
+            if now >= until {
+                break;
+            }
+            match rx.recv_timeout(until - now) {
+                Ok(answer) => {
+                    in_flight -= 1;
+                    match answer {
+                        Some(q) if !q.inferred => return Some(q),
+                        Some(q) => {
+                            fallback.get_or_insert(q);
+                        }
+                        None => {}
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        if wave >= QUALITY_WAVES.len() && (in_flight == 0 || Instant::now() >= deadline) {
+            return fallback;
+        }
+    }
 }
 
 /// "50.6 KB/s" as its figure and its unit.
@@ -175,12 +350,20 @@ mod tests {
     }
 
     #[test]
-    fn quality_reads_ip_api() {
-        let q = parse_quality(&json!({"status": "success", "org": "Example Broadband", "hosting": false, "mobile": false, "proxy": false}));
-        assert_eq!(q, Some(("Example Broadband".into(), "住宅".into(), 1)));
-        let q = parse_quality(&json!({"status": "success", "org": "", "isp": "Cloud", "hosting": true}));
-        assert_eq!(q, Some(("Cloud".into(), "机房".into(), 2)));
-        assert_eq!(parse_quality(&json!({"status": "fail"})), None);
+    fn quality_reads_sources() {
+        let q = parse_quality("ipApiCom", "1.2.3.4", &json!({"status": "success", "org": "Example Broadband", "hosting": false, "mobile": false, "proxy": true})).unwrap();
+        assert_eq!((q.kind.as_str(), q.level, q.inferred), ("住宅", 1, true));
+        let q = parse_quality("ipApiCom", "1.2.3.4", &json!({"status": "success", "org": "", "isp": "Cloud", "hosting": true})).unwrap();
+        assert_eq!((q.org.as_str(), q.kind.as_str(), q.level, q.inferred), ("Cloud", "机房", 2, false));
+        assert_eq!(parse_quality("ipApiCom", "1.2.3.4", &json!({"status": "fail"})), None);
+        let q = parse_quality("identMe", "1.2.3.4", &json!({"ip": "1.2.3.4", "type": "hosting", "aso": "CLOUDFLARENET"})).unwrap();
+        assert_eq!((q.kind.as_str(), q.level), ("机房", 2));
+        assert_eq!(parse_quality("identMe", "1.2.3.4", &json!({"ip": "9.9.9.9", "type": "hosting"})), None);
+        let q = parse_quality("ipApiIs", "1.2.3.4", &json!({"is_datacenter": false, "is_tor": true, "company": {"type": "isp", "name": "Home"}})).unwrap();
+        assert_eq!((q.kind.as_str(), q.level), ("住宅", 3));
+        let q = parse_quality("proxyCheck", "1.2.3.4", &json!({"status": "ok", "1.2.3.4": {"network": {"type": "Wireless"}}})).unwrap();
+        assert_eq!(q.kind, "移动网络");
+        assert_eq!(parse_quality("ipLocate", "1.2.3.4", &json!({"privacy": {}, "company": {}})), None);
     }
 
     #[test]
