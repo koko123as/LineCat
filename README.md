@@ -1,138 +1,44 @@
 <div align="center">
 
-<img src="assets/images/icon.png" alt="FlClash" width="88">
+<img src="assets/images/icon.png" alt="SeasonCat" width="96">
 
-# FlClash
+# SeasonCat
 
-A multi-platform proxy client based on the Concord core. Simple to use, open source and ad-free.
+基于 Concord 内核的安卓代理客户端，界面简洁、占用内存少，开源无广告。
 
-**English** · [简体中文](README_zh_CN.md)
-
-[![Release](https://img.shields.io/github/v/release/chen08209/FlClash?style=flat-square&label=release)](https://github.com/chen08209/FlClash/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/chen08209/FlClash/total?style=flat-square&logo=github)](https://github.com/chen08209/FlClash/releases)
-[![License](https://img.shields.io/github/license/chen08209/FlClash?style=flat-square)](LICENSE)
-[![Telegram](https://img.shields.io/badge/Telegram-channel-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/FlClash)
-
-[Website](https://chen08209.github.io/FlClash) · [Download](#download) · [Changelog](CHANGELOG.md) · [Build from source](#build-from-source)
+[English](#english)
 
 </div>
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="snapshots/preview-dark.png">
-    <img alt="FlClash dashboard on a MacBook and a phone" src="snapshots/preview.png" width="92%">
-  </picture>
-</p>
+## 简介
 
-## Features
+SeasonCat（包名 `season.us.ci.cat`）是 [FlClash](https://github.com/chen08209/FlClash) 的衍生项目：
 
-- **One app for Android, Windows, macOS and Linux**, with x64 and ARM64 builds on the desktop.
-- **Concord core** with rule routing, proxy groups, latency tests, system proxy and TUN mode.
-- **Profiles** from a subscription link or a file, with a built-in editor, override scripts, and custom rules,
-  proxies and proxy groups.
-- **Live views** of connections, requests, DNS queries and logs.
-- **Material You design with Apple-style interaction**: dynamic color, light and dark themes, continuous corners,
-  sheets that snap between heights, and layouts that adapt from phones to desktops.
-- **Backup and restore** through WebDAV or a local file.
-- **Platform touches**: a Quick Settings tile, per-app proxy and Android TV support on Android; a tray menu and
-  global hotkeys on the desktop.
-- **Open source and ad-free**, licensed under GPL-3.0.
+- **引用 FlClash**：代码基于 FlClash v0.9.5-rs.1（[chen08209/FlClash@bdf83ca](https://github.com/chen08209/FlClash/commit/bdf83ca)），保留其 Kotlin VPN 服务、内核接入和配置逻辑。感谢 FlClash 作者和贡献者。
+- **内核**：[Concord](https://github.com/chen08209/concord)（Rust），支持规则分流、代理组、延迟测试和 TUN 模式。
+- **界面用 Slint**：用 [Slint](https://slint.dev) 重写界面，扁平、无毛玻璃，主题色与 FlClash 一致（默认 `#007AFF`，另有 7 种强调色），支持浅色和深色。
 
-## Download
+## 状态
 
-Get the latest build from [GitHub Releases](https://github.com/chen08209/FlClash/releases/latest), or open the
-[website](https://chen08209.github.io/FlClash#download), which picks the right file for your device.
+- Slint 界面正在 `slint-ui` 分支开发，第一版包含仪表盘、配置、代理、日志和设置。
+- `main` 分支目前仍是改名后的 FlClash（Flutter）界面，Slint 版稳定后合入。
+- 先支持安卓 arm64，桌面端以后再说。
 
-| Platform | Packages | Notes |
-| --- | --- | --- |
-| Android | APK for `arm64` (arm64-v8a), `armv7` (armeabi-v7a) and `amd64` (x86_64) | Most phones use `arm64`. Also on the F-Droid repository below. |
-| Windows 10 and later | Installer (`.exe`) or portable `.zip`, for x64 and ARM64 | Pick ARM64 on Snapdragon and other ARM laptops. |
-| macOS 12 and later | DMG for Apple Silicon and Intel | Also on Homebrew. |
-| Linux | `.deb`, `.rpm` and AppImage, for x64 and ARM64 | See the tray note below. |
+## 架构
 
-<p>
-  <a href="https://chen08209.github.io/FlClash-fdroid-repo/repo?fingerprint=789D6D32668712EF7672F9E58DEEB15FBD6DCEEC5AE7A4371EA72F2AAE8A12FD"><img alt="Get it on F-Droid" src="snapshots/get-it-on-fdroid.svg" height="56"></a>
-  <a href="https://github.com/chen08209/FlClash/releases/latest"><img alt="Get it on GitHub" src="snapshots/get-it-on-github.svg" height="56"></a>
-</p>
+- Kotlin 薄壳（`NativeActivity`）负责 VPN 授权和启停，复用 FlClash 的 VPN 服务。
+- Rust + Slint 界面通过本地 socket 与壳和内核通信，Rust 代码不直接调用 JNI。
 
-**Homebrew**
+## 许可证
 
-```bash
-brew tap chen08209/tap
-brew install --cask flclash
-```
+GPL-3.0-or-later，与 FlClash 相同，见 [LICENSE](LICENSE)。Slint 按其 GPLv3 授权使用。
 
-**Linux tray icon**
+---
 
-The tray icon is a StatusNotifierItem. KDE Plasma, XFCE and most panels show it as is; GNOME needs the
-AppIndicator and KStatusNotifierItem Support extension.
+## English
 
-**Unattended desktop**
-
-FlClash starts the core only after the disclaimer is accepted. Where nobody can click it, such as a container, set
-`FLCLASH_ACCEPT_DISCLAIMER=1` in the app's environment to accept it on first launch.
-
-## Usage
-
-**Import a profile from a link.** Opening a link in this form imports the subscription into FlClash. The `clashmeta://`
-and `flclash://` schemes work the same way.
-
-```text
-clash://install-config?url=<URL-encoded subscription link>
-```
-
-**Automate on Android.** Tasker, MacroDroid and similar apps can start, stop or toggle the proxy by starting an
-activity with one of these actions:
-
-```text
-com.follow.clash.action.START
-com.follow.clash.action.STOP
-com.follow.clash.action.TOGGLE
-```
-
-From a computer, the same works over adb:
-
-```bash
-adb shell am start -a com.follow.clash.action.TOGGLE
-```
-
-## Build from source
-
-You need [Flutter](https://docs.flutter.dev/get-started/install) 3.50 (release builds use 3.50.1),
-[Go](https://go.dev/dl/) 1.27 and [Rust](https://rustup.rs/) installed through rustup. Each platform builds on its own
-host, except Android, which builds anywhere.
-
-```bash
-git clone --recursive https://github.com/chen08209/FlClash.git
-cd FlClash
-flutter pub get
-dart run tool/package.dart android   # or windows, macos, linux
-```
-
-Packages land in `dist/`. The Go core and the Rust libraries are compiled as part of the Flutter build.
-
-| Platform | Also needed |
-| --- | --- |
-| Android | Android SDK with the NDK. Add `--arch arm64` to build a single ABI. |
-| Windows | GCC (MinGW-w64) for the core and [Inno Setup](https://jrsoftware.org/isinfo.php) 6 for the installer. |
-| macOS | Xcode and Node.js. The script installs `appdmg` through npm. |
-| Linux | Debian or Ubuntu. The script installs the build packages with apt and downloads `appimagetool`. |
-
-Run `dart run tool/package.dart --help` for the remaining options, such as `--targets` to build only some package formats or `--dry-run` to list the files a run would write.
-
-## Support
-
-Starring the repository is the easiest way to support the project. Questions and announcements go to the
-[Telegram channel](https://t.me/FlClash); bugs and feature requests go to
-[GitHub Issues](https://github.com/chen08209/FlClash/issues).
-
-<a href="https://star-history.com/#chen08209/FlClash&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=chen08209/FlClash&type=Date&theme=dark">
-    <img alt="Star history" src="https://api.star-history.com/svg?repos=chen08209/FlClash&type=Date" width="640">
-  </picture>
-</a>
-
-## License
-
-FlClash is released under the [GPL-3.0 license](LICENSE).
+SeasonCat is an Android proxy client derived from [FlClash](https://github.com/chen08209/FlClash)
+(v0.9.5-rs.1, chen08209/FlClash@bdf83ca), using the [Concord](https://github.com/chen08209/concord) core.
+The UI is being rewritten in [Slint](https://slint.dev) on the `slint-ui` branch: flat, simple, low memory,
+with FlClash's theme colors. `main` still carries the rebranded Flutter UI for now.
+Licensed under GPL-3.0-or-later, like FlClash.
