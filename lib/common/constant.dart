@@ -9,16 +9,16 @@ import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:flutter/widgets.dart';
 
-const appName = 'FlClash';
+const appName = 'SeasonCat';
 
 /// What the system shows for the installed package, as the packaging files
 /// name it.
-const packageDisplayName = rsSideBySide ? 'FlClash RS' : appName;
+const packageDisplayName = appName;
 
 /// Keeps registrations and backups apart from a FlClash install beside it:
 /// the autostart entry, whose Windows Run value the installer reads under
 /// [packageDisplayName] (value names ignore case), and the WebDAV backup root.
-const sideBySideName = rsSideBySide ? 'FlClash rs' : appName;
+const sideBySideName = appName;
 const _appSlug = rsSideBySide ? 'flclash-rs' : 'flclash';
 
 /// The status card's glow while su is granted stays off until the card shows
@@ -174,7 +174,7 @@ const systemDnsRecordKey = 'system_dns_record';
 const bootRecordKey = 'boot_record';
 const appliedConfigMd5Key = 'applied_config_md5';
 const hostCredentialKey = 'host_credential';
-const repository = 'chen08209/FlClash';
+const repository = 'koko123as/LineCat';
 const maxMobileWidth = 600;
 const maxLaptopWidth = 840;
 const defaultTestUrl = 'https://www.gstatic.com/generate_204';
