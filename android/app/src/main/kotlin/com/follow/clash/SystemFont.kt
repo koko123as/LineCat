@@ -17,7 +17,7 @@ import org.xmlpull.v1.XmlPullParser
 object SystemFont {
     private const val LATIN = "Aa"
     private const val HAN = "中文"
-    private val WEIGHTS = intArrayOf(400, 500, 600, 700)
+    private val WEIGHTS = listOf(400, 500, 600, 700)
 
     fun export(context: Context) {
         val files = runCatching {
