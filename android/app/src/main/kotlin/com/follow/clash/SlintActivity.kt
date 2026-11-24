@@ -19,6 +19,21 @@ class SlintActivity : NativeActivity() {
     private var vpnCallback: ((Boolean) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val crash = java.io.File(filesDir, "crash.txt")
+        if (crash.exists()) {
+            // Diagnostic: show why the last start failed (in its own process), so it can be reported without adb.
+            val text = runCatching { crash.readText() }.getOrDefault("")
+            crash.delete()
+            startActivity(Intent(this, CrashActivity::class.java).putExtra("text", text))
+            super.onCreate(savedInstanceState)
+            finish()
+            return
+        }
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            runCatching { crash.writeText("java crash in ${t.name}:\n" + android.util.Log.getStackTraceString(e)) }
+            previous?.uncaughtException(t, e)
+        }
         // The bridge listens before the native thread starts and connects to it.
         UiBridge.start(applicationContext)
         UiBridge.activity = this

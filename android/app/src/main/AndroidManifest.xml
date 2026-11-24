@@ -73,6 +73,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".CrashActivity"
+            android:exported="false"
+            android:process=":crash"
+            android:theme="@android:style/Theme.Material.Light" />
+
         <!-- The Slint UI: libseasoncat_ui.so renders into this NativeActivity. -->
         <activity
             android:name=".SlintActivity"

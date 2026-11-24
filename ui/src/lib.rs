@@ -31,12 +31,21 @@ fn android_main(app: slint::android::AndroidApp) {
     let files = app
         .internal_data_path()
         .unwrap_or_else(|| PathBuf::from("/data/data/season.us.ci.cat/files"));
+    let crash = files.join("crash.txt");
+    let hook_path = crash.clone();
+    std::panic::set_hook(Box::new(move |info| {
+        let bt = std::backtrace::Backtrace::force_capture();
+        let _ = std::fs::write(&hook_path, format!("native panic: {info}\n{bt}"));
+    }));
+    let fail = |what: String| {
+        let _ = std::fs::write(&crash, what);
+    };
     if let Err(e) = slint::android::init(app) {
-        eprintln!("seasoncat: slint init failed: {e:?}");
+        fail(format!("slint init failed: {e:?}"));
         return;
     }
     if let Err(e) = run(files) {
-        eprintln!("seasoncat: {e}");
+        fail(format!("run failed: {e}"));
     }
 }
 
