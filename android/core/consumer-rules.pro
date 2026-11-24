@@ -1,0 +1,3 @@
+-keep class com.follow.clash.core.mobile.** { *; }
+-keep class com.follow.clash.core.FrameReceiver { *; }
+-keep class com.follow.clash.core.PlatformHost { *; }

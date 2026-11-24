@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Logo glyph: two bars and a dot on a 30° lattice, pitch 61.76, radius 23.16.
+     The Android notification drawables ic.xml and ic_service.xml carry the same geometry as fill paths. -->
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+  <title>glyph</title>
+  <defs>
+    <linearGradient id="fill" x1="39.74" y1="133.16" x2="213.42" y2="35.79" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C66D8"/>
+      <stop offset="0.25" stop-color="#9A6AD4"/>
+      <stop offset="0.5" stop-color="#BF67C8"/>
+      <stop offset="0.75" stop-color="#EA7EA4"/>
+      <stop offset="1" stop-color="#FEA27C"/>
+    </linearGradient>
+  </defs>
+  <g stroke="url(#fill)" stroke-width="46.32" stroke-linecap="round">
+    <line x1="59.68" y1="100.95" x2="180.02" y2="31.47"/>
+    <line x1="90.56" y1="154.43" x2="150.74" y2="119.69"/>
+  </g>
+  <circle cx="121.44" cy="207.92" r="23.16" fill="url(#fill)"/>
+</svg>

@@ -1,0 +1,21 @@
+display_name: FlClash RS
+
+icon: ./assets/images/icon.png
+
+supported_mime_type:
+  - x-scheme-handler/clash
+  - x-scheme-handler/clashmeta
+  - x-scheme-handler/flclash
+
+keywords:
+  - FlClash
+  - Clash
+  - Concord
+  - Proxy
+
+generic_name: FlClash RS
+
+categories:
+  - Network
+
+startup_notify: true
