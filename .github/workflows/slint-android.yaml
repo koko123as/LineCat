@@ -16,6 +16,13 @@ concurrency:
 env:
   FLUTTER_VERSION: '3.50.1'
   NDK_VERSION: r28c
+  # The UI library is built with its own NDK. skia-bindings 0.157.0 (Slint's Android renderer)
+  # ships prebuilt Skia compiled with NDK r30's clang (r574158c), whose libc++ headers call
+  # std::__ndk1::__hash_memory. Only r30's libc++_static.a defines it; linked against r28c's,
+  # the symbol stayed undefined and libseasoncat_ui.so failed at dlopen. Keep this in step
+  # with the NDK skia-binaries was built with when skia-bindings is updated.
+  UI_NDK_VERSION: r30
+  ANDROID_MIN_SDK: '24'
   CARGO_NDK_VERSION: 4.1.2
   CA_BUNDLE: cacert-2026-09-25.pem
   CA_BUNDLE_SHA256: a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505
@@ -52,6 +59,13 @@ jobs:
           ndk-version: ${{ env.NDK_VERSION }}
           link-to-sdk: true
 
+      - name: Setup NDK for the UI library
+        uses: nttld/setup-ndk@v1
+        id: ui-ndk
+        with:
+          ndk-version: ${{ env.UI_NDK_VERSION }}
+          link-to-sdk: false
+
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -76,7 +90,7 @@ jobs:
       - name: Build libseasoncat_ui.so (arm64-v8a)
         working-directory: ui
         env:
-          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.ui-ndk.outputs.ndk-path }}
         run: |
           rustup target add aarch64-linux-android
           # Slint's backend compiles a Java helper against android.jar and dexes it with d8.
@@ -87,9 +101,22 @@ jobs:
           export ANDROID_JAR="$ANDROID_HOME/platforms/android-36/android.jar"
           export ANDROID_BUILD_TOOLS_VERSION=36.0.0
           ls -l "$ANDROID_JAR" "$ANDROID_HOME/build-tools/36.0.0/lib/d8.jar"
-          cargo ndk -t arm64-v8a --platform 24 -o ../android/app/src/main/jniLibs build --release --locked
+          grep -H 'Pkg.Revision' "$ANDROID_NDK_HOME/source.properties"
+          cargo ndk -t arm64-v8a --platform "$ANDROID_MIN_SDK" -o ../android/app/src/main/jniLibs build --release --locked
           ls -l ../android/app/src/main/jniLibs/arm64-v8a/
           echo "libseasoncat_ui.so: $(stat -c %s ../android/app/src/main/jniLibs/arm64-v8a/libseasoncat_ui.so) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      # Every strong undefined symbol must come from a library in DT_NEEDED, so a missing
+      # one fails here rather than at dlopen on a phone.
+      - name: Check libseasoncat_ui.so for unresolved symbols
+        env:
+          SYSROOT_LIB: ${{ steps.ui-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android
+        run: |
+          python3 -m venv "$RUNNER_TEMP/elfcheck"
+          "$RUNNER_TEMP/elfcheck/bin/pip" install --quiet pyelftools==0.33
+          echo "ELFCHECK_PY=$RUNNER_TEMP/elfcheck/bin/python" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/elfcheck/bin/python" ui/tools/check_so_symbols.py --sysroot-lib "$SYSROOT_LIB" --api "$ANDROID_MIN_SDK" \
+            android/app/src/main/jniLibs/arm64-v8a/libseasoncat_ui.so
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -131,6 +158,12 @@ jobs:
           apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           unzip -l "$apk" | grep -E 'lib/arm64-v8a/lib(seasoncat_ui|core_jni|concord)\.so'
           unzip -l "$apk" | grep -q 'lib/arm64-v8a/libseasoncat_ui.so'
+          # Check the copy packaged in the APK too, against the libraries packaged beside it.
+          rm -rf apk-libs && unzip -q -o "$apk" 'lib/arm64-v8a/*' -d apk-libs
+          "$ELFCHECK_PY" ui/tools/check_so_symbols.py \
+            --sysroot-lib "${{ steps.ui-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android" \
+            --api "$ANDROID_MIN_SDK" --extra-dir apk-libs/lib/arm64-v8a \
+            apk-libs/lib/arm64-v8a/libseasoncat_ui.so
           mkdir -p dist
           cp "$apk" dist/SeasonCat-slint-arm64-v8a.apk
           (cd dist && sha256sum SeasonCat-slint-arm64-v8a.apk > SeasonCat-slint-arm64-v8a.apk.sha256)

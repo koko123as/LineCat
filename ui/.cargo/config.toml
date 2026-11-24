@@ -1,0 +1,6 @@
+# Refuse to link libseasoncat_ui.so with symbols no linked library defines. A cdylib is
+# linked without -z defs by default, so such a symbol only failed later, at dlopen on the
+# device (std::__ndk1::__hash_memory, 2026-11-25). CI also checks the built library with
+# tools/check_so_symbols.py, which still holds if RUSTFLAGS overrides this.
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,defs"]
