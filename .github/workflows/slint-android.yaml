@@ -1,0 +1,143 @@
+name: slint-android
+
+# Builds the Slint UI (ui/, libseasoncat_ui.so) for arm64-v8a and the arm64 release APK
+# around it. The APK keeps the Flutter build in it, since MainActivity stays for the
+# entry points other than the launcher.
+on:
+  push:
+    branches:
+      - slint-ui
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.50.1'
+  NDK_VERSION: r28c
+  CARGO_NDK_VERSION: 4.1.2
+  CA_BUNDLE: cacert-2026-09-25.pem
+  CA_BUNDLE_SHA256: a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apk:
+    name: Android arm64 APK (Slint UI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Fetch CA certificates
+        shell: bash
+        run: |
+          bundle=concord/assets/ca-certificates.crt
+          curl -fsSL --retry 3 -o "$bundle" "https://curl.se/ca/$CA_BUNDLE"
+          echo "$CA_BUNDLE_SHA256  $bundle" | sha256sum -c -
+
+      # JDK 17: the Slint Android backend compiles its Java helper with javac and d8.
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          link-to-sdk: true
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: slint-android
+          workspaces: |
+            ui
+            concord
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@${{ env.CARGO_NDK_VERSION }}
+
+      - name: Check and test the UI crate
+        working-directory: ui
+        run: |
+          rustup show active-toolchain
+          sudo apt-get update -q && sudo apt-get install -y -q libfontconfig-dev
+          cargo fmt --check || echo "::warning::ui is not rustfmt-formatted"
+          cargo test --locked
+
+      - name: Build libseasoncat_ui.so (arm64-v8a)
+        working-directory: ui
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          rustup target add aarch64-linux-android
+          cargo ndk -t arm64-v8a --platform 24 -o ../android/app/src/main/jniLibs build --release --locked
+          ls -l ../android/app/src/main/jniLibs/arm64-v8a/
+          echo "libseasoncat_ui.so: $(stat -c %s ../android/app/src/main/jniLibs/arm64-v8a/libseasoncat_ui.so) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      # The repository has no signing secrets, so this run signs with a throwaway key made
+      # here; an APK from one run will not install over one from another.
+      - name: Throwaway signing key
+        run: |
+          pass="$(openssl rand -hex 16)"
+          keytool -genkeypair -v -keystore android/app/keystore.jks -alias seasoncat-ci \
+            -storepass "$pass" -keypass "$pass" -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=SeasonCat CI throwaway"
+          {
+            echo "keyAlias=seasoncat-ci"
+            echo "storePassword=$pass"
+            echo "keyPassword=$pass"
+          } >> android/local.properties
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: flutter build apk --release --split-per-abi --target-platform android-arm64
+
+      - name: Check and hash the APK
+        id: apk
+        run: |
+          apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          unzip -l "$apk" | grep -E 'lib/arm64-v8a/lib(seasoncat_ui|core_jni|concord)\.so'
+          unzip -l "$apk" | grep -q 'lib/arm64-v8a/libseasoncat_ui.so'
+          mkdir -p dist
+          cp "$apk" dist/SeasonCat-slint-arm64-v8a.apk
+          (cd dist && sha256sum SeasonCat-slint-arm64-v8a.apk > SeasonCat-slint-arm64-v8a.apk.sha256)
+          cat dist/*.sha256
+          {
+            echo "APK: $(stat -c %s "$apk") bytes"
+            echo '```'
+            unzip -l "$apk" | grep 'lib/arm64-v8a/'
+            cat dist/*.sha256
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: seasoncat-slint-arm64-v8a
+          path: dist/
+          if-no-files-found: error

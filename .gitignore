@@ -81,3 +81,7 @@ devtools_options.yaml
 .fvmrc
 /coverage/lcov.info
 
+
+# Built by CI from ui/ (cargo ndk) before gradle
+/android/app/src/main/jniLibs/
+/ui/target/

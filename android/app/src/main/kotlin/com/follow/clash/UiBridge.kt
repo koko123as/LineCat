@@ -1,0 +1,276 @@
+package com.follow.clash
+
+import android.content.Context
+import android.net.LocalServerSocket
+import android.net.LocalSocket
+import android.os.Build
+import android.os.Process
+import com.follow.clash.common.GlobalState
+import com.follow.clash.core.Core
+import com.follow.clash.core.NativeCore
+import com.follow.clash.models.SharedState
+import com.follow.clash.service.NetworkObserver
+import com.follow.clash.service.models.VpnOptions
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.LinkedBlockingQueue
+import kotlin.coroutines.resume
+
+/**
+ * The local socket the Slint UI (libseasoncat_ui.so) talks to, so the Rust side makes no JNI
+ * calls of its own. The socket lives in the abstract namespace as `<applicationId>.ui` and takes
+ * only peers running as this app's uid.
+ *
+ * A frame is a u32 big-endian payload length, one channel byte and the payload. Channel 0 carries
+ * the Core's JSON-RPC frames, forwarded to and from a Core session opened for the connection, as
+ * ServicePlugin forwards Flutter's. Channel 1 carries shell commands and pushed state events.
+ */
+object UiBridge {
+    private const val CH_CORE = 0
+    private const val CH_SHELL = 1
+    private const val MAX_FRAME = 64 shl 20
+    private val GEO_ASSETS = listOf("GEOIP.metadb", "GEOSITE.dat")
+
+    private val gson = Gson()
+    private val connections = CopyOnWriteArraySet<Connection>()
+
+    @Volatile
+    private var started = false
+
+    @Volatile
+    var activity: SlintActivity? = null
+
+    @Synchronized
+    fun start(context: Context) {
+        if (started) return
+        started = true
+        runCatching { Core.load() }.onFailure { GlobalState.log("Unable to load the Core: $it") }
+        NetworkObserver.start()
+        val server = runCatching { LocalServerSocket("${context.packageName}.ui") }
+            .onFailure { GlobalState.log("Unable to open the UI bridge: $it") }
+            .getOrNull() ?: return
+        Thread({ accept(server) }, "ui-bridge-accept").apply { isDaemon = true }.start()
+        GlobalState.launch {
+            ServiceState.runState.collect { state ->
+                broadcast(JsonObject().apply {
+                    addProperty("ev", "state")
+                    addProperty("state", state.name)
+                })
+            }
+        }
+    }
+
+    val isStopped: Boolean
+        get() = ServiceState.runState.value == RunState.STOPPED
+
+    private fun accept(server: LocalServerSocket) {
+        while (true) {
+            val socket = try {
+                server.accept()
+            } catch (error: IOException) {
+                GlobalState.log("UI bridge stopped accepting: $error")
+                return
+            }
+            val uid = runCatching { socket.peerCredentials.uid }.getOrDefault(-1)
+            if (uid != Process.myUid()) {
+                GlobalState.log("UI bridge refused uid $uid")
+                runCatching { socket.close() }
+                continue
+            }
+            Connection(socket).start()
+        }
+    }
+
+    private fun broadcast(message: JsonObject) {
+        connections.forEach { it.send(CH_SHELL, message) }
+    }
+
+    private class Connection(private val socket: LocalSocket) {
+        private val output = LinkedBlockingQueue<Pair<Int, ByteArray>>()
+        private var session = 0L
+
+        @Volatile
+        private var closed = false
+
+        fun start() {
+            session = NativeCore.open { frame ->
+                if (!closed) output.offer(CH_CORE to frame)
+                true
+            }
+            connections.add(this)
+            Thread(::writeLoop, "ui-bridge-write").apply { isDaemon = true }.start()
+            Thread(::readLoop, "ui-bridge-read").apply { isDaemon = true }.start()
+        }
+
+        fun send(channel: Int, message: JsonObject) {
+            if (!closed) output.offer(channel to gson.toJson(message).toByteArray())
+        }
+
+        private fun writeLoop() {
+            val out = DataOutputStream(socket.outputStream.buffered())
+            try {
+                while (!closed) {
+                    val (channel, payload) = output.take()
+                    if (channel < 0) break
+                    out.writeInt(payload.size)
+                    out.writeByte(channel)
+                    out.write(payload)
+                    if (output.isEmpty()) out.flush()
+                }
+            } catch (_: Exception) {
+            } finally {
+                close()
+            }
+        }
+
+        private fun readLoop() {
+            val input = DataInputStream(socket.inputStream.buffered())
+            try {
+                while (!closed) {
+                    val length = input.readInt()
+                    if (length < 0 || length > MAX_FRAME) break
+                    val channel = input.readUnsignedByte()
+                    val payload = ByteArray(length)
+                    input.readFully(payload)
+                    when (channel) {
+                        CH_CORE -> if (session == 0L || !NativeCore.send(session, payload)) {
+                            GlobalState.log("UI bridge: the Core refused a frame")
+                        }
+                        CH_SHELL -> handle(payload)
+                    }
+                }
+            } catch (_: Exception) {
+            } finally {
+                close()
+            }
+        }
+
+        fun close() {
+            if (closed) return
+            closed = true
+            connections.remove(this)
+            output.offer(-1 to ByteArray(0))
+            val ended = session
+            session = 0L
+            if (ended != 0L) NativeCore.close(ended)
+            runCatching { socket.close() }
+        }
+
+        private fun handle(payload: ByteArray) {
+            val request = runCatching { JsonParser.parseString(String(payload)).asJsonObject }.getOrNull() ?: return
+            val id = request.get("id")
+            GlobalState.launch {
+                val answer = runCatching { command(request) }.getOrElse { error ->
+                    JsonObject().apply {
+                        addProperty("ok", false)
+                        addProperty("error", error.message ?: error.toString())
+                    }
+                }
+                if (id != null) answer.add("id", id)
+                send(CH_SHELL, answer)
+            }
+        }
+    }
+
+    private fun ok(block: JsonObject.() -> Unit = {}) = JsonObject().apply {
+        addProperty("ok", true)
+        block()
+    }
+
+    private suspend fun command(request: JsonObject): JsonObject = when (request.get("op")?.asString) {
+        "hello" -> {
+            withContext(Dispatchers.IO) { extractGeoAssets() }
+            ok {
+                addProperty("home", GlobalState.application.filesDir.path)
+                addProperty("sdkInt", Build.VERSION.SDK_INT)
+                addProperty("state", ServiceState.runState.value.name)
+            }
+        }
+
+        "vpn.state" -> ok { addProperty("state", ServiceState.runState.value.name) }
+
+        "vpn.start" -> {
+            val options = gson.fromJson(request.get("vpnOptions"), VpnOptions::class.java)
+                ?: error("vpnOptions missing")
+            if (options.enable && !prepareVpn()) {
+                error("需要VPN权限")
+            }
+            requestNotificationPermission()
+            val setup = request.get("setupParams")?.takeIf { it.isJsonObject }?.asJsonObject
+            val state = SharedState(
+                currentProfileName = request.get("profileName")?.asString ?: "SeasonCat",
+                stopText = "暂停",
+                startTip = "正在启动VPN…",
+                stopTip = "正在停止VPN…",
+                vpnOptions = options,
+                setupParams = setup,
+            )
+            ServiceState.syncSharedState(state)
+            persistForQuickStart(state)
+            if (!ServiceState.requestStart().await()) error("启动服务失败")
+            ok { addProperty("state", ServiceState.runState.value.name) }
+        }
+
+        "vpn.stop" -> {
+            ServiceState.requestStop().await()
+            ok { addProperty("state", ServiceState.runState.value.name) }
+        }
+
+        else -> error("unknown op")
+    }
+
+    private suspend fun prepareVpn(): Boolean {
+        val host = activity
+        if (android.net.VpnService.prepare(GlobalState.application) == null) return true
+        if (host == null) return false
+        return withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { continuation ->
+                host.prepareVpn { granted -> if (continuation.isActive) continuation.resume(granted) }
+            }
+        }
+    }
+
+    private suspend fun requestNotificationPermission() {
+        val host = activity ?: return
+        withContext(Dispatchers.Main) { host.requestNotificationPermission() }
+    }
+
+    // The tile and quick actions start from these preferences when no UI is attached; the
+    // setup params are the full config.apply arguments, profile path included.
+    private fun persistForQuickStart(state: SharedState) {
+        runCatching {
+            GlobalState.application
+                .getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                .edit()
+                .putString("flutter.sharedState", gson.toJson(state))
+                .apply()
+        }
+    }
+
+    // CoreController.initGeo: the Core reads these from its home; the APK carries them in
+    // Flutter's assets.
+    private fun extractGeoAssets() {
+        val home = GlobalState.application.filesDir
+        GEO_ASSETS.forEach { name ->
+            val target = File(home, name)
+            if (target.exists()) return@forEach
+            runCatching {
+                val partial = File(home, "$name.part")
+                GlobalState.application.assets.open("flutter_assets/assets/data/$name").use { input ->
+                    partial.outputStream().use { output -> input.copyTo(output, 1 shl 16) }
+                }
+                check(partial.renameTo(target)) { "rename failed" }
+            }.onFailure { GlobalState.log("Unable to extract $name: $it") }
+        }
+    }
+}

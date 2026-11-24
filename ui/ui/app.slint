@@ -1,0 +1,882 @@
+// SeasonCat M1 UI. Flat surfaces, no blur: the levels and colors follow
+// prism_ui's seeded scheme (see src/theme.rs, generated from color.dart).
+import { ListView, ScrollView, Palette } from "std-widgets.slint";
+
+export struct Scheme {
+    primary: color,
+    on-primary: color,
+    primary-container: color,
+    on-primary-container: color,
+    page: color,
+    card: color,
+    block: color,
+    inset: color,
+    on-surface: color,
+    on-surface-variant: color,
+    outline-variant: color,
+    error: color,
+}
+
+export global Theme {
+    in property <Scheme> light;
+    in property <Scheme> dark;
+    // 0 follow system, 1 light, 2 dark
+    in property <int> mode: 0;
+    out property <bool> is-dark: mode == 2 || (mode == 0 && Palette.color-scheme == ColorScheme.dark);
+    out property <Scheme> s: is-dark ? dark : light;
+    // Status colors of prism_ui's ColorSchemeExtension (success / warning tones 40 and 80).
+    out property <color> success: is-dark ? #7ddc7a : #1b6d24;
+    out property <color> warning: is-dark ? #ffb870 : #8b5000;
+}
+
+export struct ProfileItem {
+    id: string,
+    name: string,
+    detail: string,
+    active: bool,
+    busy: bool,
+}
+
+export struct GroupItem {
+    name: string,
+    kind: string,
+    now: string,
+    count: int,
+}
+
+export struct NodeItem {
+    name: string,
+    kind: string,
+    // >0 ms, 0 untested, -1 timeout, -2 failed, -3 testing
+    delay: int,
+    selected: bool,
+}
+
+export struct LogItem {
+    level: string,
+    time: string,
+    text: string,
+}
+
+component Card inherits Rectangle {
+    background: Theme.s.card;
+    border-radius: 14px;
+}
+
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 34px;
+    border-radius: 9px;
+    background: selected ? Theme.s.primary : (ta.pressed ? Theme.s.inset : Theme.s.block);
+    opacity: enabled ? 1 : 0.5;
+    Text {
+        text: root.text;
+        color: selected ? Theme.s.on-primary : Theme.s.on-surface;
+        font-size: 14px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component FlatButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    in property <bool> danger;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 34px;
+    min-width: 64px;
+    border-radius: 9px;
+    background: primary ? (ta.pressed ? Theme.s.primary.darker(0.15) : Theme.s.primary) : (ta.pressed ? Theme.s.inset : Theme.s.block);
+    opacity: enabled ? 1 : 0.45;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        Text {
+            text: root.text;
+            font-size: 14px;
+            color: root.primary ? Theme.s.on-primary : (root.danger ? Theme.s.error : Theme.s.on-surface);
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component SectionTitle inherits Text {
+    color: Theme.s.on-surface-variant;
+    font-size: 13px;
+}
+
+component PageHeader inherits HorizontalLayout {
+    in property <string> title;
+    height: 52px;
+    padding-left: 18px;
+    padding-right: 12px;
+    spacing: 8px;
+    Text {
+        text: root.title;
+        font-size: 24px;
+        font-weight: 700;
+        color: Theme.s.on-surface;
+        vertical-alignment: center;
+    }
+    @children
+}
+
+component Empty inherits Rectangle {
+    in property <string> text;
+    Text {
+        text: root.text;
+        color: Theme.s.on-surface-variant;
+        font-size: 14px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+        width: parent.width - 48px;
+    }
+}
+
+// ---------------------------------------------------------------- Dashboard
+
+component Dashboard inherits Rectangle {
+    in property <string> run-state;
+    in property <string> profile-name;
+    in property <string> up-speed;
+    in property <string> down-speed;
+    in property <string> up-total;
+    in property <string> down-total;
+    in property <int> mode;
+    callback toggle-vpn();
+    callback set-mode(int);
+    property <bool> on: run-state == "STARTED";
+    property <bool> busy: run-state == "STARTING" || run-state == "STOPPING";
+
+    ScrollView {
+        VerticalLayout {
+            padding: 14px;
+            padding-top: 0px;
+            spacing: 12px;
+            PageHeader { title: "仪表盘"; }
+
+            Card {
+                height: 250px;
+                VerticalLayout {
+                    padding: 18px;
+                    spacing: 12px;
+                    alignment: center;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 132px;
+                            height: 132px;
+                            border-radius: self.width / 2;
+                            background: root.on ? Theme.s.primary : (power.pressed ? Theme.s.inset : Theme.s.block);
+                            animate background { duration: 150ms; }
+                            Text {
+                                text: root.busy ? "…" : (root.on ? "暂停" : "启动");
+                                font-size: 26px;
+                                font-weight: 700;
+                                color: root.on ? Theme.s.on-primary : Theme.s.on-surface;
+                            }
+                            power := TouchArea {
+                                enabled: !root.busy;
+                                clicked => { root.toggle-vpn(); }
+                            }
+                        }
+                    }
+                    Text {
+                        horizontal-alignment: center;
+                        font-size: 15px;
+                        color: root.on ? Theme.s.primary : Theme.s.on-surface-variant;
+                        text: root.run-state == "STARTED" ? "运行中"
+                            : root.run-state == "STARTING" ? "正在启动VPN…"
+                            : root.run-state == "STOPPING" ? "正在停止VPN…"
+                            : root.run-state == "OFFLINE" ? "正在连接内核…" : "未运行";
+                    }
+                }
+            }
+
+            Card {
+                height: 96px;
+                HorizontalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+                    VerticalLayout {
+                        spacing: 6px;
+                        SectionTitle { text: "上传"; }
+                        Text { text: root.up-speed; font-size: 22px; font-weight: 600; color: Theme.s.on-surface; }
+                        Text { text: root.up-total; font-size: 12px; color: Theme.s.on-surface-variant; }
+                    }
+                    Rectangle { width: 1px; background: Theme.s.outline-variant; }
+                    VerticalLayout {
+                        spacing: 6px;
+                        SectionTitle { text: "下载"; }
+                        Text { text: root.down-speed; font-size: 22px; font-weight: 600; color: Theme.s.on-surface; }
+                        Text { text: root.down-total; font-size: 12px; color: Theme.s.on-surface-variant; }
+                    }
+                }
+            }
+
+            Card {
+                height: 96px;
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    SectionTitle { text: "出站模式"; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Chip { text: "规则"; selected: root.mode == 0; clicked => { root.set-mode(0); } }
+                        Chip { text: "全局"; selected: root.mode == 1; clicked => { root.set-mode(1); } }
+                        Chip { text: "直连"; selected: root.mode == 2; clicked => { root.set-mode(2); } }
+                    }
+                }
+            }
+
+            Card {
+                height: 72px;
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 6px;
+                    SectionTitle { text: "配置"; }
+                    Text {
+                        text: root.profile-name == "" ? "添加一个配置文件后即可开始使用" : root.profile-name;
+                        font-size: 16px;
+                        color: Theme.s.on-surface;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Profiles
+
+component ProfileRow inherits Card {
+    in property <ProfileItem> item;
+    callback select();
+    callback update();
+    callback remove();
+    property <bool> confirm;
+    height: 104px;
+    Rectangle {
+        x: 0;
+        width: 4px;
+        height: parent.height - 28px;
+        border-radius: 2px;
+        background: root.item.active ? Theme.s.primary : transparent;
+    }
+    VerticalLayout {
+        padding: 14px;
+        padding-left: 18px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 8px;
+            VerticalLayout {
+                spacing: 2px;
+                Text {
+                    text: root.item.name;
+                    font-size: 16px;
+                    font-weight: root.item.active ? 700 : 500;
+                    color: root.item.active ? Theme.s.primary : Theme.s.on-surface;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.item.detail;
+                    font-size: 12px;
+                    color: Theme.s.on-surface-variant;
+                    overflow: elide;
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            FlatButton {
+                text: root.item.busy ? "更新中…" : "更新";
+                enabled: !root.item.busy;
+                clicked => { root.update(); }
+            }
+            FlatButton {
+                text: root.confirm ? "确定删除" : "删除";
+                danger: true;
+                enabled: !root.item.busy;
+                clicked => {
+                    if (root.confirm) {
+                        root.confirm = false;
+                        root.remove();
+                    } else {
+                        root.confirm = true;
+                    }
+                }
+            }
+        }
+    }
+    TouchArea {
+        y: 0;
+        height: 48px;
+        clicked => { root.confirm = false; root.select(); }
+    }
+}
+
+component Profiles inherits Rectangle {
+    in property <[ProfileItem]> profiles;
+    in property <bool> adding;
+    callback add-profile(string);
+    callback update-profile(string);
+    callback select-profile(string);
+    callback delete-profile(string);
+    property <bool> form;
+
+    VerticalLayout {
+        PageHeader {
+            title: "配置";
+            Rectangle { }
+            HorizontalLayout {
+                alignment: center;
+                FlatButton {
+                    text: "添加配置";
+                    primary: true;
+                    enabled: !root.adding;
+                    clicked => { root.form = !root.form; if (root.form) { url.focus(); } }
+                }
+            }
+        }
+        Rectangle {
+            property <bool> open: root.form || root.adding;
+            height: self.open ? 112px : 0px;
+            visible: self.open;
+            Card {
+                x: 14px;
+                width: parent.width - 28px;
+                height: parent.height;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 10px;
+                    Rectangle {
+                        height: 40px;
+                        border-radius: 9px;
+                        background: Theme.s.block;
+                        Text {
+                            x: 12px;
+                            visible: url.text == "";
+                            text: "请输入配置URL";
+                            color: Theme.s.on-surface-variant;
+                            font-size: 14px;
+                        }
+                        url := TextInput {
+                            x: 12px;
+                            width: parent.width - 24px;
+                            vertical-alignment: center;
+                            single-line: true;
+                            input-type: text;
+                            font-size: 14px;
+                            color: Theme.s.on-surface;
+                            selection-background-color: Theme.s.primary-container;
+                            enabled: !root.adding;
+                            accepted => { root.add-profile(self.text); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        FlatButton {
+                            text: "取消";
+                            enabled: !root.adding;
+                            clicked => { root.form = false; url.text = ""; }
+                        }
+                        FlatButton {
+                            text: root.adding ? "加载中…" : "提交";
+                            primary: true;
+                            enabled: !root.adding && url.text != "";
+                            clicked => { root.add-profile(url.text); }
+                        }
+                    }
+                }
+            }
+        }
+        if root.profiles.length == 0 && !root.form: Empty {
+            text: "添加一个配置文件后即可开始使用";
+        }
+        ListView {
+            for p in root.profiles: Rectangle {
+                height: 116px;
+                ProfileRow {
+                    x: 14px;
+                    y: 6px;
+                    width: parent.width - 28px;
+                    item: p;
+                    select => { root.select-profile(p.id); }
+                    update => { root.update-profile(p.id); }
+                    remove => { root.delete-profile(p.id); }
+                }
+            }
+        }
+    }
+
+    public function form-done() {
+        root.form = false;
+        url.text = "";
+    }
+}
+
+// ---------------------------------------------------------------- Proxies
+
+component DelayText inherits Text {
+    in property <int> delay;
+    font-size: 13px;
+    horizontal-alignment: right;
+    text: delay == -3 ? "…" : delay == -1 ? "超时" : delay == -2 ? "失败" : delay > 0 ? delay + " ms" : "";
+    color: delay > 0 && delay < 800 ? Theme.success : delay > 0 && delay < 1500 ? Theme.warning : Theme.s.error;
+}
+
+component Proxies inherits Rectangle {
+    in property <[GroupItem]> groups;
+    in property <string> current-group;
+    in property <[NodeItem]> nodes;
+    in property <bool> testing;
+    in property <string> hint;
+    callback open-group(string);
+    callback close-group();
+    callback select-node(string, string);
+    callback test-group(string);
+
+    if root.current-group == "": VerticalLayout {
+        PageHeader { title: "代理"; }
+        if root.groups.length == 0: Empty { text: root.hint; }
+        ListView {
+            for g in root.groups: Rectangle {
+                height: 78px;
+                Card {
+                    x: 14px;
+                    y: 5px;
+                    width: parent.width - 28px;
+                    height: parent.height - 10px;
+                    background: gta.pressed ? Theme.s.block : Theme.s.card;
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 10px;
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 3px;
+                            Text { text: g.name; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+                            Text { text: g.kind + " · " + g.count; font-size: 12px; color: Theme.s.on-surface-variant; }
+                        }
+                        Text {
+                            text: g.now;
+                            font-size: 14px;
+                            color: Theme.s.primary;
+                            vertical-alignment: center;
+                            horizontal-alignment: right;
+                            overflow: elide;
+                            max-width: 160px;
+                        }
+                        Text { text: "›"; font-size: 22px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                    }
+                    gta := TouchArea { clicked => { root.open-group(g.name); } }
+                }
+            }
+        }
+    }
+
+    if root.current-group != "": VerticalLayout {
+        HorizontalLayout {
+            height: 52px;
+            padding-left: 6px;
+            padding-right: 12px;
+            spacing: 6px;
+            Rectangle {
+                width: 40px;
+                Text { text: "‹"; font-size: 30px; color: Theme.s.primary; }
+                TouchArea { clicked => { root.close-group(); } }
+            }
+            Text {
+                text: root.current-group;
+                font-size: 20px;
+                font-weight: 700;
+                color: Theme.s.on-surface;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            HorizontalLayout {
+                alignment: center;
+                FlatButton {
+                    text: root.testing ? "测试中…" : "延迟测试";
+                    primary: true;
+                    enabled: !root.testing;
+                    clicked => { root.test-group(root.current-group); }
+                }
+            }
+        }
+        ListView {
+            for n in root.nodes: Rectangle {
+                height: 62px;
+                Card {
+                    x: 14px;
+                    y: 3px;
+                    width: parent.width - 28px;
+                    height: parent.height - 6px;
+                    background: n.selected ? Theme.s.primary-container : (nta.pressed ? Theme.s.block : Theme.s.card);
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 10px;
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: n.name;
+                                font-size: 15px;
+                                color: n.selected ? Theme.s.on-primary-container : Theme.s.on-surface;
+                                font-weight: n.selected ? 600 : 400;
+                                overflow: elide;
+                            }
+                            Text { text: n.kind; font-size: 12px; color: Theme.s.on-surface-variant; }
+                        }
+                        DelayText { delay: n.delay; vertical-alignment: center; width: 64px; }
+                    }
+                    nta := TouchArea { clicked => { root.select-node(root.current-group, n.name); } }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Logs
+
+component Logs inherits Rectangle {
+    in property <[LogItem]> logs;
+    callback clear-logs();
+    VerticalLayout {
+        PageHeader {
+            title: "日志";
+            Rectangle { }
+            HorizontalLayout {
+                alignment: center;
+                FlatButton { text: "清空"; clicked => { root.clear-logs(); } }
+            }
+        }
+        if root.logs.length == 0: Empty { text: "暂无数据"; }
+        ListView {
+            for l in root.logs: Rectangle {
+                height: col.preferred-height + 8px;
+                col := VerticalLayout {
+                    x: 14px;
+                    width: parent.width - 28px;
+                    padding-top: 4px;
+                    padding-bottom: 4px;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: l.level;
+                            font-size: 11px;
+                            font-weight: 700;
+                            color: l.level == "error" ? Theme.s.error : l.level == "warning" ? Theme.warning : l.level == "info" ? Theme.s.primary : Theme.s.on-surface-variant;
+                        }
+                        Text { text: l.time; font-size: 11px; color: Theme.s.on-surface-variant; }
+                        Rectangle { }
+                    }
+                    Text { text: l.text; font-size: 13px; color: Theme.s.on-surface; wrap: word-wrap; }
+                    Rectangle { height: 1px; background: Theme.s.outline-variant; opacity: 0.5; }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Settings
+
+component Settings inherits Rectangle {
+    in property <[color]> accents;
+    in property <int> accent;
+    in property <int> theme-mode;
+    in property <string> version;
+    callback set-accent(int);
+    callback set-theme-mode(int);
+    ScrollView {
+        VerticalLayout {
+            padding: 14px;
+            padding-top: 0px;
+            spacing: 12px;
+            PageHeader { title: "设置"; }
+            Card {
+                height: 96px;
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    SectionTitle { text: "主题模式"; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Chip { text: "跟随系统"; selected: root.theme-mode == 0; clicked => { root.set-theme-mode(0); } }
+                        Chip { text: "浅色"; selected: root.theme-mode == 1; clicked => { root.set-theme-mode(1); } }
+                        Chip { text: "深色"; selected: root.theme-mode == 2; clicked => { root.set-theme-mode(2); } }
+                    }
+                }
+            }
+            Card {
+                height: 108px;
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+                    SectionTitle { text: "主题色彩"; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: space-between;
+                        for c[i] in root.accents: Rectangle {
+                            width: 34px;
+                            height: 34px;
+                            border-radius: 17px;
+                            background: c;
+                            Rectangle {
+                                visible: i == root.accent;
+                                width: 14px;
+                                height: 14px;
+                                border-radius: 7px;
+                                background: white;
+                            }
+                            TouchArea { clicked => { root.set-accent(i); } }
+                        }
+                    }
+                }
+            }
+            Card {
+                height: 72px;
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 4px;
+                    Text { text: "SeasonCat"; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; }
+                    Text { text: root.version; font-size: 12px; color: Theme.s.on-surface-variant; }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Shell
+
+component TabIcon inherits Path {
+    in property <bool> active;
+    width: 22px;
+    height: 22px;
+    fill: transparent;
+    stroke: active ? Theme.s.primary : Theme.s.on-surface-variant;
+    stroke-width: 1.8px;
+    viewbox-width: 24;
+    viewbox-height: 24;
+}
+
+component TabButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    in property <string> icon;
+    callback clicked();
+    VerticalLayout {
+        alignment: center;
+        spacing: 3px;
+        HorizontalLayout {
+            alignment: center;
+            TabIcon { commands: root.icon; active: root.active; }
+        }
+        Text {
+            text: root.label;
+            font-size: 11px;
+            horizontal-alignment: center;
+            color: root.active ? Theme.s.primary : Theme.s.on-surface-variant;
+            font-weight: root.active ? 600 : 400;
+        }
+    }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
+export component AppWindow inherits Window {
+    title: "SeasonCat";
+    background: Theme.s.page;
+    default-font-size: 14px;
+
+    in-out property <int> tab: 0;
+    // Dashboard
+    in property <string> run-state: "OFFLINE";
+    in property <string> profile-name;
+    in property <string> up-speed: "0 B/s";
+    in property <string> down-speed: "0 B/s";
+    in property <string> up-total;
+    in property <string> down-total;
+    in property <int> mode: 0;
+    callback toggle-vpn();
+    callback set-mode(int);
+    // Profiles
+    in property <[ProfileItem]> profiles;
+    in property <bool> adding;
+    callback add-profile(string);
+    callback update-profile(string);
+    callback select-profile(string);
+    callback delete-profile(string);
+    // Proxies
+    in property <[GroupItem]> groups;
+    in-out property <string> current-group;
+    in property <[NodeItem]> nodes;
+    in property <bool> testing;
+    in property <string> proxies-hint: "暂无数据";
+    callback open-group(string);
+    callback select-node(string, string);
+    callback test-group(string);
+    callback tab-changed(int);
+    // Logs
+    in property <[LogItem]> logs;
+    callback clear-logs();
+    // Settings
+    in property <[color]> accents;
+    in property <int> accent;
+    in property <int> theme-mode;
+    in property <string> version;
+    callback set-accent(int);
+    callback set-theme-mode(int);
+    // Feedback
+    in property <string> toast;
+
+    public function profile-added() {
+        profiles-page.form-done();
+    }
+
+    property <length> top-inset: max(root.safe-area-insets.top, 0px);
+    property <length> bottom-inset: max(root.safe-area-insets.bottom, 0px);
+    property <length> keyboard: root.virtual-keyboard-size.height > 0 ? root.virtual-keyboard-size.height : 0px;
+
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Back) {
+                if (root.tab == 2 && root.current-group != "") {
+                    root.current-group = "";
+                    return accept;
+                }
+                if (root.tab != 0) {
+                    root.tab = 0;
+                    return accept;
+                }
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding-top: root.top-inset;
+            Rectangle {
+                vertical-stretch: 1;
+                if root.tab == 0: Dashboard {
+                    run-state: root.run-state;
+                    profile-name: root.profile-name;
+                    up-speed: root.up-speed;
+                    down-speed: root.down-speed;
+                    up-total: root.up-total;
+                    down-total: root.down-total;
+                    mode: root.mode;
+                    toggle-vpn => { root.toggle-vpn(); }
+                    set-mode(m) => { root.set-mode(m); }
+                }
+                profiles-page := Profiles {
+                    visible: root.tab == 1;
+                    profiles: root.profiles;
+                    adding: root.adding;
+                    add-profile(u) => { root.add-profile(u); }
+                    update-profile(id) => { root.update-profile(id); }
+                    select-profile(id) => { root.select-profile(id); }
+                    delete-profile(id) => { root.delete-profile(id); }
+                }
+                if root.tab == 2: Proxies {
+                    groups: root.groups;
+                    current-group: root.current-group;
+                    nodes: root.nodes;
+                    testing: root.testing;
+                    hint: root.proxies-hint;
+                    open-group(g) => { root.current-group = g; root.open-group(g); }
+                    close-group => { root.current-group = ""; }
+                    select-node(g, n) => { root.select-node(g, n); }
+                    test-group(g) => { root.test-group(g); }
+                }
+                if root.tab == 3: Logs {
+                    logs: root.logs;
+                    clear-logs => { root.clear-logs(); }
+                }
+                if root.tab == 4: Settings {
+                    accents: root.accents;
+                    accent: root.accent;
+                    theme-mode: root.theme-mode;
+                    version: root.version;
+                    set-accent(i) => { root.set-accent(i); }
+                    set-theme-mode(m) => { root.set-theme-mode(m); }
+                }
+
+                if root.toast != "": Rectangle {
+                    y: parent.height - self.height - 16px - root.keyboard;
+                    x: (parent.width - self.width) / 2;
+                    width: min(parent.width - 40px, toast-text.preferred-width + 32px);
+                    height: toast-text.preferred-height + 20px;
+                    border-radius: 12px;
+                    background: Theme.s.on-surface;
+                    toast-text := Text {
+                        x: 16px;
+                        width: parent.width - 32px;
+                        text: root.toast;
+                        color: Theme.s.page;
+                        font-size: 14px;
+                        wrap: word-wrap;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            if root.keyboard == 0: Rectangle {
+                height: 60px + root.bottom-inset;
+                background: Theme.s.card;
+                Rectangle { y: 0; height: 1px; background: Theme.s.outline-variant; opacity: 0.6; }
+                HorizontalLayout {
+                    y: 0;
+                    height: 60px;
+                    TabButton {
+                        label: "仪表盘";
+                        active: root.tab == 0;
+                        icon: "M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z";
+                        clicked => { root.tab = 0; root.tab-changed(0); }
+                    }
+                    TabButton {
+                        label: "配置";
+                        active: root.tab == 1;
+                        icon: "M6 3h9l4 4v14H6z M14 3v5h5 M9 13h7 M9 17h7";
+                        clicked => { root.tab = 1; root.tab-changed(1); }
+                    }
+                    TabButton {
+                        label: "代理";
+                        active: root.tab == 2;
+                        icon: "M12 3a9 9 0 1 0 0.01 0z M3 12h18 M12 3c3 3 3 15 0 18 M12 3c-3 3-3 15 0 18";
+                        clicked => { root.tab = 2; root.tab-changed(2); }
+                    }
+                    TabButton {
+                        label: "日志";
+                        active: root.tab == 3;
+                        icon: "M5 6h14 M5 10h14 M5 14h10 M5 18h7";
+                        clicked => { root.tab = 3; root.tab-changed(3); }
+                    }
+                    TabButton {
+                        label: "设置";
+                        active: root.tab == 4;
+                        icon: "M12 8.5a3.5 3.5 0 1 0 0.01 0z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M4.9 19.1l2.1-2.1 M17 7l2.1-2.1";
+                        clicked => { root.tab = 4; root.tab-changed(4); }
+                    }
+                }
+            }
+        }
+    }
+}

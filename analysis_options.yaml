@@ -10,6 +10,7 @@ analyzer:
     - lib/l10n/**
     - lib/**/generated/**
     - plugins/**
+    - ui/**
     - android/**
     - ios/**
     - web/**
