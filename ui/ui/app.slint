@@ -1,6 +1,9 @@
-// SeasonCat M1 UI. Flat surfaces, no blur: the levels and colors follow
-// prism_ui's seeded scheme (see src/theme.rs, generated from color.dart).
-import { ListView, ScrollView, Palette } from "std-widgets.slint";
+// SeasonCat UI. FlClash's mobile layout (bottom bar: dashboard, proxies, profiles, tools;
+// dashboard cards with a start button at the bottom right; proxies as group tabs over a
+// two-column grid of nodes; logs and theme under tools), drawn flat: plain filled
+// surfaces, no blur, no glass, no shadows. Colors follow prism_ui's seeded scheme
+// (see src/theme.rs, generated from color.dart).
+import { Palette } from "std-widgets.slint";
 
 export struct Scheme {
     primary: color,
@@ -58,45 +61,104 @@ export struct LogItem {
     text: string,
 }
 
+// ---------------------------------------------------------------- Icons
+// 24x24 outline glyphs, stroked.
+
+global Icons {
+    out property <string> dashboard: "M4 4h7v7H4z M13 4h7v4h-7z M13 10h7v10h-7z M4 13h7v7H4z";
+    out property <string> proxies: "M12 3a9 9 0 1 0 0.01 0z M3 12h18 M12 3c3 3 3 15 0 18 M12 3c-3 3-3 15 0 18";
+    out property <string> profiles: "M6 3h9l4 4v14H6z M14 3v5h5 M9 13h7 M9 17h7";
+    out property <string> tools: "M14.7 6.3a4 4 0 0 0-5.4 5.2L4 16.8V20h3.2l5.3-5.3a4 4 0 0 0 5.2-5.4l-2.5 2.5-2.3-.7-.7-2.3z";
+    out property <string> play: "M8 5v14l11-7z";
+    out property <string> pause: "M8 5h3v14H8z M13 5h3v14h-3z";
+    out property <string> bolt: "M13 2 4 14h7l-1 8 9-12h-7z";
+    out property <string> plus: "M12 5v14 M5 12h14";
+    out property <string> more: "M12 5.5v.01 M12 12v.01 M12 18.5v.01";
+    out property <string> back: "M15 5l-7 7 7 7";
+    out property <string> chevron: "M9 6l6 6-6 6";
+    out property <string> speed: "M4 16a8 8 0 1 1 16 0 M12 16l4-5";
+    out property <string> route: "M6 19a2 2 0 1 0 0.01 0z M18 5a2 2 0 1 0 0.01 0z M6 17V9a3 3 0 0 1 3-3h7 M18 7v8a3 3 0 0 1-3 3H8";
+    out property <string> traffic: "M7 4v16 M3 8l4-4 4 4 M17 20V4 M13 16l4 4 4-4";
+    out property <string> file: "M6 3h9l4 4v14H6z M14 3v5h5";
+    out property <string> logs: "M5 6h14 M5 10h14 M5 14h10 M5 18h7";
+    out property <string> palette: "M12 3a9 9 0 1 0 0 18c1.2 0 2-.8 2-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z M7.5 11v.01 M10 7.5v.01 M14 7.5v.01 M16.5 11v.01";
+    out property <string> info: "M12 3a9 9 0 1 0 0.01 0z M12 11v6 M12 7.5v.01";
+    out property <string> up: "M12 19V5 M6 11l6-6 6 6";
+    out property <string> down: "M12 5v14 M6 13l6 6 6-6";
+}
+
+component Icon inherits Path {
+    in property <string> glyph;
+    in property <color> tint: Theme.s.on-surface;
+    in property <length> size: 24px;
+    width: size;
+    height: size;
+    commands: glyph;
+    fill: transparent;
+    stroke: tint;
+    stroke-width: 1.8px;
+    stroke-line-cap: round;
+    stroke-line-join: round;
+    viewbox-width: 24;
+    viewbox-height: 24;
+}
+
+component FilledIcon inherits Path {
+    in property <string> glyph;
+    in property <color> tint: Theme.s.on-surface;
+    in property <length> size: 24px;
+    width: size;
+    height: size;
+    commands: glyph;
+    fill: tint;
+    stroke: tint;
+    stroke-width: 1px;
+    stroke-line-join: round;
+    viewbox-width: 24;
+    viewbox-height: 24;
+}
+
+// ---------------------------------------------------------------- Building blocks
+
 component Card inherits Rectangle {
-    background: Theme.s.card;
-    border-radius: 14px;
-}
-
-component Chip inherits Rectangle {
-    in property <string> text;
     in property <bool> selected;
-    in property <bool> enabled: true;
-    callback clicked();
-    height: 34px;
-    border-radius: 9px;
-    background: selected ? Theme.s.primary : (ta.pressed ? Theme.s.inset : Theme.s.block);
-    opacity: enabled ? 1 : 0.5;
-    Text {
-        text: root.text;
-        color: selected ? Theme.s.on-primary : Theme.s.on-surface;
-        font-size: 14px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-    ta := TouchArea {
-        enabled: root.enabled;
-        clicked => { root.clicked(); }
+    background: selected ? Theme.s.primary-container : Theme.s.card;
+    border-radius: 12px;
+}
+
+// A card with FlClash's header row: a small icon, then the title.
+component InfoCard inherits Card {
+    in property <string> title;
+    in property <string> glyph;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 8px;
+            height: 22px;
+            Icon { glyph: root.glyph; size: 20px; tint: root.selected ? Theme.s.on-primary-container : Theme.s.primary; y: 1px; }
+            Text {
+                text: root.title;
+                font-size: 15px;
+                color: root.selected ? Theme.s.on-primary-container : Theme.s.on-surface;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        @children
     }
 }
 
-component FlatButton inherits Rectangle {
+component TextButton inherits Rectangle {
     in property <string> text;
-    in property <bool> primary;
+    in property <bool> filled;
     in property <bool> danger;
     in property <bool> enabled: true;
-    // On the page rather than in a card: the fill steps up to the card level.
-    in property <bool> on-page;
     callback clicked();
-    height: 34px;
+    height: 36px;
     min-width: 64px;
-    border-radius: 9px;
-    background: primary ? (ta.pressed ? Theme.s.primary.darker(0.15) : Theme.s.primary) : (ta.pressed ? Theme.s.inset : (on-page ? Theme.s.card : Theme.s.block));
+    border-radius: 18px;
+    background: filled ? (ta.pressed ? Theme.s.primary.darker(0.15) : Theme.s.primary) : (ta.pressed ? Theme.s.inset : transparent);
     opacity: enabled ? 1 : 0.45;
     HorizontalLayout {
         padding-left: 14px;
@@ -104,7 +166,7 @@ component FlatButton inherits Rectangle {
         Text {
             text: root.text;
             font-size: 14px;
-            color: root.primary ? Theme.s.on-primary : (root.danger ? Theme.s.error : Theme.s.on-surface);
+            color: root.filled ? Theme.s.on-primary : (root.danger ? Theme.s.error : Theme.s.primary);
             vertical-alignment: center;
             horizontal-alignment: center;
         }
@@ -115,23 +177,79 @@ component FlatButton inherits Rectangle {
     }
 }
 
-component SectionTitle inherits Text {
-    color: Theme.s.on-surface-variant;
-    font-size: 13px;
+component IconButton inherits Rectangle {
+    in property <string> glyph;
+    in property <color> tint: Theme.s.on-surface-variant;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
+    background: ta.pressed ? Theme.s.inset : transparent;
+    opacity: enabled ? 1 : 0.4;
+    Icon { glyph: root.glyph; tint: root.tint; }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
 }
 
-component PageHeader inherits HorizontalLayout {
+// FlClash's floating action button: a rounded square in the primary container color,
+// bottom right of the page. With a label it widens into the extended form.
+component Fab inherits Rectangle {
+    in property <string> glyph;
+    in property <string> label;
+    in property <bool> filled-glyph;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: label == "" ? 56px : max(56px, row.preferred-width);
+    height: 56px;
+    border-radius: 16px;
+    background: ta.pressed ? Theme.s.primary-container.darker(0.08) : Theme.s.primary-container;
+    opacity: enabled ? 1 : 0.6;
+    row := HorizontalLayout {
+        padding-left: root.label == "" ? 16px : 18px;
+        padding-right: root.label == "" ? 16px : 20px;
+        spacing: 10px;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            if root.filled-glyph: FilledIcon { glyph: root.glyph; tint: Theme.s.on-primary-container; }
+            if !root.filled-glyph: Icon { glyph: root.glyph; tint: Theme.s.on-primary-container; }
+        }
+        if root.label != "": Text {
+            text: root.label;
+            font-size: 15px;
+            color: Theme.s.on-primary-container;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// The top app bar: the page title on the left, actions on the right.
+component AppBar inherits HorizontalLayout {
     in property <string> title;
-    height: 52px;
-    padding-left: 18px;
-    padding-right: 12px;
-    spacing: 8px;
+    in property <bool> can-back;
+    callback back();
+    height: 56px;
+    padding-left: can-back ? 4px : 16px;
+    padding-right: 8px;
+    spacing: 4px;
+    if root.can-back: VerticalLayout {
+        alignment: center;
+        IconButton { glyph: Icons.back; tint: Theme.s.on-surface; clicked => { root.back(); } }
+    }
     Text {
+        horizontal-stretch: 1;
         text: root.title;
-        font-size: 24px;
-        font-weight: 700;
+        font-size: 22px;
         color: Theme.s.on-surface;
         vertical-alignment: center;
+        overflow: elide;
     }
     @children
 }
@@ -149,6 +267,42 @@ component Empty inherits Rectangle {
     }
 }
 
+component RadioRow inherits Rectangle {
+    in property <string> text;
+    in property <bool> checked;
+    callback clicked();
+    height: 34px;
+    border-radius: 8px;
+    background: ta.pressed ? Theme.s.block : transparent;
+    HorizontalLayout {
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                border-width: 2px;
+                border-color: root.checked ? Theme.s.primary : Theme.s.on-surface-variant;
+                Rectangle {
+                    visible: root.checked;
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: Theme.s.primary;
+                }
+            }
+        }
+        Text {
+            text: root.text;
+            font-size: 14px;
+            color: Theme.s.on-surface;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
 // ---------------------------------------------------------------- Dashboard
 
 component Dashboard inherits Rectangle {
@@ -161,162 +315,271 @@ component Dashboard inherits Rectangle {
     in property <int> mode;
     callback toggle-vpn();
     callback set-mode(int);
+    callback open-profiles();
     property <bool> on: run-state == "STARTED";
     property <bool> busy: run-state == "STARTING" || run-state == "STOPPING";
+    property <length> gap: 12px;
+    property <length> half: (self.width - 2 * 16px - gap) / 2;
 
-    sv := ScrollView {
-        VerticalLayout {
-            width: sv.visible-width;
-            padding: 14px;
-            padding-top: 0px;
-            spacing: 12px;
-            PageHeader { title: "仪表盘"; }
+    VerticalLayout {
+        AppBar { title: "仪表盘"; }
+        Flickable {
+            content-height: body.preferred-height;
+            body := VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-bottom: 96px;
+                spacing: root.gap;
 
-            Card {
-                height: 250px;
-                VerticalLayout {
-                    padding: 18px;
-                    spacing: 12px;
-                    alignment: center;
+                InfoCard {
+                    title: "网络速度";
+                    glyph: Icons.speed;
                     HorizontalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 132px;
-                            height: 132px;
-                            border-radius: self.width / 2;
-                            background: root.on ? Theme.s.primary : (power.pressed ? Theme.s.inset : Theme.s.block);
-                            animate background { duration: 150ms; }
-                            Text {
-                                text: root.busy ? "…" : (root.on ? "暂停" : "启动");
-                                font-size: 26px;
-                                font-weight: 700;
-                                color: root.on ? Theme.s.on-primary : Theme.s.on-surface;
+                        spacing: 12px;
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Icon { glyph: Icons.up; size: 18px; tint: Theme.s.primary; y: 4px; }
+                            Text { text: root.up-speed; font-size: 20px; color: Theme.s.on-surface; vertical-alignment: center; }
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Icon { glyph: Icons.down; size: 18px; tint: Theme.s.primary; y: 4px; }
+                            Text { text: root.down-speed; font-size: 20px; color: Theme.s.on-surface; vertical-alignment: center; }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: root.gap;
+                    InfoCard {
+                        width: root.half;
+                        title: "出站模式";
+                        glyph: Icons.route;
+                        VerticalLayout {
+                            spacing: 2px;
+                            RadioRow { text: "规则"; checked: root.mode == 0; clicked => { root.set-mode(0); } }
+                            RadioRow { text: "全局"; checked: root.mode == 1; clicked => { root.set-mode(1); } }
+                            RadioRow { text: "直连"; checked: root.mode == 2; clicked => { root.set-mode(2); } }
+                        }
+                    }
+                    InfoCard {
+                        width: root.half;
+                        title: "流量统计";
+                        glyph: Icons.traffic;
+                        VerticalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            VerticalLayout {
+                                spacing: 2px;
+                                Text { text: "上传"; font-size: 12px; color: Theme.s.on-surface-variant; }
+                                Text { text: root.up-total == "" ? "0 B" : root.up-total; font-size: 15px; color: Theme.s.on-surface; overflow: elide; }
                             }
-                            power := TouchArea {
-                                enabled: !root.busy;
-                                clicked => { root.toggle-vpn(); }
+                            VerticalLayout {
+                                spacing: 2px;
+                                Text { text: "下载"; font-size: 12px; color: Theme.s.on-surface-variant; }
+                                Text { text: root.down-total == "" ? "0 B" : root.down-total; font-size: 15px; color: Theme.s.on-surface; overflow: elide; }
                             }
                         }
                     }
-                    Text {
-                        horizontal-alignment: center;
-                        font-size: 15px;
-                        color: root.on ? Theme.s.primary : Theme.s.on-surface-variant;
-                        text: root.run-state == "STARTED" ? "运行中"
-                            : root.run-state == "STARTING" ? "正在启动VPN…"
-                            : root.run-state == "STOPPING" ? "正在停止VPN…"
-                            : root.run-state == "OFFLINE" ? "正在连接内核…" : "未运行";
-                    }
                 }
-            }
 
-            Card {
-                height: 96px;
-                HorizontalLayout {
-                    padding: 16px;
-                    spacing: 12px;
-                    VerticalLayout {
-                        spacing: 6px;
-                        SectionTitle { text: "上传"; }
-                        Text { text: root.up-speed; font-size: 22px; font-weight: 600; color: Theme.s.on-surface; }
-                        Text { text: root.up-total; font-size: 12px; color: Theme.s.on-surface-variant; }
+                Rectangle {
+                    height: profile-card.preferred-height;
+                    profile-card := InfoCard {
+                        title: "配置";
+                        glyph: Icons.file;
+                        Text {
+                            text: root.profile-name == "" ? "添加一个配置文件后即可开始使用" : root.profile-name;
+                            font-size: 15px;
+                            color: root.profile-name == "" ? Theme.s.on-surface-variant : Theme.s.on-surface;
+                            overflow: elide;
+                        }
                     }
-                    Rectangle { width: 1px; background: Theme.s.outline-variant; }
-                    VerticalLayout {
-                        spacing: 6px;
-                        SectionTitle { text: "下载"; }
-                        Text { text: root.down-speed; font-size: 22px; font-weight: 600; color: Theme.s.on-surface; }
-                        Text { text: root.down-total; font-size: 12px; color: Theme.s.on-surface-variant; }
-                    }
-                }
-            }
-
-            Card {
-                height: 96px;
-                VerticalLayout {
-                    padding: 16px;
-                    spacing: 10px;
-                    SectionTitle { text: "出站模式"; }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Chip { text: "规则"; selected: root.mode == 0; clicked => { root.set-mode(0); } }
-                        Chip { text: "全局"; selected: root.mode == 1; clicked => { root.set-mode(1); } }
-                        Chip { text: "直连"; selected: root.mode == 2; clicked => { root.set-mode(2); } }
-                    }
-                }
-            }
-
-            Card {
-                height: 72px;
-                VerticalLayout {
-                    padding: 16px;
-                    spacing: 6px;
-                    SectionTitle { text: "配置"; }
-                    Text {
-                        text: root.profile-name == "" ? "添加一个配置文件后即可开始使用" : root.profile-name;
-                        font-size: 16px;
-                        color: Theme.s.on-surface;
-                        overflow: elide;
-                    }
+                    TouchArea { clicked => { root.open-profiles(); } }
                 }
             }
         }
+    }
+
+    Fab {
+        x: parent.width - self.width - 16px;
+        y: parent.height - self.height - 16px;
+        glyph: root.on ? Icons.pause : Icons.play;
+        filled-glyph: true;
+        enabled: !root.busy;
+        label: root.run-state == "STARTED" ? "运行中"
+            : root.run-state == "STARTING" ? "启动中…"
+            : root.run-state == "STOPPING" ? "停止中…"
+            : root.run-state == "OFFLINE" ? "连接内核…" : "";
+        clicked => { root.toggle-vpn(); }
+    }
+}
+
+// ---------------------------------------------------------------- Proxies
+
+component DelayText inherits Text {
+    in property <int> delay;
+    font-size: 12px;
+    text: delay == -3 ? "…" : delay == -1 ? "超时" : delay == -2 ? "失败" : delay > 0 ? delay + " ms" : "";
+    color: delay > 0 && delay < 800 ? Theme.success : delay > 0 && delay < 1500 ? Theme.warning : Theme.s.error;
+}
+
+component NodeCard inherits Card {
+    in property <NodeItem> item;
+    callback clicked();
+    selected: item.selected;
+    background: item.selected ? Theme.s.primary-container : (ta.pressed ? Theme.s.block : Theme.s.card);
+    VerticalLayout {
+        padding: 12px;
+        spacing: 6px;
+        Text {
+            text: root.item.name;
+            font-size: 14px;
+            color: root.item.selected ? Theme.s.on-primary-container : Theme.s.on-surface;
+            overflow: elide;
+        }
+        HorizontalLayout {
+            Text {
+                horizontal-stretch: 1;
+                text: root.item.kind;
+                font-size: 12px;
+                color: root.item.selected ? Theme.s.on-primary-container : Theme.s.on-surface-variant;
+                overflow: elide;
+            }
+            DelayText { delay: root.item.delay; horizontal-alignment: right; }
+        }
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+component Proxies inherits Rectangle {
+    in property <[GroupItem]> groups;
+    in property <string> current-group;
+    in property <[NodeItem]> nodes;
+    in property <bool> testing;
+    in property <string> hint;
+    callback open-group(string);
+    callback select-node(string, string);
+    callback test-group(string);
+    property <length> gap: 10px;
+    property <length> cell-w: (self.width - 2 * 16px - gap) / 2;
+    property <length> cell-h: 64px;
+
+    VerticalLayout {
+        AppBar { title: "代理"; }
+        if root.groups.length == 0: Empty { text: root.hint; }
+        if root.groups.length > 0: VerticalLayout {
+            // Group tabs, FlClash's scrollable tab bar.
+            Rectangle {
+                height: 44px;
+                Flickable {
+                    content-width: tabs.preferred-width;
+                    tabs := HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        for g in root.groups: Rectangle {
+                            property <bool> active: g.name == root.current-group;
+                            width: label.preferred-width + 24px;
+                            label := Text {
+                                text: g.name;
+                                font-size: 14px;
+                                color: parent.active ? Theme.s.primary : Theme.s.on-surface-variant;
+                                vertical-alignment: center;
+                            }
+                            Rectangle {
+                                y: parent.height - 3px;
+                                width: label.preferred-width;
+                                height: 3px;
+                                border-radius: 1.5px;
+                                background: parent.active ? Theme.s.primary : transparent;
+                            }
+                            TouchArea { clicked => { root.open-group(g.name); } }
+                        }
+                    }
+                }
+                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.s.outline-variant; }
+            }
+            Flickable {
+                content-height: ceil(root.nodes.length / 2) * (root.cell-h + root.gap) + 12px + 88px;
+                for n[i] in root.nodes: NodeCard {
+                    x: 16px + mod(i, 2) * (root.cell-w + root.gap);
+                    y: 12px + floor(i / 2) * (root.cell-h + root.gap);
+                    width: root.cell-w;
+                    height: root.cell-h;
+                    item: n;
+                    clicked => { root.select-node(root.current-group, n.name); }
+                }
+            }
+        }
+    }
+
+    if root.groups.length > 0: Fab {
+        x: parent.width - self.width - 16px;
+        y: parent.height - self.height - 16px;
+        glyph: Icons.bolt;
+        enabled: !root.testing;
+        label: root.testing ? "测试中…" : "";
+        clicked => { root.test-group(root.current-group); }
     }
 }
 
 // ---------------------------------------------------------------- Profiles
 
-component ProfileRow inherits Card {
+component ProfileCard inherits Card {
     in property <ProfileItem> item;
     callback select();
     callback update();
     callback remove();
+    property <bool> menu;
     property <bool> confirm;
-    height: 104px;
-    Rectangle {
-        x: 0;
-        width: 4px;
-        height: parent.height - 28px;
-        border-radius: 2px;
-        background: root.item.active ? Theme.s.primary : transparent;
-    }
+    selected: item.active;
     VerticalLayout {
         padding: 14px;
-        padding-left: 18px;
-        spacing: 8px;
+        padding-right: 4px;
+        spacing: 6px;
         HorizontalLayout {
-            spacing: 8px;
+            spacing: 4px;
             VerticalLayout {
-                spacing: 2px;
+                alignment: center;
+                spacing: 4px;
                 Text {
                     text: root.item.name;
                     font-size: 16px;
-                    font-weight: root.item.active ? 700 : 500;
-                    color: root.item.active ? Theme.s.primary : Theme.s.on-surface;
+                    color: root.item.active ? Theme.s.on-primary-container : Theme.s.on-surface;
                     overflow: elide;
                 }
                 Text {
-                    text: root.item.detail;
+                    text: root.item.busy ? "更新中…" : root.item.detail;
                     font-size: 12px;
-                    color: Theme.s.on-surface-variant;
+                    color: root.item.active ? Theme.s.on-primary-container : Theme.s.on-surface-variant;
                     overflow: elide;
                 }
             }
-        }
-        HorizontalLayout {
-            spacing: 8px;
-            alignment: end;
-            FlatButton {
-                text: root.item.busy ? "更新中…" : "更新";
-                enabled: !root.item.busy;
-                clicked => { root.update(); }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    glyph: Icons.more;
+                    tint: root.item.active ? Theme.s.on-primary-container : Theme.s.on-surface-variant;
+                    clicked => { root.menu = !root.menu; root.confirm = false; }
+                }
             }
-            FlatButton {
+        }
+        if root.menu: HorizontalLayout {
+            alignment: end;
+            padding-right: 6px;
+            spacing: 4px;
+            TextButton {
+                text: "更新";
+                enabled: !root.item.busy;
+                clicked => { root.menu = false; root.update(); }
+            }
+            TextButton {
                 text: root.confirm ? "确定删除" : "删除";
                 danger: true;
                 enabled: !root.item.busy;
                 clicked => {
                     if (root.confirm) {
+                        root.menu = false;
                         root.confirm = false;
                         root.remove();
                     } else {
@@ -327,98 +590,31 @@ component ProfileRow inherits Card {
         }
     }
     TouchArea {
-        y: 0;
-        height: 48px;
-        clicked => { root.confirm = false; root.select(); }
+        width: parent.width - 52px;
+        x: 0;
+        clicked => { root.menu = false; root.select(); }
     }
 }
 
 component Profiles inherits Rectangle {
     in property <[ProfileItem]> profiles;
     in property <bool> adding;
-    callback add-profile(string);
+    callback add();
     callback update-profile(string);
     callback select-profile(string);
     callback delete-profile(string);
-    property <bool> form;
 
     VerticalLayout {
-        PageHeader {
-            title: "配置";
-            Rectangle { }
-            VerticalLayout {
-                alignment: center;
-                FlatButton {
-                    text: "添加配置";
-                    primary: true;
-                    enabled: !root.adding;
-                    clicked => { root.form = !root.form; if (root.form) { url.focus(); } }
-                }
-            }
-        }
-        Rectangle {
-            property <bool> open: root.form || root.adding;
-            height: self.open ? 112px : 0px;
-            visible: self.open;
-            Card {
-                x: 14px;
-                width: parent.width - 28px;
-                height: parent.height;
-                VerticalLayout {
-                    padding: 14px;
-                    spacing: 10px;
-                    Rectangle {
-                        height: 40px;
-                        border-radius: 9px;
-                        background: Theme.s.block;
-                        Text {
-                            x: 12px;
-                            visible: url.text == "";
-                            text: "请输入配置URL";
-                            color: Theme.s.on-surface-variant;
-                            font-size: 14px;
-                        }
-                        url := TextInput {
-                            x: 12px;
-                            width: parent.width - 24px;
-                            vertical-alignment: center;
-                            single-line: true;
-                            input-type: text;
-                            font-size: 14px;
-                            color: Theme.s.on-surface;
-                            selection-background-color: Theme.s.primary-container;
-                            enabled: !root.adding;
-                            accepted => { root.add-profile(self.text); }
-                        }
-                    }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        alignment: end;
-                        FlatButton {
-                            text: "取消";
-                            enabled: !root.adding;
-                            clicked => { root.form = false; url.text = ""; }
-                        }
-                        FlatButton {
-                            text: root.adding ? "加载中…" : "提交";
-                            primary: true;
-                            enabled: !root.adding && url.text != "";
-                            clicked => { root.add-profile(url.text); }
-                        }
-                    }
-                }
-            }
-        }
-        if root.profiles.length == 0 && !root.form: Empty {
-            text: "添加一个配置文件后即可开始使用";
-        }
-        ListView {
-            for p in root.profiles: Rectangle {
-                height: 116px;
-                ProfileRow {
-                    x: 14px;
-                    y: 6px;
-                    width: parent.width - 28px;
+        AppBar { title: "配置"; }
+        if root.profiles.length == 0: Empty { text: "添加一个配置文件后即可开始使用"; }
+        if root.profiles.length > 0: Flickable {
+            content-height: list.preferred-height;
+            list := VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-bottom: 88px;
+                spacing: 10px;
+                for p in root.profiles: ProfileCard {
                     item: p;
                     select => { root.select-profile(p.id); }
                     update => { root.update-profile(p.id); }
@@ -428,246 +624,169 @@ component Profiles inherits Rectangle {
         }
     }
 
-    public function form-done() {
-        root.form = false;
-        url.text = "";
+    Fab {
+        x: parent.width - self.width - 16px;
+        y: parent.height - self.height - 16px;
+        glyph: Icons.plus;
+        enabled: !root.adding;
+        label: root.adding ? "加载中…" : "";
+        clicked => { root.add(); }
     }
 }
 
-// ---------------------------------------------------------------- Proxies
+// ---------------------------------------------------------------- Tools
 
-component DelayText inherits Text {
-    in property <int> delay;
+component ListRow inherits Rectangle {
+    in property <string> glyph;
+    in property <string> title;
+    in property <string> subtitle;
+    in property <bool> chevron: true;
+    callback clicked();
+    height: subtitle == "" ? 56px : 68px;
+    background: ta.pressed ? Theme.s.block : transparent;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 12px;
+        spacing: 16px;
+        VerticalLayout {
+            alignment: center;
+            Icon { glyph: root.glyph; tint: Theme.s.on-surface-variant; }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text { text: root.title; font-size: 16px; color: Theme.s.on-surface; }
+            if root.subtitle != "": Text { text: root.subtitle; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+        }
+        if root.chevron: VerticalLayout {
+            alignment: center;
+            Icon { glyph: Icons.chevron; size: 20px; tint: Theme.s.on-surface-variant; }
+        }
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+component SectionHeader inherits Text {
+    color: Theme.s.primary;
     font-size: 13px;
-    horizontal-alignment: right;
-    text: delay == -3 ? "…" : delay == -1 ? "超时" : delay == -2 ? "失败" : delay > 0 ? delay + " ms" : "";
-    color: delay > 0 && delay < 800 ? Theme.success : delay > 0 && delay < 1500 ? Theme.warning : Theme.s.error;
+    height: 36px;
+    vertical-alignment: bottom;
 }
 
-component Proxies inherits Rectangle {
-    in property <[GroupItem]> groups;
-    in property <string> current-group;
-    in property <[NodeItem]> nodes;
-    in property <bool> testing;
-    in property <string> hint;
-    callback open-group(string);
-    callback close-group();
-    callback select-node(string, string);
-    callback test-group(string);
-
-    if root.current-group == "": VerticalLayout {
-        width: parent.width;
-        height: parent.height;
-        PageHeader { title: "代理"; }
-        if root.groups.length == 0: Empty { text: root.hint; }
-        ListView {
-            for g in root.groups: Rectangle {
-                height: 78px;
-                Card {
-                    x: 14px;
-                    y: 5px;
-                    width: parent.width - 28px;
-                    height: parent.height - 10px;
-                    background: gta.pressed ? Theme.s.block : Theme.s.card;
-                    HorizontalLayout {
-                        padding-left: 16px;
-                        padding-right: 16px;
-                        spacing: 10px;
-                        VerticalLayout {
-                            alignment: center;
-                            spacing: 3px;
-                            Text { text: g.name; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
-                            Text { text: g.kind + " · " + g.count; font-size: 12px; color: Theme.s.on-surface-variant; }
-                        }
-                        Text {
-                            text: g.now;
-                            font-size: 14px;
-                            color: Theme.s.primary;
-                            vertical-alignment: center;
-                            horizontal-alignment: right;
-                            overflow: elide;
-                            max-width: 160px;
-                        }
-                        Text { text: "›"; font-size: 22px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
-                    }
-                    gta := TouchArea { clicked => { root.open-group(g.name); } }
+component Tools inherits Rectangle {
+    in property <string> version;
+    callback open(string);
+    VerticalLayout {
+        AppBar { title: "工具"; }
+        Flickable {
+            content-height: col.preferred-height;
+            col := VerticalLayout {
+                padding-bottom: 16px;
+                ListRow { glyph: Icons.logs; title: "日志"; clicked => { root.open("logs"); } }
+                HorizontalLayout {
+                    padding-left: 16px;
+                    SectionHeader { text: "设置"; }
                 }
-            }
-        }
-    }
-
-    if root.current-group != "": VerticalLayout {
-        width: parent.width;
-        height: parent.height;
-        HorizontalLayout {
-            height: 52px;
-            padding-left: 6px;
-            padding-right: 12px;
-            spacing: 6px;
-            Rectangle {
-                width: 40px;
-                Text { text: "‹"; font-size: 30px; color: Theme.s.primary; }
-                TouchArea { clicked => { root.close-group(); } }
-            }
-            Text {
-                horizontal-stretch: 1;
-                text: root.current-group;
-                font-size: 20px;
-                font-weight: 700;
-                color: Theme.s.on-surface;
-                vertical-alignment: center;
-                overflow: elide;
-            }
-            VerticalLayout {
-                alignment: center;
-                FlatButton {
-                    text: root.testing ? "测试中…" : "延迟测试";
-                    primary: true;
-                    enabled: !root.testing;
-                    clicked => { root.test-group(root.current-group); }
+                ListRow { glyph: Icons.palette; title: "主题"; clicked => { root.open("theme"); } }
+                HorizontalLayout {
+                    padding-left: 16px;
+                    SectionHeader { text: "其他"; }
                 }
-            }
-        }
-        ListView {
-            for n in root.nodes: Rectangle {
-                height: 62px;
-                Card {
-                    x: 14px;
-                    y: 3px;
-                    width: parent.width - 28px;
-                    height: parent.height - 6px;
-                    background: n.selected ? Theme.s.primary-container : (nta.pressed ? Theme.s.block : Theme.s.card);
-                    HorizontalLayout {
-                        padding-left: 16px;
-                        padding-right: 16px;
-                        spacing: 10px;
-                        VerticalLayout {
-                            alignment: center;
-                            spacing: 2px;
-                            Text {
-                                text: n.name;
-                                font-size: 15px;
-                                color: n.selected ? Theme.s.on-primary-container : Theme.s.on-surface;
-                                font-weight: n.selected ? 600 : 400;
-                                overflow: elide;
-                            }
-                            Text { text: n.kind; font-size: 12px; color: Theme.s.on-surface-variant; }
-                        }
-                        DelayText { delay: n.delay; vertical-alignment: center; width: 64px; }
-                    }
-                    nta := TouchArea { clicked => { root.select-node(root.current-group, n.name); } }
-                }
+                ListRow { glyph: Icons.info; title: "关于"; subtitle: root.version; chevron: false; }
             }
         }
     }
 }
-
-// ---------------------------------------------------------------- Logs
 
 component Logs inherits Rectangle {
     in property <[LogItem]> logs;
     callback clear-logs();
+    callback back();
     VerticalLayout {
-        PageHeader {
+        AppBar {
             title: "日志";
-            Rectangle { }
+            can-back: true;
+            back => { root.back(); }
             VerticalLayout {
                 alignment: center;
-                FlatButton { text: "清空"; on-page: true; clicked => { root.clear-logs(); } }
+                TextButton { text: "清空"; clicked => { root.clear-logs(); } }
             }
         }
         if root.logs.length == 0: Empty { text: "暂无数据"; }
-        ListView {
-            for l in root.logs: Rectangle {
-                height: col.preferred-height + 8px;
-                col := VerticalLayout {
-                    x: 14px;
-                    width: parent.width - 28px;
-                    padding-top: 4px;
-                    padding-bottom: 4px;
-                    spacing: 2px;
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text {
-                            text: l.level;
-                            font-size: 11px;
-                            font-weight: 700;
-                            color: l.level == "error" ? Theme.s.error : l.level == "warning" ? Theme.warning : l.level == "info" ? Theme.s.primary : Theme.s.on-surface-variant;
+        if root.logs.length > 0: Flickable {
+            content-height: list.preferred-height;
+            list := VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-bottom: 16px;
+                spacing: 8px;
+                for l in root.logs: Card {
+                    height: col.preferred-height;
+                    col := VerticalLayout {
+                        padding: 12px;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text {
+                                text: l.level;
+                                font-size: 11px;
+                                color: l.level == "error" ? Theme.s.error : l.level == "warning" ? Theme.warning : l.level == "info" ? Theme.s.primary : Theme.s.on-surface-variant;
+                            }
+                            Text { text: l.time; font-size: 11px; color: Theme.s.on-surface-variant; }
+                            Rectangle { }
                         }
-                        Text { text: l.time; font-size: 11px; color: Theme.s.on-surface-variant; }
-                        Rectangle { }
+                        Text { text: l.text; font-size: 13px; color: Theme.s.on-surface; wrap: word-wrap; }
                     }
-                    Text { text: l.text; font-size: 13px; color: Theme.s.on-surface; wrap: word-wrap; }
-                    Rectangle { height: 1px; background: Theme.s.outline-variant; opacity: 0.5; }
                 }
             }
         }
     }
 }
 
-// ---------------------------------------------------------------- Settings
-
-component Settings inherits Rectangle {
+component ThemePage inherits Rectangle {
     in property <[color]> accents;
     in property <int> accent;
     in property <int> theme-mode;
-    in property <string> version;
     callback set-accent(int);
     callback set-theme-mode(int);
-    sv := ScrollView {
+    callback back();
+    VerticalLayout {
+        AppBar { title: "主题"; can-back: true; back => { root.back(); } }
         VerticalLayout {
-            width: sv.visible-width;
-            padding: 14px;
-            padding-top: 0px;
+            padding-left: 16px;
+            padding-right: 16px;
             spacing: 12px;
-            PageHeader { title: "设置"; }
-            Card {
-                height: 96px;
+            alignment: start;
+            InfoCard {
+                title: "主题模式";
+                glyph: Icons.palette;
                 VerticalLayout {
-                    padding: 16px;
-                    spacing: 10px;
-                    SectionTitle { text: "主题模式"; }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Chip { text: "跟随系统"; selected: root.theme-mode == 0; clicked => { root.set-theme-mode(0); } }
-                        Chip { text: "浅色"; selected: root.theme-mode == 1; clicked => { root.set-theme-mode(1); } }
-                        Chip { text: "深色"; selected: root.theme-mode == 2; clicked => { root.set-theme-mode(2); } }
-                    }
+                    spacing: 2px;
+                    RadioRow { text: "跟随系统"; checked: root.theme-mode == 0; clicked => { root.set-theme-mode(0); } }
+                    RadioRow { text: "浅色"; checked: root.theme-mode == 1; clicked => { root.set-theme-mode(1); } }
+                    RadioRow { text: "深色"; checked: root.theme-mode == 2; clicked => { root.set-theme-mode(2); } }
                 }
             }
-            Card {
-                height: 108px;
-                VerticalLayout {
-                    padding: 16px;
-                    spacing: 12px;
-                    SectionTitle { text: "主题色彩"; }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        alignment: space-between;
-                        for c[i] in root.accents: Rectangle {
-                            width: 34px;
-                            height: 34px;
-                            border-radius: 17px;
-                            background: c;
-                            Rectangle {
-                                visible: i == root.accent;
-                                width: 14px;
-                                height: 14px;
-                                border-radius: 7px;
-                                background: white;
-                            }
-                            TouchArea { clicked => { root.set-accent(i); } }
+            InfoCard {
+                title: "主题色彩";
+                glyph: Icons.palette;
+                HorizontalLayout {
+                    height: 40px;
+                    alignment: space-between;
+                    for c[i] in root.accents: Rectangle {
+                        width: 36px;
+                        height: 36px;
+                        border-radius: 18px;
+                        background: c;
+                        Rectangle {
+                            visible: i == root.accent;
+                            width: 14px;
+                            height: 14px;
+                            border-radius: 7px;
+                            background: white;
                         }
+                        TouchArea { clicked => { root.set-accent(i); } }
                     }
-                }
-            }
-            Card {
-                height: 72px;
-                VerticalLayout {
-                    padding: 16px;
-                    spacing: 4px;
-                    Text { text: "SeasonCat"; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; }
-                    Text { text: root.version; font-size: 12px; color: Theme.s.on-surface-variant; }
                 }
             }
         }
@@ -676,35 +795,33 @@ component Settings inherits Rectangle {
 
 // ---------------------------------------------------------------- Shell
 
-component TabIcon inherits Path {
-    in property <bool> active;
-    width: 22px;
-    height: 22px;
-    fill: transparent;
-    stroke: active ? Theme.s.primary : Theme.s.on-surface-variant;
-    stroke-width: 1.8px;
-    viewbox-width: 24;
-    viewbox-height: 24;
-}
-
-component TabButton inherits Rectangle {
+// Material 3 navigation bar destination: a pill behind the active icon, label below.
+component NavItem inherits Rectangle {
     in property <string> label;
     in property <bool> active;
-    in property <string> icon;
+    in property <string> glyph;
     callback clicked();
     VerticalLayout {
         alignment: center;
-        spacing: 3px;
+        spacing: 4px;
         HorizontalLayout {
             alignment: center;
-            TabIcon { commands: root.icon; active: root.active; }
+            Rectangle {
+                width: 60px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.active ? Theme.s.primary-container : transparent;
+                Icon {
+                    glyph: root.glyph;
+                    tint: root.active ? Theme.s.on-primary-container : Theme.s.on-surface-variant;
+                }
+            }
         }
         Text {
             text: root.label;
-            font-size: 11px;
+            font-size: 12px;
             horizontal-alignment: center;
-            color: root.active ? Theme.s.primary : Theme.s.on-surface-variant;
-            font-weight: root.active ? 600 : 400;
+            color: root.active ? Theme.s.on-surface : Theme.s.on-surface-variant;
         }
     }
     TouchArea { clicked => { root.clicked(); } }
@@ -715,7 +832,10 @@ export component AppWindow inherits Window {
     background: Theme.s.page;
     default-font-size: 14px;
 
+    // 0 dashboard, 1 proxies, 2 profiles, 3 tools (FlClash's mobile bar)
     in-out property <int> tab: 0;
+    // Page opened from tools: "", "logs" or "theme".
+    in-out property <string> tools-page;
     // Dashboard
     in property <string> run-state: "OFFLINE";
     in property <string> profile-name;
@@ -729,6 +849,7 @@ export component AppWindow inherits Window {
     // Profiles
     in property <[ProfileItem]> profiles;
     in property <bool> adding;
+    in-out property <bool> add-open;
     callback add-profile(string);
     callback update-profile(string);
     callback select-profile(string);
@@ -757,7 +878,14 @@ export component AppWindow inherits Window {
     in property <string> toast;
 
     public function profile-added() {
-        profiles-page.form-done();
+        root.add-open = false;
+        url.text = "";
+    }
+
+    function go(t: int) {
+        root.tab = t;
+        root.tools-page = "";
+        root.tab-changed(t);
     }
 
     property <length> top-inset: max(root.safe-area-insets.top, 0px);
@@ -768,12 +896,16 @@ export component AppWindow inherits Window {
     keys := FocusScope {
         key-pressed(event) => {
             if (event.text == Key.Back) {
-                if (root.tab == 2 && root.current-group != "") {
-                    root.current-group = "";
+                if (root.add-open && !root.adding) {
+                    root.add-open = false;
+                    return accept;
+                }
+                if (root.tab == 3 && root.tools-page != "") {
+                    root.tools-page = "";
                     return accept;
                 }
                 if (root.tab != 0) {
-                    root.tab = 0;
+                    root.go(0);
                     return accept;
                 }
             }
@@ -796,19 +928,9 @@ export component AppWindow inherits Window {
                     mode: root.mode;
                     toggle-vpn => { root.toggle-vpn(); }
                     set-mode(m) => { root.set-mode(m); }
+                    open-profiles => { root.go(2); }
                 }
-                profiles-page := Profiles {
-                    width: parent.width;
-                    height: parent.height;
-                    visible: root.tab == 1;
-                    profiles: root.profiles;
-                    adding: root.adding;
-                    add-profile(u) => { root.add-profile(u); }
-                    update-profile(id) => { root.update-profile(id); }
-                    select-profile(id) => { root.select-profile(id); }
-                    delete-profile(id) => { root.delete-profile(id); }
-                }
-                if root.tab == 2: Proxies {
+                if root.tab == 1: Proxies {
                     width: parent.width;
                     height: parent.height;
                     groups: root.groups;
@@ -817,33 +939,49 @@ export component AppWindow inherits Window {
                     testing: root.testing;
                     hint: root.proxies-hint;
                     open-group(g) => { root.current-group = g; root.open-group(g); }
-                    close-group => { root.current-group = ""; }
                     select-node(g, n) => { root.select-node(g, n); }
                     test-group(g) => { root.test-group(g); }
                 }
-                if root.tab == 3: Logs {
+                if root.tab == 2: Profiles {
+                    width: parent.width;
+                    height: parent.height;
+                    profiles: root.profiles;
+                    adding: root.adding;
+                    add => { root.add-open = true; url.focus(); }
+                    update-profile(id) => { root.update-profile(id); }
+                    select-profile(id) => { root.select-profile(id); }
+                    delete-profile(id) => { root.delete-profile(id); }
+                }
+                if root.tab == 3 && root.tools-page == "": Tools {
+                    width: parent.width;
+                    height: parent.height;
+                    version: root.version;
+                    open(p) => { root.tools-page = p; }
+                }
+                if root.tab == 3 && root.tools-page == "logs": Logs {
                     width: parent.width;
                     height: parent.height;
                     logs: root.logs;
                     clear-logs => { root.clear-logs(); }
+                    back => { root.tools-page = ""; }
                 }
-                if root.tab == 4: Settings {
+                if root.tab == 3 && root.tools-page == "theme": ThemePage {
                     width: parent.width;
                     height: parent.height;
                     accents: root.accents;
                     accent: root.accent;
                     theme-mode: root.theme-mode;
-                    version: root.version;
                     set-accent(i) => { root.set-accent(i); }
                     set-theme-mode(m) => { root.set-theme-mode(m); }
+                    back => { root.tools-page = ""; }
                 }
 
                 if root.toast != "": Rectangle {
-                    y: parent.height - self.height - 16px - root.keyboard;
+                    y: parent.height - self.height - 88px - root.keyboard;
                     x: (parent.width - self.width) / 2;
                     width: min(parent.width - 40px, toast-text.preferred-width + 32px);
                     height: toast-text.preferred-height + 20px;
-                    border-radius: 12px;
+                    border-radius: 8px;
                     background: Theme.s.on-surface;
                     toast-text := Text {
                         x: 16px;
@@ -858,41 +996,79 @@ export component AppWindow inherits Window {
                 }
             }
             if root.keyboard == 0: Rectangle {
-                height: 60px + root.bottom-inset;
+                height: 72px + root.bottom-inset;
                 background: Theme.s.card;
-                Rectangle { y: 0; height: 1px; background: Theme.s.outline-variant; opacity: 0.6; }
                 HorizontalLayout {
                     y: 0;
-                    height: 60px;
-                    TabButton {
-                        label: "仪表盘";
-                        active: root.tab == 0;
-                        icon: "M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z";
-                        clicked => { root.tab = 0; root.tab-changed(0); }
+                    height: 72px;
+                    NavItem { label: "仪表盘"; glyph: Icons.dashboard; active: root.tab == 0; clicked => { root.go(0); } }
+                    NavItem { label: "代理"; glyph: Icons.proxies; active: root.tab == 1; clicked => { root.go(1); } }
+                    NavItem { label: "配置"; glyph: Icons.profiles; active: root.tab == 2; clicked => { root.go(2); } }
+                    NavItem { label: "工具"; glyph: Icons.tools; active: root.tab == 3; clicked => { root.go(3); } }
+                }
+            }
+        }
+
+        // Add-profile dialog (FlClash asks for the URL in a dialog). Kept in the tree so the
+        // input keeps its text and focus; shown while open or while the add is running.
+        Rectangle {
+            visible: root.add-open || root.adding;
+            background: #00000066;
+            TouchArea {
+                enabled: parent.visible && !root.adding;
+                clicked => { root.add-open = false; }
+            }
+            Rectangle {
+                x: 24px;
+                width: parent.width - 48px;
+                height: dialog.preferred-height;
+                y: max(root.top-inset + 24px, (parent.height - root.keyboard - self.height) / 2);
+                background: Theme.s.card;
+                border-radius: 24px;
+                TouchArea { }
+                dialog := VerticalLayout {
+                    padding: 24px;
+                    padding-bottom: 16px;
+                    spacing: 16px;
+                    Text { text: "添加配置"; font-size: 22px; color: Theme.s.on-surface; }
+                    Rectangle {
+                        height: 52px;
+                        border-radius: 4px;
+                        border-width: url.has-focus ? 2px : 1px;
+                        border-color: url.has-focus ? Theme.s.primary : Theme.s.on-surface-variant;
+                        Text {
+                            x: 14px;
+                            visible: url.text == "";
+                            text: "请输入配置URL";
+                            color: Theme.s.on-surface-variant;
+                            font-size: 15px;
+                        }
+                        url := TextInput {
+                            x: 14px;
+                            width: parent.width - 28px;
+                            vertical-alignment: center;
+                            single-line: true;
+                            input-type: text;
+                            font-size: 15px;
+                            color: Theme.s.on-surface;
+                            selection-background-color: Theme.s.primary-container;
+                            enabled: !root.adding;
+                            accepted => { if (self.text != "") { root.add-profile(self.text); } }
+                        }
                     }
-                    TabButton {
-                        label: "配置";
-                        active: root.tab == 1;
-                        icon: "M6 3h9l4 4v14H6z M14 3v5h5 M9 13h7 M9 17h7";
-                        clicked => { root.tab = 1; root.tab-changed(1); }
-                    }
-                    TabButton {
-                        label: "代理";
-                        active: root.tab == 2;
-                        icon: "M12 3a9 9 0 1 0 0.01 0z M3 12h18 M12 3c3 3 3 15 0 18 M12 3c-3 3-3 15 0 18";
-                        clicked => { root.tab = 2; root.tab-changed(2); }
-                    }
-                    TabButton {
-                        label: "日志";
-                        active: root.tab == 3;
-                        icon: "M5 6h14 M5 10h14 M5 14h10 M5 18h7";
-                        clicked => { root.tab = 3; root.tab-changed(3); }
-                    }
-                    TabButton {
-                        label: "设置";
-                        active: root.tab == 4;
-                        icon: "M12 8.5a3.5 3.5 0 1 0 0.01 0z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M4.9 19.1l2.1-2.1 M17 7l2.1-2.1";
-                        clicked => { root.tab = 4; root.tab-changed(4); }
+                    HorizontalLayout {
+                        alignment: end;
+                        spacing: 8px;
+                        TextButton {
+                            text: "取消";
+                            enabled: !root.adding;
+                            clicked => { root.add-open = false; url.text = ""; }
+                        }
+                        TextButton {
+                            text: root.adding ? "加载中…" : "提交";
+                            enabled: !root.adding && url.text != "";
+                            clicked => { root.add-profile(url.text); }
+                        }
                     }
                 }
             }

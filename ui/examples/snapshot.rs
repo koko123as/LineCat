@@ -66,14 +66,24 @@ fn main() {
     ui.set_logs(ModelRc::new(logs));
     let _ = ui.get_logs().row_count();
 
-    let shots: &[(&str, i32, &str, i32)] = &[
-        ("dashboard", 0, "", 1), ("profiles", 1, "", 1), ("proxies", 2, "", 1), ("nodes", 2, "节点选择", 1),
-        ("logs", 3, "", 1), ("settings", 4, "", 1), ("dashboard-dark", 0, "", 2), ("nodes-dark", 2, "节点选择", 2),
+    // (file, tab, open group, tools page, theme mode, add dialog open)
+    let shots: &[(&str, i32, &str, &str, i32, bool)] = &[
+        ("dashboard", 0, "", "", 1, false),
+        ("proxies", 1, "节点选择", "", 1, false),
+        ("profiles", 2, "", "", 1, false),
+        ("profiles-add", 2, "", "", 1, true),
+        ("tools", 3, "", "", 1, false),
+        ("logs", 3, "", "logs", 1, false),
+        ("theme", 3, "", "theme", 1, false),
+        ("dashboard-dark", 0, "", "", 2, false),
+        ("proxies-dark", 1, "节点选择", "", 2, false),
     ];
     ui.show().unwrap();
-    for (name, tab, group, mode) in shots {
+    for (name, tab, group, page, mode, add) in shots {
         ui.set_tab(*tab);
         ui.set_current_group((*group).into());
+        ui.set_tools_page((*page).into());
+        ui.set_add_open(*add);
         ui.global::<Theme>().set_mode(*mode);
         ui.set_theme_mode(*mode);
         slint::platform::update_timers_and_animations();

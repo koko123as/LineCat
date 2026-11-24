@@ -739,14 +739,20 @@ impl App {
             "暂无数据"
         };
         self.ui(move |ui| {
-            ui.set_groups(ModelRc::new(VecModel::from(list)));
+            ui.set_groups(ModelRc::new(VecModel::from(list.clone())));
             ui.set_proxies_hint(hint.into());
-            let current = ui.get_current_group();
-            if !current.is_empty() {
-                ui.set_nodes(ModelRc::new(VecModel::from(group_nodes(
-                    &groups, &current, &delays,
-                ))));
+            // The proxies page shows one group at a time behind a row of group tabs, as
+            // FlClash does: keep the open group while it is listed, else open the first.
+            let mut current = ui.get_current_group().to_string();
+            if !list.iter().any(|g| g.name.as_str() == current) {
+                current = list.first().map(|g| g.name.to_string()).unwrap_or_default();
+                ui.set_current_group(current.clone().into());
             }
+            ui.set_nodes(ModelRc::new(VecModel::from(if current.is_empty() {
+                Vec::new()
+            } else {
+                group_nodes(&groups, &current, &delays)
+            })));
         });
     }
 
@@ -890,7 +896,8 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     ui.on_test_group(move |g| a.test_group(g.into()));
     let a = app.clone();
     ui.on_tab_changed(move |tab| {
-        if tab == 2 {
+        // Tabs follow FlClash's mobile bar: 0 dashboard, 1 proxies, 2 profiles, 3 tools.
+        if tab == 1 {
             a.spawn(|app| app.refresh_groups());
         }
     });
