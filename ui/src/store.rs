@@ -16,6 +16,8 @@ pub struct Settings {
     /// 0 rule, 1 global, 2 direct.
     pub mode: i32,
     pub proxies: ProxiesStyle,
+    /// The dashboard's cards in order; none kept means the defaults.
+    pub dashboard: Option<Vec<String>>,
 }
 
 /// `ProxiesStyleProps` in lib/models/config.dart.

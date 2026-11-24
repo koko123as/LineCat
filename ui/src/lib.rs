@@ -3,6 +3,7 @@
 //! socket, see `bridge`.
 
 pub mod bridge;
+pub mod dashboard;
 pub mod profile;
 pub mod proxies;
 pub mod store;
@@ -69,6 +70,11 @@ struct App {
     sorted_delays: Mutex<HashMap<String, i32>>,
     testing_groups: Mutex<HashSet<String>>,
     proxy_query: Mutex<String>,
+    traffic_up: Mutex<VecDeque<i64>>,
+    traffic_down: Mutex<VecDeque<i64>>,
+    peaks: Mutex<(i64, i64)>,
+    started_at: Mutex<Option<std::time::Instant>>,
+    ip_seq: AtomicU64,
     busy: Mutex<HashSet<String>>,
     pending_logs: Mutex<Vec<LogItem>>,
     logs_scheduled: AtomicBool,
@@ -123,6 +129,35 @@ fn edit_form(ui: &AppWindow) -> EditForm {
         auto: ui.get_edit_auto(),
         interval: ui.get_edit_interval().into(),
         file_changed: ui.get_edit_file_changed(),
+    }
+}
+
+/// `ProfilesCard`: the name, the days left or the source, when it was updated and the
+/// usage meter.
+fn dash_profile(p: &store::Profile, busy: bool) -> DashProfile {
+    let sub = if p.is_url() { p.subscription } else { None };
+    let expire = sub.filter(|s| s.expire > 0).map(|s| s.expire);
+    let (end, warn) = match expire {
+        Some(e) => {
+            let days = ((e - now_secs() as i64).max(0) + 86_399) / 86_400;
+            (format!("剩余 {days} 天"), days <= 7)
+        }
+        None => ((if p.is_url() { "远程" } else { "本地" }).to_string(), false),
+    };
+    let usage = sub.and_then(|s| dashboard::usage(s.upload + s.download, s.total));
+    let (percent, used, ratio) = usage.clone().unwrap_or_default();
+    DashProfile {
+        id: p.id.as_str().into(),
+        name: p.label().into(),
+        end: end.into(),
+        warn,
+        updated: if p.updated == 0 { SharedString::new() } else { format!("更新于 {}", ago_short(p.updated)).into() },
+        usage: usage.is_some(),
+        percent: percent.into(),
+        used: used.into(),
+        ratio,
+        syncable: p.is_url(),
+        busy,
     }
 }
 
@@ -296,10 +331,25 @@ impl App {
         }
     }
 
-    fn set_run_state(&self, state: &str) {
-        *self.run_state.lock().unwrap() = state.to_string();
+    fn set_run_state(self: &Arc<Self>, state: &str) {
+        let previous = std::mem::replace(&mut *self.run_state.lock().unwrap(), state.to_string());
         let s: SharedString = state.into();
         self.ui(move |ui| ui.set_run_state(s));
+        if previous == state {
+            return;
+        }
+        match state {
+            "STARTED" => {
+                *self.started_at.lock().unwrap() = Some(std::time::Instant::now());
+                self.probe_ip();
+            }
+            "STOPPED" => {
+                *self.started_at.lock().unwrap() = None;
+                self.ui(|ui| ui.set_dash_run_time("00:00:00".into()));
+                self.probe_ip();
+            }
+            _ => {}
+        }
     }
 
     fn setup(self: &Arc<Self>, bridge: &Bridge) -> Result<(), String> {
@@ -342,6 +392,7 @@ impl App {
         if let Some(s) = hello.get("state").and_then(Value::as_str) {
             self.set_run_state(s);
         }
+        self.probe_ip();
         let traffic = Arc::downgrade(self);
         bridge.watch(
             "traffic.watch",
@@ -349,18 +400,7 @@ impl App {
             Box::new(move |t| {
                 let Some(app) = traffic.upgrade() else { return };
                 let get = |k: &str| t.get(k).and_then(Value::as_i64).unwrap_or(0);
-                let (up, down, tu, td) = (
-                    speed(get("up")),
-                    speed(get("down")),
-                    size(get("totalUp")),
-                    size(get("totalDown")),
-                );
-                app.ui(move |ui| {
-                    ui.set_up_speed(up.into());
-                    ui.set_down_speed(down.into());
-                    ui.set_up_total(format!("共 {tu}").into());
-                    ui.set_down_total(format!("共 {td}").into());
-                });
+                app.on_traffic(get("up"), get("down"), get("totalUp"), get("totalDown"));
             }),
         )?;
         let logs = Arc::downgrade(self);
@@ -464,7 +504,148 @@ impl App {
         self.delays.lock().unwrap().clear();
         self.sorted_delays.lock().unwrap().clear();
         self.refresh_groups();
+        self.probe_ip();
         Ok(())
+    }
+
+    // ------------------------------------------------------------ dashboard
+    // lib/views/dashboard.
+
+    fn on_traffic(self: &Arc<Self>, up: i64, down: i64, total_up: i64, total_down: i64) {
+        let push = |q: &Mutex<VecDeque<i64>>, v: i64| {
+            let mut q = q.lock().unwrap();
+            q.push_back(v);
+            while q.len() > dashboard::HISTORY {
+                q.pop_front();
+            }
+            dashboard::sparkline(&q)
+        };
+        let (up_line, up_fill) = push(&self.traffic_up, up);
+        let (down_line, down_fill) = push(&self.traffic_down, down);
+        let (up_peak, down_peak) = {
+            let mut p = self.peaks.lock().unwrap();
+            p.0 = p.0.max(up);
+            p.1 = p.1.max(down);
+            *p
+        };
+        let (uv, uu) = dashboard::split_unit(&speed(up));
+        let (dv, du) = dashboard::split_unit(&speed(down));
+        let traffic = DashTraffic {
+            up_value: uv.into(),
+            up_unit: uu.into(),
+            up_total: format!("累计 {}", size(total_up)).into(),
+            up_peak: format!("峰值 {}", speed(up_peak)).into(),
+            up_line: up_line.into(),
+            up_fill: up_fill.into(),
+            down_value: dv.into(),
+            down_unit: du.into(),
+            down_total: format!("累计 {}", size(total_down)).into(),
+            down_peak: format!("峰值 {}", speed(down_peak)).into(),
+            down_line: down_line.into(),
+            down_fill: down_fill.into(),
+        };
+        let run = self.started_at.lock().unwrap().map(|t| dashboard::run_time(t.elapsed().as_secs()));
+        let memory = dashboard::resident_memory().map(size).unwrap_or_default();
+        let (us, ds) = (speed(up), speed(down));
+        self.ui(move |ui| {
+            ui.set_up_speed(us.into());
+            ui.set_down_speed(ds.into());
+            ui.set_dash_traffic(traffic);
+            if let Some(run) = run {
+                ui.set_dash_run_time(run.into());
+            }
+            ui.set_dash_memory(memory.into());
+        });
+    }
+
+    /// `OutboundIpProbe`: where traffic leaves right now, through the rules while running
+    /// and directly otherwise, then what kind of address it is.
+    fn probe_ip(self: &Arc<Self>) {
+        let seq = self.ip_seq.fetch_add(1, Ordering::SeqCst) + 1;
+        let proxy = if self.run_state.lock().unwrap().as_str() == "STARTED" { "" } else { "DIRECT" };
+        self.ui(|ui| {
+            let mut s = ui.get_dash_status();
+            s.probing = true;
+            ui.set_dash_status(s);
+        });
+        self.spawn(move |app| {
+            let result = app.bridge().and_then(|b| {
+                b.call(
+                    "probe.outboundIp",
+                    json!({"proxy": proxy, "urls": dashboard::IP_SOURCES, "timeout": 6000}),
+                    Duration::from_secs(12),
+                )
+            });
+            let found = result.ok().and_then(|r| {
+                let url = r.get("url").and_then(Value::as_str).unwrap_or("");
+                let body = r.get("body").and_then(Value::as_str).unwrap_or("");
+                dashboard::parse_ip(url, body)
+            });
+            if app.ip_seq.load(Ordering::SeqCst) != seq {
+                return;
+            }
+            let Some((ip, cc)) = found else {
+                app.ui(|ui| {
+                    ui.set_dash_status(DashStatus { ip: "获取失败".into(), ..Default::default() });
+                });
+                return;
+            };
+            let (ip2, cc2) = (ip.clone(), cc.clone());
+            app.ui(move |ui| {
+                ui.set_dash_status(DashStatus { ip: ip2.into(), country: cc2.into(), probing: true, ..Default::default() });
+            });
+            let quality = dashboard::lookup_quality(&ip);
+            if app.ip_seq.load(Ordering::SeqCst) != seq {
+                return;
+            }
+            app.ui(move |ui| {
+                let (org, kind, level) = quality.unwrap_or_else(|| (String::new(), "类型未知".into(), 0));
+                ui.set_dash_status(DashStatus {
+                    ip: ip.into(),
+                    country: cc.into(),
+                    kind: kind.into(),
+                    quality: level,
+                    org: org.into(),
+                    probing: false,
+                });
+            });
+        });
+    }
+
+    fn publish_dashboard_widgets(self: &Arc<Self>) {
+        let list = self.store.lock().unwrap().state.settings.dashboard.clone().unwrap_or_else(dashboard::default_widgets);
+        let hidden: Vec<SharedString> = dashboard::WIDGETS.iter().filter(|w| !list.iter().any(|l| l == *w)).map(|w| (*w).into()).collect();
+        let list: Vec<SharedString> = list.into_iter().map(Into::into).collect();
+        let ip = dashboard::local_ip().unwrap_or_else(|| "未知".into());
+        let has_start = list.iter().any(|w| w == "status" || w == "vpn");
+        self.ui(move |ui| {
+            ui.set_dash_has_start(has_start);
+            ui.set_dash_widgets(ModelRc::new(VecModel::from(list)));
+            ui.set_dash_hidden(ModelRc::new(VecModel::from(hidden)));
+            ui.set_dash_local_ip(ip.into());
+        });
+    }
+
+    /// The dashboard editor: add, remove or move a card.
+    fn edit_dashboard(self: &Arc<Self>, action: &str, widget: &str) {
+        {
+            let mut store = self.store.lock().unwrap();
+            let mut list = store.state.settings.dashboard.clone().unwrap_or_else(dashboard::default_widgets);
+            let at = list.iter().position(|w| w == widget);
+            match (action, at) {
+                ("add", None) if dashboard::WIDGETS.contains(&widget) => list.push(widget.to_string()),
+                ("remove", Some(i)) => {
+                    list.remove(i);
+                }
+                ("up", Some(i)) if i > 0 => list.swap(i, i - 1),
+                ("down", Some(i)) if i + 1 < list.len() => list.swap(i, i + 1),
+                ("reset", _) => list = dashboard::default_widgets(),
+                _ => return,
+            }
+            store.state.settings.dashboard = Some(list);
+            store.save();
+        }
+        self.publish_dashboard_widgets();
     }
 
     fn toggle_vpn(self: &Arc<Self>) {
@@ -519,7 +700,10 @@ impl App {
                 params["overlay"]["mode"] = store::mode_name(mode).into();
             }
             match r {
-                Ok(_) => app.refresh_groups(),
+                Ok(_) => {
+                    app.refresh_groups();
+                    app.probe_ip();
+                }
                 Err(e) => app.toast(e),
             }
         });
@@ -557,7 +741,7 @@ impl App {
     }
 
     fn refresh_profiles(&self) {
-        let (items, name) = {
+        let (items, name, dash) = {
             let store = self.store.lock().unwrap();
             let busy = self.busy.lock().unwrap();
             let items: Vec<ProfileItem> = store
@@ -566,11 +750,15 @@ impl App {
                 .iter()
                 .map(|p| self.profile_item(&store, p, &busy))
                 .collect();
-            (items, store.active().map(|p| p.label()).unwrap_or_default())
+            let dash = store.active().map(|p| dash_profile(p, busy.contains(&p.id))).unwrap_or_default();
+            (items, store.active().map(|p| p.label()).unwrap_or_default(), dash)
         };
+        let count = items.len() as i32;
         self.ui(move |ui| {
             ui.set_profiles(ModelRc::new(VecModel::from(items)));
             ui.set_profile_name(name.into());
+            ui.set_dash_profile(dash);
+            ui.set_profile_count(count);
         });
     }
 
@@ -1625,6 +1813,21 @@ impl App {
                 ui.set_current_group(current.clone().into());
             }
             ui.set_testing(testing.contains(&current));
+            let dash: Vec<ProxyGroup> = groups
+                .visible(mode)
+                .iter()
+                .map(|g| ProxyGroup {
+                    name: g.name.as_str().into(),
+                    kind: g.kind.as_str().into(),
+                    now: g.now.as_str().into(),
+                    count: g.all.len() as i32,
+                    monogram: g.name.chars().next().map(String::from).unwrap_or_default().into(),
+                    expanded: false,
+                    testing: false,
+                    nodes: ModelRc::default(),
+                })
+                .collect();
+            ui.set_dash_groups(ModelRc::new(VecModel::from(dash)));
             ui.set_proxies_hint(hint.into());
             ui.set_proxy_groups(ModelRc::new(VecModel::from(list)));
             ui.set_proxy_style(ProxyStyle {
@@ -1675,6 +1878,7 @@ impl App {
                         }
                     }
                     app.refresh_groups();
+                    app.probe_ip();
                 }
                 Err(_) => app.toast("切换代理失败，已恢复上一次的选择"),
             }
@@ -1841,6 +2045,11 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         sorted_delays: Mutex::new(HashMap::new()),
         testing_groups: Mutex::new(HashSet::new()),
         proxy_query: Mutex::new(String::new()),
+        traffic_up: Mutex::new(VecDeque::new()),
+        traffic_down: Mutex::new(VecDeque::new()),
+        peaks: Mutex::new((0, 0)),
+        started_at: Mutex::new(None),
+        ip_seq: AtomicU64::new(0),
         busy: Mutex::new(HashSet::new()),
         pending_logs: Mutex::new(Vec::new()),
         logs_scheduled: AtomicBool::new(false),
@@ -1928,6 +2137,19 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
             a.confirmed(action.into(), arg.into(), yes, edit_form(&ui));
         }
     });
+    let a = app.clone();
+    ui.on_edit_dashboard(move |action, widget| a.edit_dashboard(&action, &widget));
+    let a = app.clone();
+    ui.on_refresh_ip(move || a.probe_ip());
+    let a = app.clone();
+    ui.on_copy_text(move |text| {
+        let text = text.to_string();
+        a.spawn(move |app| match app.bridge().and_then(|b| b.shell("clipboard.set", json!({"text": text}), CALL)) {
+            Ok(_) => app.toast("复制成功"),
+            Err(e) => app.toast(e),
+        });
+    });
+    app.publish_dashboard_widgets();
     let a = app.clone();
     ui.on_open_group(move |_| a.publish_groups());
     let a = app.clone();

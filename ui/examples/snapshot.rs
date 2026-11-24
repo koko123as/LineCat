@@ -49,6 +49,58 @@ fn main() {
             .collect::<Vec<_>>(),
     )));
     ui.set_run_state("STARTED".into());
+    ui.set_dash_run_time("02:13:57".into());
+    ui.set_dash_status(DashStatus {
+        ip: "203.0.113.42".into(),
+        country: "US".into(),
+        kind: "住宅".into(),
+        quality: 1,
+        org: "Example Broadband".into(),
+        probing: false,
+    });
+    let mut up = std::collections::VecDeque::new();
+    let mut down = std::collections::VecDeque::new();
+    for i in 0..30i64 {
+        up.push_back(20_000 + (i * 7919 % 13) * 4000);
+        down.push_back(800_000 + (i * 104729 % 17) * 90_000);
+    }
+    let (ul, uf) = dashboard::sparkline(&up);
+    let (dl, df) = dashboard::sparkline(&down);
+    ui.set_dash_traffic(DashTraffic {
+        up_value: "50.6".into(),
+        up_unit: "KB/s".into(),
+        up_total: "累计 1.2 GB".into(),
+        up_peak: "峰值 73.5 KB/s".into(),
+        up_line: ul.into(),
+        up_fill: uf.into(),
+        down_value: "2.1".into(),
+        down_unit: "MB/s".into(),
+        down_total: "累计 8.6 GB".into(),
+        down_peak: "峰值 2.2 MB/s".into(),
+        down_line: dl.into(),
+        down_fill: df.into(),
+    });
+    ui.set_dash_profile(DashProfile {
+        id: "1".into(),
+        name: "我的机场".into(),
+        end: "剩余 30 天".into(),
+        warn: false,
+        updated: "更新于 3 分钟前".into(),
+        usage: true,
+        percent: "42%".into(),
+        used: "42.0 GB / 100.0 GB".into(),
+        ratio: 0.42,
+        syncable: true,
+        busy: false,
+    });
+    ui.set_dash_widgets(ModelRc::new(VecModel::from(
+        dashboard::default_widgets().into_iter().map(slint::SharedString::from).collect::<Vec<_>>(),
+    )));
+    ui.set_dash_hidden(ModelRc::new(VecModel::from(
+        ["vpn", "ip", "memory"].iter().map(|s| slint::SharedString::from(*s)).collect::<Vec<_>>(),
+    )));
+    ui.set_dash_local_ip("192.168.1.10".into());
+    ui.set_dash_memory("228.8 MB".into());
     ui.set_profile_name("我的机场".into());
     ui.set_up_speed("12.3 KB/s".into());
     ui.set_down_speed("1.4 MB/s".into());
@@ -131,6 +183,12 @@ fn main() {
         group("自动选择", "URLTest", "日本 03", false, vec![node("日本 03", "Trojan", 1203, true, true)]),
         group("流媒体", "Selector", "节点选择", false, vec![]),
     ])));
+    ui.set_dash_groups(ModelRc::new(VecModel::from(vec![
+        group("节点选择", "Selector", "香港 01", false, vec![]),
+        group("自动选择", "URLTest", "日本 03", false, vec![]),
+        group("流媒体", "Selector", "节点选择", false, vec![]),
+        group("Telegram", "Selector", "新加坡", false, vec![]),
+    ])));
     let logs = VecModel::<LogItem>::default();
     for (level, text) in [("info", "[TCP] 192.168.1.5:51234 --> www.google.com:443 match RuleSet(proxy) using 节点选择[香港 01]"), ("warning", "dns: lookup timeout for example.invalid"), ("error", "dial 美国 洛杉矶 高速 failed: connection refused")] {
         logs.push(LogItem { level: level.into(), time: "03:41:07".into(), text: text.into() });
@@ -141,6 +199,11 @@ fn main() {
     // (file, tab, open group, tools or profiles page, theme mode, overlay)
     let shots: &[(&str, i32, &str, &str, i32, &str)] = &[
         ("dashboard", 0, "", "", 1, ""),
+        ("dashboard-edit", 0, "", "", 1, "edit"),
+        ("dashboard-tablet", 0, "", "", 1, ""),
+        ("dashboard-wide", 0, "", "", 1, ""),
+        ("proxies-wide", 1, "节点选择", "", 1, ""),
+        ("profiles-tablet", 2, "", "", 1, ""),
         ("proxies", 1, "节点选择", "", 1, ""),
         ("proxies-tab", 1, "节点选择", "", 1, "tab"),
         ("proxies-tab-loose", 1, "节点选择", "", 1, "loose"),
@@ -163,6 +226,15 @@ fn main() {
     ];
     ui.show().unwrap();
     for (name, tab, group, page, mode, overlay) in shots {
+        let (w, h) = if name.ends_with("-tablet") {
+            (800u32, 1280u32)
+        } else if name.ends_with("-wide") {
+            (1280u32, 800u32)
+        } else {
+            (412u32, 892u32)
+        };
+        window.set_size(slint::PhysicalSize::new(w, h));
+        ui.set_dash_editing(*overlay == "edit");
         ui.set_tab(*tab);
         ui.set_current_group((*group).into());
         if *tab == 2 {
