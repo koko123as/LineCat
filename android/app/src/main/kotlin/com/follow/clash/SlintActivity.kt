@@ -38,6 +38,7 @@ class SlintActivity : NativeActivity() {
         // The bridge listens before the native thread starts and connects to it.
         UiBridge.start(applicationContext)
         UiBridge.activity = this
+        SystemFont.export(applicationContext)
         super.onCreate(savedInstanceState)
     }
 
