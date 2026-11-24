@@ -363,10 +363,14 @@ impl App {
         let app = Arc::downgrade(self);
         bridge.set_shell_listener(Box::new(move |event| {
             let Some(app) = app.upgrade() else { return };
-            if event.get("ev").and_then(Value::as_str) == Some("state") {
-                if let Some(s) = event.get("state").and_then(Value::as_str) {
-                    app.set_run_state(s);
+            match event.get("ev").and_then(Value::as_str) {
+                Some("state") => {
+                    if let Some(s) = event.get("state").and_then(Value::as_str) {
+                        app.set_run_state(s);
+                    }
                 }
+                Some("insets") => app.set_edges(event),
+                _ => {}
             }
         }));
         let hello = bridge.shell("hello", json!({}), Duration::from_secs(90))?;
@@ -376,6 +380,9 @@ impl App {
             .map(String::from)
             .unwrap_or_else(|| self.home.to_string_lossy().into_owned());
         let sdk = hello.get("sdkInt").and_then(Value::as_i64);
+        if let Some(edges) = hello.get("insets") {
+            self.set_edges(edges.clone());
+        }
         let greeting = bridge.call(
             "core.hello",
             json!({"protocol": {"min": 1, "max": 1}, "client": {"name": "seasoncat-ui", "version": VERSION}}),
@@ -427,6 +434,30 @@ impl App {
             self.apply_active()?;
         }
         Ok(())
+    }
+
+    /// `WindowEdges.kt`; a decor size the Slint window missed is dispatched as a resize.
+    fn set_edges(self: &Arc<Self>, edges: Value) {
+        self.ui(move |ui| {
+            let px = |k: &str| edges.get(k).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+            let window = ui.window();
+            let scale = window.scale_factor().max(0.1);
+            let (width, height) = (px("width"), px("height"));
+            if width >= 1.0 && height >= 1.0 {
+                let size = window.size();
+                if (size.width as f32 - width).abs() >= 1.0
+                    || (size.height as f32 - height).abs() >= 1.0
+                {
+                    let _ =
+                        window.dispatch_event_with_result(slint::platform::WindowEvent::Resized {
+                            size: slint::LogicalSize::new(width / scale, height / scale),
+                        });
+                }
+            }
+            ui.set_inset_top(px("top") / scale);
+            ui.set_inset_bottom(px("bottom") / scale);
+            ui.set_insets_known(true);
+        });
     }
 
     fn push_log(self: &Arc<Self>, entry: &Value) {

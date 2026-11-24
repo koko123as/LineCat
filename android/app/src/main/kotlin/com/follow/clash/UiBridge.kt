@@ -91,6 +91,15 @@ object UiBridge {
         }
     }
 
+    @Volatile
+    private var edges: JsonObject? = null
+
+    fun reportEdges(message: JsonObject) {
+        if (message == edges) return
+        edges = message
+        broadcast(message)
+    }
+
     private fun broadcast(message: JsonObject) {
         connections.forEach { it.send(CH_SHELL, message) }
     }
@@ -194,6 +203,7 @@ object UiBridge {
                 addProperty("home", GlobalState.application.filesDir.path)
                 addProperty("sdkInt", Build.VERSION.SDK_INT)
                 addProperty("state", ServiceState.runState.value.name)
+                edges?.let { add("insets", it) }
             }
         }
 

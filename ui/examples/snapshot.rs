@@ -236,6 +236,13 @@ fn main() {
         ("dashboard-dark", 0, "", "", 2, ""),
         ("proxies-dark", 1, "节点选择", "", 2, ""),
         ("profiles-dark", 2, "", "", 2, ""),
+        ("dashboard-small", 0, "", "", 1, ""),
+        ("proxies-small", 1, "节点选择", "", 1, ""),
+        ("profiles-small", 2, "", "", 1, ""),
+        ("tools-small", 3, "", "", 1, ""),
+        ("dashboard-tiny", 0, "", "", 1, ""),
+        ("profiles-tiny", 2, "", "", 1, ""),
+        ("dashboard-inset-small", 0, "", "", 1, "inset"),
     ];
     ui.show().unwrap();
     for (name, tab, group, page, mode, overlay) in shots {
@@ -243,11 +250,18 @@ fn main() {
             (800u32, 1280u32)
         } else if name.ends_with("-wide") {
             (1280u32, 800u32)
+        } else if name.ends_with("-small") {
+            (360u32, 640u32)
+        } else if name.ends_with("-tiny") {
+            (300u32, 520u32)
         } else {
             (412u32, 892u32)
         };
         window.set_size(slint::PhysicalSize::new(w, h));
         ui.set_dash_editing(*overlay == "edit");
+        ui.set_insets_known(*overlay == "inset");
+        ui.set_inset_top(if *overlay == "inset" { 24.0 } else { 0.0 });
+        ui.set_inset_bottom(if *overlay == "inset" { 24.0 } else { 0.0 });
         ui.set_tab(*tab);
         ui.set_current_group((*group).into());
         if *tab == 2 {

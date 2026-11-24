@@ -4,10 +4,12 @@ import android.Manifest
 import android.app.NativeActivity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.view.ViewTreeObserver
 
 /**
  * The launcher activity: the Slint UI renders into this NativeActivity from
@@ -18,6 +20,7 @@ import android.os.Process
 class SlintActivity : NativeActivity() {
     private var vpnCallback: ((Boolean) -> Unit)? = null
     private var documentCallback: ((android.net.Uri?) -> Unit)? = null
+    private val layoutListener = ViewTreeObserver.OnGlobalLayoutListener { reportEdges() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val crash = java.io.File(filesDir, "crash.txt")
@@ -40,6 +43,22 @@ class SlintActivity : NativeActivity() {
         UiBridge.activity = this
         SystemFont.export(applicationContext)
         super.onCreate(savedInstanceState)
+        window.decorView.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        window.decorView.post { reportEdges() }
+    }
+
+    @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode)
+        window.decorView.post { reportEdges() }
+    }
+
+    private fun reportEdges() {
+        WindowEdges.of(this, window.decorView)?.let(UiBridge::reportEdges)
     }
 
     override fun onResume() {
@@ -49,6 +68,7 @@ class SlintActivity : NativeActivity() {
 
     override fun onDestroy() {
         if (UiBridge.activity === this) UiBridge.activity = null
+        window.decorView.viewTreeObserver.let { if (it.isAlive) it.removeOnGlobalLayoutListener(layoutListener) }
         vpnCallback?.invoke(false)
         vpnCallback = null
         documentCallback?.invoke(null)

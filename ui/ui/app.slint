@@ -2256,8 +2256,12 @@ export component AppWindow inherits Window {
 
     property <bool> wide: root.width > 600px;
     property <bool> desktop: root.width > 840px;
-    property <length> top-inset: max(root.safe-area-insets.top, 0px);
-    property <length> bottom-inset: max(root.safe-area-insets.bottom, 0px);
+    // WindowEdges.kt: Slint's safe area can carry the whole screen's bars in a freeform window.
+    in property <bool> insets-known;
+    in property <length> inset-top;
+    in property <length> inset-bottom;
+    property <length> top-inset: root.insets-known ? root.inset-top : max(root.safe-area-insets.top, 0px);
+    property <length> bottom-inset: root.insets-known ? root.inset-bottom : max(root.safe-area-insets.bottom, 0px);
     property <length> keyboard: root.virtual-keyboard-size.height > 0 ? root.virtual-keyboard-size.height : 0px;
 
     forward-focus: keys;
