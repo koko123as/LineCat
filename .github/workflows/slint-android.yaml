@@ -79,6 +79,14 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
           rustup target add aarch64-linux-android
+          # Slint's backend compiles a Java helper against android.jar and dexes it with d8.
+          # cargo-ndk exports ANDROID_PLATFORM=<minSdk>, which android-build would look up
+          # as a platform directory, so the jar is named outright.
+          sdkmanager="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin | sort -V | tail -1)/sdkmanager"
+          yes | "$sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+          export ANDROID_JAR="$ANDROID_HOME/platforms/android-36/android.jar"
+          export ANDROID_BUILD_TOOLS_VERSION=36.0.0
+          ls -l "$ANDROID_JAR" "$ANDROID_HOME/build-tools/36.0.0/lib/d8.jar"
           cargo ndk -t arm64-v8a --platform 24 -o ../android/app/src/main/jniLibs build --release --locked
           ls -l ../android/app/src/main/jniLibs/arm64-v8a/
           echo "libseasoncat_ui.so: $(stat -c %s ../android/app/src/main/jniLibs/arm64-v8a/libseasoncat_ui.so) bytes" >> "$GITHUB_STEP_SUMMARY"
