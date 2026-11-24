@@ -17,6 +17,7 @@ import android.os.Process
  */
 class SlintActivity : NativeActivity() {
     private var vpnCallback: ((Boolean) -> Unit)? = null
+    private var documentCallback: ((android.net.Uri?) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val crash = java.io.File(filesDir, "crash.txt")
@@ -49,6 +50,8 @@ class SlintActivity : NativeActivity() {
         if (UiBridge.activity === this) UiBridge.activity = null
         vpnCallback?.invoke(false)
         vpnCallback = null
+        documentCallback?.invoke(null)
+        documentCallback = null
         val exit = isFinishing && UiBridge.isStopped
         super.onDestroy()
         // Nothing runs once the UI is closed and the VPN is off, so the process goes with it
@@ -71,6 +74,17 @@ class SlintActivity : NativeActivity() {
             }
     }
 
+    /** A document picker (open or create); [callback] gets the chosen uri, or null. */
+    fun startForResult(intent: Intent, callback: (android.net.Uri?) -> Unit) {
+        documentCallback?.invoke(null)
+        documentCallback = callback
+        runCatching { startActivityForResult(intent, DOCUMENT_REQUEST) }
+            .onFailure {
+                documentCallback = null
+                callback(null)
+            }
+    }
+
     fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
@@ -87,12 +101,19 @@ class SlintActivity : NativeActivity() {
             callback?.invoke(resultCode == RESULT_OK)
             return
         }
+        if (requestCode == DOCUMENT_REQUEST) {
+            val callback = documentCallback
+            documentCallback = null
+            callback?.invoke(if (resultCode == RESULT_OK) data?.data else null)
+            return
+        }
         super.onActivityResult(requestCode, resultCode, data)
     }
 
     private companion object {
         const val VPN_REQUEST = 0x5643
         const val NOTIFICATION_REQUEST = 0x4e54
+        const val DOCUMENT_REQUEST = 0x4443
         const val PREFERENCES = "seasoncat_shell"
         const val NOTIFICATION_ASKED = "notification_asked"
     }

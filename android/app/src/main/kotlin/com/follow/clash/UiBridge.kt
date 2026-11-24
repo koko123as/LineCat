@@ -226,7 +226,70 @@ object UiBridge {
             ok { addProperty("state", ServiceState.runState.value.name) }
         }
 
+        "clipboard.set" -> {
+            val text = request.get("text")?.asString ?: ""
+            withContext(Dispatchers.Main) {
+                val clipboard = GlobalState.application
+                    .getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("SeasonCat", text))
+            }
+            ok()
+        }
+
+        // The picked document is copied to `dest` (a path inside the app's files), as
+        // FlClash's picker.pickerFile reads its bytes.
+        "file.open" -> {
+            val dest = File(request.get("dest")?.asString ?: error("dest missing"))
+            val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                .setType("*/*")
+            val uri = documentFor(intent)
+            if (uri == null) {
+                ok { addProperty("cancelled", true) }
+            } else {
+                val resolver = GlobalState.application.contentResolver
+                val name = withContext(Dispatchers.IO) {
+                    dest.parentFile?.mkdirs()
+                    resolver.openInputStream(uri)?.use { input ->
+                        dest.outputStream().use { output -> input.copyTo(output, 1 shl 16) }
+                    } ?: error("无法读取文件")
+                    resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                }
+                ok { addProperty("name", name ?: "") }
+            }
+        }
+
+        // picker.saveFile: the user picks where `src` is written, under `name`.
+        "file.save" -> {
+            val src = File(request.get("src")?.asString ?: error("src missing"))
+            val intent = android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                .setType("application/octet-stream")
+                .putExtra(android.content.Intent.EXTRA_TITLE, request.get("name")?.asString ?: src.name)
+            val uri = documentFor(intent)
+            if (uri == null) {
+                ok { addProperty("cancelled", true) }
+            } else {
+                withContext(Dispatchers.IO) {
+                    GlobalState.application.contentResolver.openOutputStream(uri, "wt")?.use { output ->
+                        src.inputStream().use { input -> input.copyTo(output, 1 shl 16) }
+                    } ?: error("无法写入文件")
+                }
+                ok()
+            }
+        }
+
         else -> error("unknown op")
+    }
+
+    private suspend fun documentFor(intent: android.content.Intent): android.net.Uri? {
+        val host = activity ?: error("界面未就绪")
+        return withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { continuation ->
+                host.startForResult(intent) { uri -> if (continuation.isActive) continuation.resume(uri) }
+            }
+        }
     }
 
     private suspend fun prepareVpn(): Boolean {

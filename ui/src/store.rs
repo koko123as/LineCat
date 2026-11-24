@@ -17,16 +17,137 @@ pub struct Settings {
     pub mode: i32,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+/// `SubscriptionInfo` in lib/models/profile.dart, from the `subscription-userinfo` header.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Subscription {
+    pub upload: i64,
+    pub download: i64,
+    pub total: i64,
+    /// Unix seconds, 0 for none.
+    pub expire: i64,
+}
+
+impl Subscription {
+    /// `SubscriptionInfo.formHString`.
+    pub fn parse(header: &str) -> Subscription {
+        let mut sub = Subscription::default();
+        for field in header.split(';') {
+            let Some((key, value)) = field.split_once('=') else {
+                continue;
+            };
+            let value = value.trim();
+            let Some(n) = value.parse::<i64>().ok().or_else(|| {
+                value
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|f| f.is_finite())
+                    .map(|f| f.trunc() as i64)
+            }) else {
+                continue;
+            };
+            match key.trim().to_ascii_lowercase().as_str() {
+                "upload" => sub.upload = n,
+                "download" => sub.download = n,
+                "total" => sub.total = n,
+                "expire" => sub.expire = n,
+                _ => {}
+            }
+        }
+        sub
+    }
+}
+
+/// `defaultUpdateDuration` in lib/common/constant.dart: one day.
+pub const DEFAULT_UPDATE_MINUTES: u64 = 24 * 60;
+
+fn yes() -> bool {
+    true
+}
+
+fn default_interval() -> u64 {
+    DEFAULT_UPDATE_MINUTES
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Profile {
     pub id: String,
+    /// The label as the user or the download named it; empty falls back to `default_label`.
     pub name: String,
     pub url: String,
-    /// Unix seconds of the last successful download.
+    /// "url" or "file" (`ProfileType`); empty in files written before it existed, read as
+    /// "url" when there is a url.
+    pub kind: String,
+    /// Unix seconds of the last successful download or save.
     pub updated: u64,
+    #[serde(default = "yes")]
+    pub auto_update: bool,
+    #[serde(default = "default_interval")]
+    pub interval_minutes: u64,
+    pub age_key: String,
+    pub subscription: Option<Subscription>,
     /// The proxy picked in each group, handed to `config.apply` as `selection`.
     pub selection: BTreeMap<String, String>,
+}
+
+impl Default for Profile {
+    fn default() -> Self {
+        Profile {
+            id: String::new(),
+            name: String::new(),
+            url: String::new(),
+            kind: String::new(),
+            updated: 0,
+            auto_update: true,
+            interval_minutes: DEFAULT_UPDATE_MINUTES,
+            age_key: String::new(),
+            subscription: None,
+            selection: BTreeMap::new(),
+        }
+    }
+}
+
+impl Profile {
+    pub fn is_url(&self) -> bool {
+        self.kind == "url" || (self.kind.is_empty() && !self.url.is_empty())
+    }
+
+    /// `realLabel`: the label, else the url's host, else the id.
+    pub fn label(&self) -> String {
+        if !self.name.trim().is_empty() {
+            return self.name.clone();
+        }
+        host_of(&self.url).unwrap_or_else(|| self.id.clone())
+    }
+
+    /// `exportFileName`.
+    pub fn export_name(&self) -> String {
+        let label = self.label();
+        let lower = label.to_lowercase();
+        if lower.ends_with(".yaml") || lower.ends_with(".yml") {
+            label
+        } else {
+            format!("{label}.yaml")
+        }
+    }
+
+    /// `realAutoUpdate` and the check in `autoUpdateProfiles`.
+    pub fn due(&self, now: u64) -> bool {
+        self.is_url() && self.auto_update && self.updated + self.interval_minutes.max(1) * 60 <= now
+    }
+}
+
+pub fn host_of(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    let host = rest.split(['/', '?', '#']).next()?;
+    let host = host.rsplit('@').next()?;
+    let host = if host.starts_with('[') {
+        host.split(']').next().map(|h| format!("{h}]"))?
+    } else {
+        host.split(':').next()?.to_string()
+    };
+    (!host.is_empty()).then_some(host)
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -115,9 +236,34 @@ mod tests {
         store.state.active = Some("1".into());
         store.save();
         let again = Store::open(&home);
+        assert!(again.state.profiles[0].auto_update);
         assert_eq!(again.state, store.state);
         assert_eq!(again.active().unwrap().name, "a");
         let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn subscription_header_reads_like_flclash() {
+        let s = Subscription::parse("upload=10; download=20.7;total=100; expire=1700000000; x=y");
+        assert_eq!(
+            s,
+            Subscription {
+                upload: 10,
+                download: 20,
+                total: 100,
+                expire: 1700000000
+            }
+        );
+    }
+
+    #[test]
+    fn older_files_read_as_url_profiles_with_auto_update() {
+        let p: Profile =
+            serde_json::from_str(r#"{"id":"1","url":"https://a.example.com:8443/x"}"#).unwrap();
+        assert!(p.is_url() && p.auto_update);
+        assert_eq!(p.interval_minutes, DEFAULT_UPDATE_MINUTES);
+        assert_eq!(p.label(), "a.example.com");
+        assert_eq!(p.export_name(), "a.example.com.yaml");
     }
 
     #[test]

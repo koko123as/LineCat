@@ -16,6 +16,140 @@ pub struct Download {
     pub bytes: Vec<u8>,
     /// The file name from `content-disposition`, without a yaml extension.
     pub name: Option<String>,
+    /// The `subscription-userinfo` header.
+    pub userinfo: Option<String>,
+}
+
+/// `_ageArmorHeader` in lib/common/file.dart.
+pub const AGE_ARMOR_HEADER: &[u8] = b"-----BEGIN AGE ENCRYPTED FILE-----";
+
+/// `shareLinkSchemes` in lib/common/constant.dart.
+const SHARE_LINK_SCHEMES: &[&str] = &[
+    "hysteria",
+    "hysteria2",
+    "hy2",
+    "hysteria2+realm",
+    "hy2+realm",
+    "tuic",
+    "trojan",
+    "vless",
+    "vmess",
+    "ss",
+    "ssr",
+    "socks",
+    "socks5",
+    "socks5h",
+    "anytls",
+    "mierus",
+];
+
+/// `String.isShareLink` in lib/common/string.dart.
+pub fn is_share_link(s: &str) -> bool {
+    match s.find("://") {
+        Some(i) if i > 0 && s.len() > i + 3 && !s.contains('\n') => {
+            SHARE_LINK_SCHEMES.contains(&s[..i].to_ascii_lowercase().as_str())
+        }
+        _ => false,
+    }
+}
+
+/// `String.isUrl`: http, https or ftp with a host.
+pub fn is_url(s: &str) -> bool {
+    let lower = s.to_ascii_lowercase();
+    (lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("ftp://"))
+        && crate::store::host_of(s).is_some()
+}
+
+/// `reservedCustomProxyNames` in lib/providers/state/custom.dart.
+const RESERVED_NAMES: &[&str] = &[
+    "DIRECT",
+    "REJECT",
+    "REJECT-DROP",
+    "COMPATIBLE",
+    "PASS",
+    "PASS-RULE",
+    "GLOBAL",
+];
+
+/// `linkProxyName`: a link's own name, else its server, else its type.
+fn link_proxy_name(definition: &Value) -> String {
+    let name = definition
+        .get("name")
+        .map(|v| match v {
+            Value::String(s) => s.trim().to_string(),
+            other => other.to_string(),
+        })
+        .unwrap_or_default();
+    let unnamed = name.is_empty()
+        || (name.starts_with('-')
+            && name.len() > 1
+            && name[1..].chars().all(|c| c.is_ascii_digit()));
+    if !unnamed {
+        return name;
+    }
+    let text = |v: &Value| match v {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    definition
+        .get("server")
+        .map(text)
+        .or_else(|| definition.get("type").map(text))
+        .unwrap_or_default()
+}
+
+/// `freeProxyName`: `base`, else `base-01`, `base-02`, ...
+fn free_proxy_name(base: &str, taken: &mut std::collections::HashSet<String>) -> String {
+    let mut name = base.to_string();
+    let mut index = 1;
+    while !taken.insert(name.clone()) {
+        name = format!("{base}-{index:02}");
+        index += 1;
+    }
+    name
+}
+
+/// `_fromShareLinks` in lib/providers/actions/profiles.dart: the decoded proxies, renamed
+/// apart, and the profile's label. `decoded` is `convert.decodeLinks`' results, one list per
+/// link.
+pub fn share_link_proxies(
+    links: &[String],
+    decoded: &[Value],
+) -> Result<(Vec<Value>, String), String> {
+    let mut taken: std::collections::HashSet<String> =
+        RESERVED_NAMES.iter().map(|s| s.to_string()).collect();
+    let mut proxies = Vec::new();
+    for (index, link) in links.iter().enumerate() {
+        let definitions = decoded
+            .get(index)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if definitions.is_empty() {
+            return Err(if links.len() == 1 {
+                "无法从链接中读取代理".into()
+            } else {
+                format!("无法从 {link} 中读取代理")
+            });
+        }
+        for mut definition in definitions {
+            let name = free_proxy_name(&link_proxy_name(&definition), &mut taken);
+            definition["name"] = name.into();
+            proxies.push(definition);
+        }
+    }
+    let first = proxies
+        .first()
+        .and_then(|p| p.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let label = if proxies.len() == 1 {
+        first
+    } else {
+        format!("{first} 等 {} 个代理", proxies.len())
+    };
+    Ok((proxies, label))
 }
 
 pub fn download(url: &str) -> Result<Download, String> {
@@ -33,6 +167,11 @@ pub fn download(url: &str) -> Result<Download, String> {
         .get("content-disposition")
         .and_then(|v| v.to_str().ok())
         .and_then(disposition_name);
+    let userinfo = response
+        .headers()
+        .get("subscription-userinfo")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
     let bytes = response
         .body_mut()
         .with_config()
@@ -42,6 +181,7 @@ pub fn download(url: &str) -> Result<Download, String> {
     Ok(Download {
         bytes: decompress_unlabeled(bytes),
         name,
+        userinfo,
     })
 }
 
@@ -296,6 +436,26 @@ const BYPASS_DOMAIN: [&str; 26] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn share_links_are_named_apart() {
+        assert!(is_share_link("vmess://abc"));
+        assert!(!is_share_link("https://a.com"));
+        assert!(is_url("https://a.com/x"));
+        let links = vec!["ss://a".to_string(), "ss://b".to_string()];
+        let decoded = vec![
+            json!([{"name": "", "server": "1.1.1.1", "type": "ss"}]),
+            json!([{"name": "1.1.1.1", "type": "ss"}, {"name": "DIRECT", "type": "ss"}]),
+        ];
+        let (proxies, label) = share_link_proxies(&links, &decoded).unwrap();
+        let names: Vec<&str> = proxies
+            .iter()
+            .map(|p| p["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["1.1.1.1", "1.1.1.1-01", "DIRECT-01"]);
+        assert_eq!(label, "1.1.1.1 等 3 个代理");
+        assert!(share_link_proxies(&links[..1], &[json!([])]).is_err());
+    }
 
     #[test]
     fn disposition_names() {
