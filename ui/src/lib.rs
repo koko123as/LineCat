@@ -17,12 +17,16 @@ pub mod drag;
 pub mod edges;
 pub mod fonts;
 pub mod http_capture;
+pub mod icon_sets;
+mod icon_sets_app;
+pub use icon_sets_app::sections as icon_sets_sections;
 pub mod items;
 mod items_app;
 pub mod live_app;
 pub mod live_status;
 pub mod logs;
 mod logs_app;
+pub mod net_images;
 pub use items_app::sections as items_sections;
 pub use logs_app::log_item;
 pub mod on_demand;
@@ -2001,6 +2005,7 @@ impl App {
             ("rules-delete", true) => self.delete_selected_rules(),
             ("script-delete", true) => self.delete_script(&arg),
             ("rs-delete", true) => self.delete_rule_set(&arg),
+            ("is-delete", true) => self.delete_icon_set(&arg),
             ("ua-delete", true) => self.delete_user_agent(&arg),
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings" | "location-settings", true) => self.open_app_settings(),
@@ -2486,6 +2491,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         }
     });
     app.bind_app_icons(&ui);
+    app.bind_net_images(&ui);
     app.bind_logs(&ui);
     app.bind_dashboard(&ui);
     app.bind_live(&ui);

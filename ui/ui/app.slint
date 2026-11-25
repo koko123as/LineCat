@@ -398,6 +398,8 @@ export struct SetRow {
     // `ChipTitle`'s chip after the title, and a caption at the row's end.
     chip: string,
     trailing: string,
+    // A picture behind an http url leads the row in place of the glyph (`CommonTargetIcon`).
+    image: string,
 }
 
 // What the page shell needs of a settings page Rust builds: its title, where back goes,
@@ -550,6 +552,18 @@ global Glyphs {
 // `suspendProvider` while started: the Wi-Fi in use is excluded and the run is parked.
 export global Suspend {
     in property <bool> suspended;
+}
+
+// Pictures by http url (`net_images.rs`); `rev` bumps as downloads land.
+export global NetImages {
+    in-out property <int> rev;
+    pure callback image(string, int) -> image;
+    pure callback has(string, int) -> bool;
+}
+
+export struct IconTile {
+    url: string,
+    label: string,
 }
 
 export global AppIcons {
@@ -3613,7 +3627,8 @@ component SetRowView inherits Rectangle {
     property <bool> long-fired;
     callback clicked(string);
     callback toggled(string, bool);
-    property <bool> leading: root.item.glyph != "" && root.item.kind != "value" && root.item.kind != "check";
+    property <bool> pictured: root.item.image != "";
+    property <bool> leading: !root.pictured && root.item.glyph != "" && root.item.kind != "value" && root.item.kind != "check";
     height: root.item.subtitle != "" ? 64px : 52px;
     background: ta.pressed && root.item.kind != "person" ? Theme.s.inset : transparent;
     opacity: root.item.enabled ? 1 : 0.45;
@@ -3625,6 +3640,19 @@ component SetRowView inherits Rectangle {
             alignment: center;
             width: 24px;
             if root.item.on: Icon { glyph: Icons.check; size: 20px; tint: Theme.s.primary; }
+        }
+        if root.pictured: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                if NetImages.has(root.item.image, NetImages.rev): Image {
+                    width: 32px;
+                    height: 32px;
+                    image-fit: contain;
+                    source: NetImages.image(root.item.image, NetImages.rev);
+                }
+            }
         }
         if root.leading && root.item.kind == "person": VerticalLayout {
             alignment: center;
@@ -3690,7 +3718,7 @@ component SetRowView inherits Rectangle {
         if root.item.kind == "check" && root.item.glyph == "edit": Rectangle { width: 40px; }
     }
     if root.divider: Rectangle {
-        x: root.item.lead != "" ? 52px : root.leading ? 54px : 16px;
+        x: root.item.lead != "" ? 52px : root.pictured ? 62px : root.leading ? 54px : 16px;
         y: parent.height - 1px;
         width: parent.width - self.x;
         height: 1px;
@@ -4096,6 +4124,115 @@ component SettingsPage inherits Rectangle {
         description: root.empty-desc;
         action: root.empty-action;
         act => { root.action(); }
+    }
+}
+
+// `_IconSetPreviewView`: the set's icons as `SliverIconGrid` (88 wide at most, 8 apart, a
+// 56px plate holding the 40px icon over its label), searchable by label. Only the rows near
+// the view ask for their pictures.
+component IconSetPage inherits Rectangle {
+    in property <string> title;
+    in property <[IconTile]> tiles;
+    in property <string> empty;
+    in-out property <bool> searching;
+    in-out property <string> query;
+    callback back();
+    callback search(string);
+    changed query => { root.search(root.query); }
+    property <length> gap: 8px;
+    property <int> columns: max(1, ceil((root.width - 32px + root.gap) / (88px + root.gap)));
+    property <length> cell-w: (root.width - 32px - (root.columns - 1) * root.gap) / root.columns;
+    property <length> label-h: 16px * Type.scale;
+    property <length> cell-h: 56px + 6px + root.label-h;
+    property <int> rows: ceil(root.tiles.length / root.columns);
+    VerticalLayout {
+        if !root.searching: AppBar {
+            title: root.title;
+            can-back: true;
+            back => { root.back(); }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
+        }
+        if root.searching: HorizontalLayout {
+            height: 56px;
+            padding-left: 4px;
+            padding-right: 16px;
+            spacing: 4px;
+            VerticalLayout {
+                alignment: center;
+                IconButton { glyph: Icons.back; tint: Theme.s.on-surface; clicked => { root.query = ""; root.searching = false; } }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Rectangle {
+                    height: 44px;
+                    border-radius: 22px;
+                    background: Theme.s.block;
+                    Text {
+                        x: 16px;
+                        visible: is-input.text == "";
+                        text: "搜索";
+                        color: Theme.s.on-surface-variant;
+                        font-size: 15px * Type.scale;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                    is-input := TextInput {
+                        x: 16px;
+                        width: parent.width - 32px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        single-line: true;
+                        font-size: 15px * Type.scale;
+                        color: Theme.s.on-surface;
+                        text <=> root.query;
+                        init => { self.focus(); }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            if root.tiles.length == 0: NullStatus { label: root.empty; }
+            grid := Flickable {
+                visible: root.tiles.length > 0;
+                content-height: 8px + max(0px, root.rows * (root.cell-h + root.gap) - root.gap) + 20px + Dock.pad;
+                for t[i] in root.tiles: tile := Rectangle {
+                    property <int> line: floor(i / root.columns);
+                    x: 16px + mod(i, root.columns) * (root.cell-w + root.gap);
+                    y: 8px + self.line * (root.cell-h + root.gap);
+                    width: root.cell-w;
+                    height: root.cell-h;
+                    property <bool> near: self.y + self.height >= -grid.content-y - grid.height && self.y <= -grid.content-y + 2 * grid.height;
+                    Rectangle {
+                        x: (parent.width - self.width) / 2;
+                        y: 0;
+                        width: 56px;
+                        height: 56px;
+                        border-radius: 12px;
+                        background: tile-ta.pressed ? Theme.s.inset : Theme.s.card;
+                        clip: true;
+                        if tile.near && NetImages.has(t.url, NetImages.rev): Image {
+                            width: 40px;
+                            height: 40px;
+                            image-fit: contain;
+                            source: NetImages.image(t.url, NetImages.rev);
+                        }
+                        tile-ta := TouchArea { }
+                    }
+                    Text {
+                        y: 62px;
+                        width: parent.width;
+                        height: root.label-h;
+                        text: t.label;
+                        font-size: 12px * Type.scale;
+                        color: Theme.s.on-surface-variant;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -7344,6 +7481,13 @@ export component AppWindow inherits Window {
     in-out property <string> tools-editor-text;
     in property <string> tools-editor-parent;
     in property <bool> tools-editor-readonly;
+    // 图标集's preview (`icon_sets_app.rs`).
+    in property <string> iconset-title;
+    in property <[IconTile]> iconset-tiles;
+    in property <string> iconset-empty;
+    in-out property <bool> iconset-searching;
+    in-out property <string> iconset-query;
+    callback iconset-search(string);
     callback tools-editor-save(string);
     // The settings pages Rust builds (`page-meta` names them).
     pure callback page-meta(string, int) -> PageMeta;
@@ -7573,6 +7717,8 @@ export component AppWindow inherits Window {
                 if (root.tab == 3 && root.tools-page == "theme-color") { root.tools-page = "theme"; return accept; }
                 if (root.tab == 3 && root.tools-page == "font" && root.font-searching) { root.font-query = ""; root.font-searching = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "font") { root.tools-page = "theme"; return accept; }
+                if (root.tab == 3 && root.tools-page == "icon-set" && root.iconset-searching) { root.iconset-query = ""; root.iconset-searching = false; return accept; }
+                if (root.tab == 3 && root.tools-page == "icon-set") { root.tools-page = "icon-sets"; return accept; }
                 if (root.tab == 3 && root.meta.known) { root.tools-page = root.meta.parent; return accept; }
                 if (root.tab == 3 && root.tools-page == "editor") { root.tools-page = root.tools-editor-parent; return accept; }
                 if (root.tab == 3 && root.tools-page != "") {
@@ -7838,6 +7984,17 @@ export component AppWindow inherits Window {
                         selecting: root.od-selecting;
                         clicked(id) => { root.od-clicked(id); }
                     }
+                }
+                if root.tab == 3 && root.tools-page == "icon-set": IconSetPage {
+                    width: parent.width;
+                    height: parent.height;
+                    title: root.iconset-title;
+                    tiles: root.iconset-tiles;
+                    empty: root.iconset-empty;
+                    searching <=> root.iconset-searching;
+                    query <=> root.iconset-query;
+                    back => { root.tools-page = "icon-sets"; }
+                    search(q) => { root.iconset-search(q); }
                 }
                 if root.tab == 3 && root.tools-page == "editor": EditorPage {
                     width: parent.width;

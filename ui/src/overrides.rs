@@ -614,6 +614,7 @@ impl Spec {
             lead: "remove".into(),
             chip: "".into(),
             trailing: "".into(),
+            image: "".into(),
         }
     }
 }

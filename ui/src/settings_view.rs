@@ -41,6 +41,7 @@ fn row(id: &str, kind: &str, glyph: &str, title: &str, subtitle: &str) -> SetRow
         lead: "".into(),
         chip: "".into(),
         trailing: "".into(),
+        image: "".into(),
     }
 }
 
@@ -250,6 +251,7 @@ pub fn advanced(_settings: &Settings) -> Vec<SetSection> {
             vec![
                 open("rule-sets", "resources", "规则集"),
                 open("filters", "filter", "筛选"),
+                open("icon-sets", "photos", "图标集"),
             ],
         ),
     ]

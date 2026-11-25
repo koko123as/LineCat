@@ -291,6 +291,26 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
         ui.set_font_searchable(true);
         ui.set_font_loading(false);
     }
+    if page == "icon-set" {
+        let tiles = sample_icon_sets()[0]
+            .icons
+            .iter()
+            .filter(|i| overlay != "search" || i.label().contains("Kong"))
+            .map(|i| IconTile {
+                url: i.url.as_str().into(),
+                label: i.label().into(),
+            })
+            .collect::<Vec<_>>();
+        ui.set_iconset_title("Qure 彩色国旗与服务图标合集".into());
+        ui.set_iconset_empty("暂无搜索结果".into());
+        ui.set_iconset_searching(overlay == "search");
+        ui.set_iconset_query(if overlay == "search" { "Kong" } else { "" }.into());
+        ui.set_iconset_tiles(ModelRc::new(VecModel::from(if overlay == "none" {
+            Vec::new()
+        } else {
+            tiles
+        })));
+    }
     if page == "theme-color" {
         show_color_page(ui, &s, 0x5856D6);
         ui.set_color_mode(match overlay {
@@ -400,6 +420,12 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
                 page,
             )
             .unwrap_or_default()
+        }
+        "icon-sets" => {
+            if overlay != "empty" {
+                s.icon_sets = sample_icon_sets();
+            }
+            seasoncat_ui::icon_sets_sections(&s.icon_sets, page).unwrap_or_default()
         }
         "backup" => {
             if overlay.starts_with("dav") {
@@ -538,6 +564,57 @@ fn service_cells(n: usize, sheet: bool) -> Vec<DashService> {
             }
         })
         .collect()
+}
+
+fn sample_icon_sets() -> Vec<seasoncat_ui::icon_sets::IconSet> {
+    use seasoncat_ui::icon_sets::{IconSet, IconSetIcon};
+    let names = [
+        "Hong_Kong",
+        "Taiwan",
+        "Japan",
+        "Singapore",
+        "United_States",
+        "Korea",
+        "Netflix",
+        "YouTube",
+        "Telegram",
+        "Spotify",
+        "Disney+",
+        "Very_Long_Service_Name_Here",
+        "Final",
+        "Global",
+        "China",
+        "Apple",
+        "Google",
+        "Microsoft",
+    ];
+    vec![
+        IconSet {
+            id: "1".into(),
+            name: "Qure 彩色国旗与服务图标合集".into(),
+            url: "https://example.com/qure.json".into(),
+            icons: names
+                .iter()
+                .map(|n| IconSetIcon {
+                    name: format!("{n}.png"),
+                    url: format!("https://example.com/{n}.png"),
+                })
+                .collect(),
+            updated: 0,
+        },
+        IconSet {
+            id: "2".into(),
+            name: "本地图标".into(),
+            url: String::new(),
+            icons: (0..1234)
+                .map(|i| IconSetIcon {
+                    name: format!("i{i}.png"),
+                    url: format!("https://example.com/i{i}.png"),
+                })
+                .collect(),
+            updated: 0,
+        },
+    ]
 }
 
 fn main() {
@@ -1189,6 +1266,17 @@ fn main() {
         ("set-rulesets-wide", 3, "", "rule-sets", 1, ""),
         ("set-rulesets-tablet", 3, "", "rule-sets", 1, ""),
         ("set-rulesets-empty", 3, "", "rule-sets", 1, "empty"),
+        ("set-iconsets", 3, "", "icon-sets", 1, ""),
+        ("set-iconsets-small", 3, "", "icon-sets", 1, ""),
+        ("set-iconsets-wide", 3, "", "icon-sets", 1, ""),
+        ("set-iconsets-tablet", 3, "", "icon-sets", 1, ""),
+        ("set-iconsets-empty", 3, "", "icon-sets", 1, "empty"),
+        ("set-iconset", 3, "", "icon-set", 1, ""),
+        ("set-iconset-small", 3, "", "icon-set", 1, ""),
+        ("set-iconset-wide", 3, "", "icon-set", 1, ""),
+        ("set-iconset-tablet", 3, "", "icon-set", 1, ""),
+        ("set-iconset-search", 3, "", "icon-set", 1, "search"),
+        ("set-iconset-none", 3, "", "icon-set", 1, "none"),
         ("set-rules", 3, "", "rules", 1, ""),
         ("set-rules-small", 3, "", "rules", 1, ""),
         ("set-rules-wide", 3, "", "rules", 1, ""),
@@ -1325,6 +1413,19 @@ fn main() {
         ("set-dav-form", 3, "", "backup", 1, "dav-form"),
         ("set-dav-form-small", 3, "", "backup", 1, "dav-form"),
     ];
+    // Every sample url draws a flat square in a colour of its own.
+    let images = ui.global::<NetImages>();
+    images.on_has(|url, _| url.starts_with("https://example.com/"));
+    images.on_image(|url, _| {
+        let h = url
+            .bytes()
+            .fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
+        let mut p = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(64, 64);
+        for px in p.make_mut_slice() {
+            *px = slint::Rgba8Pixel::new(h as u8, (h >> 8) as u8, (h >> 16) as u8, 255);
+        }
+        slint::Image::from_rgba8(p)
+    });
     let only = std::env::args().nth(2).unwrap_or_default();
     ui.show().unwrap();
     let mut saved_logs: Option<ModelRc<LogItem>> = None;

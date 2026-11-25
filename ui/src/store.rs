@@ -71,6 +71,8 @@ pub struct Settings {
     pub text_scale: TextScale,
     /// `ClashProvider`s, in the page's order.
     pub rule_sets: Vec<crate::rule_sets::RuleSet>,
+    /// `IconSet`s, in the page's order.
+    pub icon_sets: Vec<crate::icon_sets::IconSet>,
 }
 
 /// `TextScale`: off follows the system's font scale.
@@ -264,6 +266,7 @@ impl Default for Settings {
             font_family: None,
             text_scale: TextScale::default(),
             rule_sets: Vec::new(),
+            icon_sets: Vec::new(),
         }
     }
 }
