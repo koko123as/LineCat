@@ -288,7 +288,7 @@ pub static DNS_KEYS: [Key; 31] = [
 ];
 
 /// `defaultDns`.
-fn dns_defaults() -> Value {
+pub(crate) fn dns_defaults() -> Value {
     json!({
         "enable": false,
         "listen": "",

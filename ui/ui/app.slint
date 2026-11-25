@@ -51,6 +51,19 @@ export struct ProfileItem {
     active: bool,
     busy: bool,
     is-url: bool,
+    is-custom: bool,
+    // `_GroupsCountChip`: the custom profile's group count, compact.
+    groups: string,
+}
+
+// A row of the custom profile's overview (`_sectionRow`): `tone` 0 plain, 1 in effect, 2
+// invalid.
+export struct CustomRow {
+    id: string,
+    glyph: string,
+    title: string,
+    state: string,
+    tone: int,
 }
 
 export struct NodeItem {
@@ -513,6 +526,8 @@ global Icons {
     out property <string> block: "M12 3a9 9 0 1 0 0.01 0z M5.6 5.6l12.8 12.8";
     out property <string> error: "M12 3a9 9 0 1 0 0.01 0z M12 7.5v5.5 M12 16.5v.01";
     out property <string> warning: "M12 3.5l9.5 16.5h-19z M12 9.5v4.5 M12 17v.01";
+    out property <string> customize: "M12 3.5l1.8 4.7 4.7 1.8-4.7 1.8L12 16.5l-1.8-4.7L5.5 10l4.7-1.8z M18.5 15.5l.8 2 2 .7-2 .8-.8 2-.7-2-2-.8 2-.7z";
+    out property <string> text-short: "M4 9h16 M4 15h10";
     out property <string> puzzle: "M4 7h4a2.5 2.5 0 0 1 5 0h4v4a2.5 2.5 0 0 1 0 5v4H4v-4.5a2.5 2.5 0 0 0 0-4.5z";
     out property <string> language: "M4 5h9 M8.5 3v2 M11 5c-1 4-3.5 7-7 9 M6 9c1.5 2.5 3.5 4 6 5 M13 21l4-9 4 9 M14.5 18h5";
     out property <string> apps: "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z";
@@ -550,7 +565,8 @@ global Glyphs {
             : k == "copy" ? Icons.copy : k == "sync" ? Icons.sync : k == "export" ? Icons.export : k == "eye" ? Icons.eye
             : k == "qr" ? Icons.qr : k == "sort" ? Icons.sort : k == "file" ? Icons.file
             : k == "import-file" ? Icons.import-file : k == "cloud" ? Icons.cloud : k == "more-circle" ? Icons.more-circle
-            : k == "lock-open" ? Icons.lock-open : k == "clock" ? Icons.clock : k == "link" ? Icons.link : k == "play" ? Icons.play : k == "puzzle" ? Icons.puzzle : "";
+            : k == "lock-open" ? Icons.lock-open : k == "clock" ? Icons.clock : k == "link" ? Icons.link : k == "play" ? Icons.play : k == "puzzle" ? Icons.puzzle
+            : k == "customize" ? Icons.customize : k == "text-short" ? Icons.text-short : "";
     }
 }
 
@@ -3134,12 +3150,30 @@ component ProfileCard inherits Card {
             }
             Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: root.fg2; overflow: elide; }
         }
-        VerticalLayout {
+        if !root.item.is-custom: VerticalLayout {
             alignment: center;
             Text {
                 text: root.item.busy ? "更新中…" : root.item.trailing;
                 font-size: 12px * Type.scale;
                 color: root.fg2;
+            }
+        }
+        // Square-cornered so a lone digit never reads as a second selection badge.
+        if root.item.is-custom: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: max(24px, groups-text.preferred-width * 1.1 + 12px);
+                height: 24px;
+                border-radius: 6px;
+                background: Theme.s.primary.with-alpha(0.15);
+                groups-text := Text {
+                    text: root.item.groups;
+                    font-size: 13px * Type.scale;
+                    font-weight: 600;
+                    color: Theme.s.primary;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
             }
         }
         if root.item.active: VerticalLayout {
@@ -3241,6 +3275,175 @@ component Profiles inherits Rectangle {
                 }
             }
         }
+    }
+}
+
+// `_sectionRow`: glyph, title, the section's state and the chevron to its page.
+component CustomRowView inherits Rectangle {
+    in property <CustomRow> item;
+    in property <bool> divider;
+    callback clicked();
+    height: 52px;
+    background: crv-ta.pressed ? Theme.s.inset : transparent;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 12px;
+        spacing: 14px;
+        VerticalLayout { alignment: center; Icon { glyph: Glyphs.of(root.item.glyph); tint: Theme.s.on-surface-variant; } }
+        Text {
+            text: root.item.title;
+            font-size: 16px * Type.scale;
+            color: Theme.s.on-surface;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        HorizontalLayout {
+            horizontal-stretch: 0;
+            spacing: 4px;
+            Text {
+                text: root.item.state;
+                horizontal-alignment: right;
+                font-size: 15px * Type.scale;
+                color: root.item.tone == 2 ? Theme.s.error : root.item.tone == 1 ? Theme.s.primary : Theme.s.on-surface-variant;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            VerticalLayout { alignment: center; Icon { glyph: Icons.chevron; size: 20px; tint: Theme.s.on-surface-variant; } }
+        }
+    }
+    if root.divider: Rectangle {
+        x: 54px;
+        y: parent.height - 1px;
+        width: parent.width - self.x;
+        height: 1px;
+        background: Theme.s.outline-variant.with-alpha(0.6);
+    }
+    crv-ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+// CustomProfileView: the title opens 重命名 / 运行时配置, 导入 stays off until importing
+// lands, then the issue banner, the overview rows and the groups section.
+component CustomProfilePage inherits Rectangle {
+    in property <string> title;
+    in property <[CustomRow]> rows;
+    in property <int> issues;
+    in property <int> group-count;
+    callback back();
+    callback title-menu(length, length, length, length);
+    callback open-row(CustomRow);
+    background: Theme.s.page;
+    VerticalLayout {
+        HorizontalLayout {
+            height: 56px;
+            padding-left: 4px;
+            padding-right: 8px;
+            spacing: 4px;
+            VerticalLayout {
+                alignment: center;
+                IconButton { glyph: Icons.back; tint: Theme.s.on-surface; clicked => { root.back(); } }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                HorizontalLayout {
+                    spacing: 2px;
+                    cpp-title := Text {
+                        text: root.title;
+                        font-size: 22px * Type.scale;
+                        color: Theme.s.on-surface;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        max-width: self.preferred-width;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Icon { glyph: Icons.unfold; size: 18px; tint: Theme.s.on-surface-variant; }
+                    }
+                    Rectangle { horizontal-stretch: 0.001; }
+                }
+                TouchArea {
+                    width: min(parent.width, cpp-title.width + 24px);
+                    x: 0;
+                    clicked => { root.title-menu(self.absolute-position.x, self.absolute-position.y, self.width, self.height); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                TextButton { text: "导入"; filled: true; enabled: false; }
+            }
+        }
+        Flickable {
+            content-height: cpp-body.preferred-height + Dock.pad;
+            cpp-body := VerticalLayout {
+                alignment: start;
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 8px;
+                padding-bottom: 24px;
+                spacing: 8px;
+                if root.issues > 0: Rectangle {
+                    height: max(48px, cpp-issue.preferred-height + 24px);
+                    border-radius: 16px;
+                    background: Theme.s.error.with-alpha(0.12);
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 12px;
+                        VerticalLayout { alignment: center; Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; } }
+                        cpp-issue := Text {
+                            text: root.issues + " 项存在问题，应用配置可能失败";
+                            font-size: 14px * Type.scale;
+                            color: Theme.s.error;
+                            vertical-alignment: center;
+                            wrap: word-wrap;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+                Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 16px;
+                    clip: true;
+                    VerticalLayout {
+                        for r[i] in root.rows: CustomRowView {
+                            item: r;
+                            divider: i < root.rows.length - 1;
+                            clicked => { root.open-row(r); }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-top: 12px;
+                    Text { text: "策略组"; height: 36px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                }
+                if root.group-count == 0: Text {
+                    height: 120px;
+                    text: "策略组为空";
+                    font-size: 16px * Type.scale;
+                    font-weight: 600;
+                    color: Theme.s.on-surface;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+// A page whose content lands in a later batch: its title and back.
+component PlaceholderPage inherits Rectangle {
+    in property <string> title;
+    callback back();
+    background: Theme.s.page;
+    VerticalLayout {
+        AppBar {
+            title: root.title;
+            can-back: true;
+            back => { root.back(); }
+        }
+        Empty { text: "暂无内容"; }
     }
 }
 
@@ -7277,8 +7480,21 @@ export component AppWindow inherits Window {
     // Profiles
     in property <[ProfileItem]> profiles;
     in property <bool> adding;
-    // Page over the profiles list: "", "edit", "editor", "preview" or "sort".
+    // Page over the profiles list: "", "edit", "editor", "preview", "sort", "custom" or
+    // "placeholder".
     in-out property <string> profiles-page;
+    // `CustomProfileView`, kept open under the pages it opens while `custom-open`.
+    in property <string> custom-title;
+    in property <[CustomRow]> custom-rows;
+    in property <int> custom-issues;
+    in property <int> custom-group-count;
+    in-out property <bool> custom-open;
+    in-out property <bool> custom-menu-open;
+    in-out property <string> placeholder-title;
+    callback add-custom();
+    callback custom-back();
+    callback custom-action(string);
+    callback rename-profile(string);
     in-out property <bool> add-menu-open;
     in-out property <bool> link-open;
     in-out property <bool> link-batch;
@@ -7680,6 +7896,7 @@ export component AppWindow inherits Window {
     }
 
     function go(t: int) {
+        if (root.custom-open) { root.custom-back(); }
         root.tab = t;
         root.tools-page = "";
         root.profiles-page = "";
@@ -7758,10 +7975,13 @@ export component AppWindow inherits Window {
                 if (root.qr-open) { root.qr-open = false; return accept; }
                 if (root.age-open) { root.age-open = false; root.age-submit(""); return accept; }
                 if (root.menu-open) { root.menu-open = false; return accept; }
+                if (root.custom-menu-open) { root.custom-menu-open = false; return accept; }
                 if (root.add-menu-open) { root.add-menu-open = false; return accept; }
                 if (root.link-open) { root.link-open = false; return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
                 if (root.tab == 0 && root.profiles-page == "preview") { root.profiles-page = ""; root.profile-sheet-open = true; return accept; }
+                if (root.tab == 2 && root.custom-open && (root.profiles-page == "preview" || root.profiles-page == "placeholder")) { root.profiles-page = "custom"; return accept; }
+                if (root.tab == 2 && root.profiles-page == "custom") { root.custom-back(); return accept; }
                 if (root.tab == 2 && root.profiles-page != "") { root.profiles-page = ""; return accept; }
                 if (root.dav-open) { root.dav-open = false; return accept; }
                 if (root.ports-open) { root.ports-open = false; return accept; }
@@ -7995,8 +8215,34 @@ export component AppWindow inherits Window {
                     save(t) => { root.editor-save(t); }
                     back => {
                         if (root.tab == 0) { root.profile-sheet-open = true; }
-                        root.profiles-page = root.profiles-page == "editor" ? "edit" : "";
+                        root.profiles-page = root.profiles-page == "editor" ? "edit" : root.custom-open ? "custom" : "";
                     }
+                }
+                if root.tab == 2 && root.profiles-page == "custom": CustomProfilePage {
+                    width: parent.width;
+                    height: parent.height;
+                    title: root.custom-title;
+                    rows: root.custom-rows;
+                    issues: root.custom-issues;
+                    group-count: root.custom-group-count;
+                    back => { root.custom-back(); }
+                    title-menu(x, y, w, h) => {
+                        root.ctx-x = x;
+                        root.ctx-y = y;
+                        root.ctx-w = w;
+                        root.ctx-h = h;
+                        root.custom-menu-open = true;
+                    }
+                    open-row(r) => {
+                        root.placeholder-title = r.title;
+                        root.profiles-page = "placeholder";
+                    }
+                }
+                if root.tab == 2 && root.profiles-page == "placeholder": PlaceholderPage {
+                    width: parent.width;
+                    height: parent.height;
+                    title: root.placeholder-title;
+                    back => { root.profiles-page = root.custom-open ? "custom" : ""; }
                 }
                 if (root.tab == 3 && root.tools-page == "") || root.tab-leaving == 3: Tools {
                     x: root.tab-x(3);
@@ -8406,12 +8652,13 @@ export component AppWindow inherits Window {
             }
         }
 
-        // AddProfileMenu: 文件 and 链接 (the scan and custom entries follow with the custom
-        // profile editor), anchored at the button that opened it.
+        // AddProfileMenu: 文件, 链接 and 自定义 (the scan entry is still to come), anchored at
+        // the button that opened it.
         if root.add-menu-open: AnchorMenu {
             items: [
                 { id: "file", glyph: "import-file", label: "文件", enabled: true },
                 { id: "link", glyph: "cloud", label: "链接", enabled: true },
+                { id: "custom", glyph: "customize", label: "自定义", enabled: true },
             ];
             menu-width: 200px;
             ax: root.ctx-x;
@@ -8422,6 +8669,8 @@ export component AppWindow inherits Window {
                 root.add-menu-open = false;
                 if (id == "file") {
                     root.add-file();
+                } else if (id == "custom") {
+                    root.add-custom();
                 } else {
                     root.link-open = true;
                     link-url.focus-input();
@@ -8433,9 +8682,16 @@ export component AppWindow inherits Window {
         // The profile's long-press menu (ProfileItem._menuItems), anchored at its card; 更多
         // unfolds its sub items in place.
         if root.menu-open: AnchorMenu {
-            items: root.menu-item.is-url
+            items: root.menu-item.is-custom ? [
+                    { id: "edit", glyph: "edit", label: "编辑", enabled: true },
+                    { id: "rename", glyph: "text-short", label: "重命名", enabled: true },
+                    { id: "preview", glyph: "eye", label: "运行时配置", enabled: true },
+                    { id: "delete", glyph: "delete", label: "删除", danger: true, enabled: true },
+                ]
+                : root.menu-item.is-url
                 ? (root.menu-more ? [
                     { id: "edit", glyph: "edit", label: "编辑", enabled: true },
+                    { id: "extend", glyph: "puzzle", label: "扩展", enabled: true },
                     { id: "sync", glyph: "sync", label: "同步", enabled: true },
                     { id: "more", glyph: "more-circle", label: "更多", heading: "more", enabled: true },
                     { id: "preview", glyph: "eye", label: "运行时配置", sub: true, enabled: true },
@@ -8445,22 +8701,25 @@ export component AppWindow inherits Window {
                     { id: "delete", glyph: "delete", label: "删除", danger: true, enabled: true },
                 ] : [
                     { id: "edit", glyph: "edit", label: "编辑", enabled: true },
+                    { id: "extend", glyph: "puzzle", label: "扩展", enabled: true },
                     { id: "sync", glyph: "sync", label: "同步", enabled: true },
                     { id: "more", glyph: "more-circle", label: "更多", heading: "more", enabled: true },
                     { id: "delete", glyph: "delete", label: "删除", danger: true, enabled: true },
                 ])
                 : (root.menu-more ? [
                     { id: "edit", glyph: "edit", label: "编辑", enabled: true },
+                    { id: "extend", glyph: "puzzle", label: "扩展", enabled: true },
                     { id: "more", glyph: "more-circle", label: "更多", heading: "more", enabled: true },
                     { id: "preview", glyph: "eye", label: "运行时配置", sub: true, enabled: true },
                     { id: "export", glyph: "export", label: "导出文件", sub: true, enabled: true },
                     { id: "delete", glyph: "delete", label: "删除", danger: true, enabled: true },
                 ] : [
                     { id: "edit", glyph: "edit", label: "编辑", enabled: true },
+                    { id: "extend", glyph: "puzzle", label: "扩展", enabled: true },
                     { id: "more", glyph: "more-circle", label: "更多", heading: "more", enabled: true },
                     { id: "delete", glyph: "delete", label: "删除", danger: true, enabled: true },
                 ]);
-            max-rows: 9;
+            max-rows: 10;
             ax: root.ctx-x;
             ay: root.ctx-y;
             aw: root.ctx-w;
@@ -8478,8 +8737,31 @@ export component AppWindow inherits Window {
                 if (id == "qr") { root.show-qr(root.menu-item.id); }
                 if (id == "export") { root.export-profile(root.menu-item.id); }
                 if (id == "delete") { root.delete-profile(root.menu-item.id); }
+                if (id == "rename") { root.rename-profile(root.menu-item.id); }
+                if (id == "extend") {
+                    root.placeholder-title = "扩展";
+                    root.profiles-page = "placeholder";
+                }
             }
             dismiss => { root.menu-open = false; }
+        }
+
+        // The custom profile page's title menu.
+        if root.custom-menu-open: AnchorMenu {
+            items: [
+                { id: "rename", glyph: "text-short", label: "重命名", enabled: true },
+                { id: "preview", glyph: "eye", label: "运行时配置", enabled: true },
+            ];
+            menu-width: 200px;
+            ax: root.ctx-x;
+            ay: root.ctx-y;
+            aw: root.ctx-w;
+            ah: root.ctx-h;
+            picked(id) => {
+                root.custom-menu-open = false;
+                root.custom-action(id);
+            }
+            dismiss => { root.custom-menu-open = false; }
         }
 
         // 从链接导入 (showNamedUrlsForm): a name, the link and an age key, or a batch of links.

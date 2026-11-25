@@ -298,6 +298,9 @@ impl App {
             if let Some(e) = a.on_demand_check(&key, &v1) {
                 return e.into();
             }
+            if let Some(e) = a.custom_profile_check(&key, &v1) {
+                return e.into();
+            }
             if key.starts_with("map:") {
                 return if v1.trim().is_empty() {
                     "键不能为空".into()
@@ -926,6 +929,7 @@ impl App {
             || self.custom_proxies_input(key, v1)
             || self.mitm_input(key, v1)
             || self.on_demand_input(key, v1)
+            || self.custom_profile_input(key, v1)
         {
             return;
         }

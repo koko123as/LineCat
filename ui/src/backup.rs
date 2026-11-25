@@ -226,6 +226,19 @@ pub fn apply(current: &mut State, restored: State, option: RestoreOption, overri
     } else {
         current.profiles.clone()
     };
+    if override_all {
+        current.proxy_groups.clear();
+        current.profile_rules.clear();
+        current.proxy_dialers.clear();
+        current.disabled_rules.clear();
+    }
+    for p in &restored.profiles {
+        crate::custom_profile::remove_profile(current, &p.id);
+    }
+    current.proxy_groups.extend(restored.proxy_groups);
+    current.profile_rules.extend(restored.profile_rules);
+    current.proxy_dialers.extend(restored.proxy_dialers);
+    current.disabled_rules.extend(restored.disabled_rules);
     for p in restored.profiles {
         match profiles.iter_mut().find(|q| q.id == p.id) {
             Some(q) => *q = p,
@@ -461,5 +474,36 @@ mod tests {
         assert_eq!(here.settings.access_control.reject_list, ["com.a"]);
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(read(&zip(&[])).err().as_deref(), Some("无效备份文件"));
+    }
+
+    #[test]
+    fn restored_profiles_bring_their_groups() {
+        use crate::custom_profile::ProxyGroupRow;
+        let row = |id: u64, profile: &str| ProxyGroupRow {
+            id,
+            profile_id: profile.into(),
+            ..Default::default()
+        };
+        let mut here = State {
+            profiles: vec![profile("p0", "zero"), profile("p1", "old")],
+            proxy_groups: vec![row(1, "p0"), row(2, "p1")],
+            ..Default::default()
+        };
+        let restored = State {
+            profiles: vec![profile("p1", "one")],
+            proxy_groups: vec![row(3, "p1")],
+            ..Default::default()
+        };
+        apply(
+            &mut here,
+            restored.clone(),
+            RestoreOption::OnlyProfiles,
+            false,
+        );
+        let ids: Vec<u64> = here.proxy_groups.iter().map(|g| g.id).collect();
+        assert_eq!(ids, [1, 3]);
+        apply(&mut here, restored, RestoreOption::OnlyProfiles, true);
+        let ids: Vec<u64> = here.proxy_groups.iter().map(|g| g.id).collect();
+        assert_eq!(ids, [3]);
     }
 }

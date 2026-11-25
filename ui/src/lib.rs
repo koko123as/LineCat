@@ -55,6 +55,8 @@ pub mod tun_sniffer_ntp;
 mod tun_sniffer_ntp_app;
 pub use theme_app::{apply as apply_theme, show_color_page};
 pub mod colors;
+pub mod custom_profile;
+mod custom_profile_app;
 pub mod custom_proxies;
 pub mod mitm;
 mod mitm_app;
@@ -621,38 +623,37 @@ impl App {
 
     // ------------------------------------------------------------ config
 
-    fn apply_active(self: &Arc<Self>) -> Result<(), String> {
-        let bridge = self.bridge()?;
-        let (path, selection, mode, settings) = {
+    /// The file and overlay `config.apply` and `profile.build` take for a profile. A custom
+    /// profile's file is written first, from its groups' proxies.
+    fn profile_params(&self, bridge: &Bridge, id: &str) -> Result<(PathBuf, Value), String> {
+        let (path, settings, own, base) = {
             let store = self.store.lock().unwrap();
-            let Some(p) = store.active() else {
+            let Some(p) = store.state.profiles.iter().find(|p| p.id == id) else {
                 return Err("添加一个配置文件后即可开始使用".into());
             };
+            let own = custom_profile::own(&store.state, p);
+            let base = p
+                .is_custom()
+                .then(|| custom_profile::base_file(&store.state.settings.custom_proxies, &own));
             (
-                store.profile_path(&p.id),
-                p.selection.clone(),
-                store.state.settings.mode,
+                store.profile_path(id),
                 store.state.settings.clone(),
+                own,
+                base,
             )
         };
+        if let Some(base) = &base {
+            std::fs::write(&path, serde_json::to_vec(base).unwrap_or_default())
+                .map_err(|e| e.to_string())?;
+        }
         let inspect = bridge.call(
             "profile.inspect",
             json!({"profile": profile_ref(&path)}),
             CALL,
         )?;
-        let overlay = profile::overlay(
-            inspect.get("config").unwrap_or(&Value::Null),
-            store::mode_name(mode),
-            &settings,
-        );
-        let params = json!({
-            "profile": profile_ref(&path),
-            "overlay": overlay,
-            "selection": selection,
-            "options": profile::options(&settings, http_capture::capturing(&settings.mitm)),
-        });
-        let mut params = params;
-        if !settings.added_rules.is_empty() {
+        let added = if base.is_some() || settings.added_rules.is_empty() {
+            Vec::new()
+        } else {
             let match_rules: Vec<String> = inspect
                 .get("matchRules")
                 .and_then(Value::as_array)
@@ -662,9 +663,38 @@ impl App {
                         .collect()
                 })
                 .unwrap_or_default();
-            params["overlay"]["rules"] =
-                json!(rules::overlay_rules(&settings.added_rules, &match_rules));
-        }
+            rules::overlay_rules(&settings.added_rules, &match_rules)
+        };
+        let overlay = profile::overlay_for(
+            inspect.get("config").unwrap_or(&Value::Null),
+            store::mode_name(settings.mode),
+            &settings,
+            &own,
+            added,
+        );
+        Ok((path, overlay))
+    }
+
+    fn apply_active(self: &Arc<Self>) -> Result<(), String> {
+        let bridge = self.bridge()?;
+        let (id, selection, settings) = {
+            let store = self.store.lock().unwrap();
+            let Some(p) = store.active() else {
+                return Err("添加一个配置文件后即可开始使用".into());
+            };
+            (
+                p.id.clone(),
+                p.selection.clone(),
+                store.state.settings.clone(),
+            )
+        };
+        let (path, overlay) = self.profile_params(&bridge, &id)?;
+        let mut params = json!({
+            "profile": profile_ref(&path),
+            "overlay": overlay,
+            "selection": selection,
+            "options": profile::options(&settings, http_capture::capturing(&settings.mitm)),
+        });
         if let Some(host) = profile::host_settings(&settings.general) {
             params["host"] = host;
         }
@@ -961,6 +991,7 @@ impl App {
                 format!("{} / {}", size(s.upload + s.download), size(s.total))
             }
             _ if p.is_url() => "远程".into(),
+            _ if p.is_custom() => "自定义".into(),
             _ => "本地".into(),
         };
         let expire = sub.filter(|s| s.expire > 0).map(|s| s.expire);
@@ -974,6 +1005,8 @@ impl App {
             active: store.state.active.as_deref() == Some(p.id.as_str()),
             busy: busy.contains(&p.id),
             is_url: p.is_url(),
+            is_custom: p.is_custom(),
+            groups: icon_sets::compact(custom_profile::groups_count(&store.state, &p.id)).into(),
         }
     }
 
@@ -1595,6 +1628,17 @@ impl App {
     // Edit (lib/views/profiles/edit.dart)
 
     fn open_edit(self: &Arc<Self>, id: String) {
+        let custom = self
+            .store
+            .lock()
+            .unwrap()
+            .state
+            .profiles
+            .iter()
+            .any(|p| p.id == id && p.is_custom());
+        if custom {
+            return self.open_custom(id, false);
+        }
         let Some(p) = self
             .store
             .lock()
@@ -1815,19 +1859,8 @@ impl App {
     /// `PreviewProfileView`: the config as it would be applied, read only.
     fn preview(self: &Arc<Self>, id: String) {
         self.spawn(move |app| {
-            let path = app.store.lock().unwrap().profile_path(&id);
-            let settings = app.store.lock().unwrap().state.settings.clone();
             let result = app.bridge().and_then(|b| {
-                let inspect = b.call(
-                    "profile.inspect",
-                    json!({"profile": profile_ref(&path)}),
-                    CALL,
-                )?;
-                let overlay = profile::overlay(
-                    inspect.get("config").unwrap_or(&Value::Null),
-                    store::mode_name(settings.mode),
-                    &settings,
-                );
+                let (path, overlay) = app.profile_params(&b, &id)?;
                 b.call(
                     "profile.build",
                     json!({"profile": profile_ref(&path), "overlay": overlay}),
@@ -2518,6 +2551,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     app.bind_requests(&ui);
     app.bind_settings(&ui);
     app.bind_access(&ui);
+    app.bind_custom_profile(&ui);
     app.bind_backup(&ui);
     let ticker = slint::Timer::default();
     let a = app.clone();

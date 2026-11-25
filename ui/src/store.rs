@@ -409,8 +409,8 @@ pub struct Profile {
     /// The label as the user or the download named it; empty falls back to `default_label`.
     pub name: String,
     pub url: String,
-    /// "url" or "file" (`ProfileType`); empty in files written before it existed, read as
-    /// "url" when there is a url.
+    /// "url", "file" or "custom" (`ProfileType`); empty in files written before it existed,
+    /// read as "url" when there is a url.
     pub kind: String,
     /// Unix seconds of the last successful download or save.
     pub updated: u64,
@@ -422,6 +422,7 @@ pub struct Profile {
     pub subscription: Option<Subscription>,
     /// The proxy picked in each group, handed to `config.apply` as `selection`.
     pub selection: BTreeMap<String, String>,
+    pub overrides: crate::custom_profile::ProfileOverrides,
 }
 
 impl Default for Profile {
@@ -437,6 +438,7 @@ impl Default for Profile {
             age_key: String::new(),
             subscription: None,
             selection: BTreeMap::new(),
+            overrides: Default::default(),
         }
     }
 }
@@ -444,6 +446,10 @@ impl Default for Profile {
 impl Profile {
     pub fn is_url(&self) -> bool {
         self.kind == "url" || (self.kind.is_empty() && !self.url.is_empty())
+    }
+
+    pub fn is_custom(&self) -> bool {
+        self.kind == crate::custom_profile::KIND
     }
 
     /// `realLabel`: the label, else the url's host, else the id.
@@ -489,6 +495,10 @@ pub struct State {
     pub settings: Settings,
     pub profiles: Vec<Profile>,
     pub active: Option<String>,
+    pub proxy_groups: Vec<crate::custom_profile::ProxyGroupRow>,
+    pub profile_rules: Vec<crate::custom_profile::ProfileRule>,
+    pub proxy_dialers: Vec<crate::custom_profile::ProxyDialer>,
+    pub disabled_rules: Vec<crate::custom_profile::DisabledRule>,
 }
 
 pub struct Store {
@@ -545,6 +555,7 @@ impl Store {
 
     pub fn remove(&mut self, id: &str) {
         self.state.profiles.retain(|p| p.id != id);
+        crate::custom_profile::remove_profile(&mut self.state, id);
         let _ = std::fs::remove_file(self.profile_path(id));
         if self.state.active.as_deref() == Some(id) {
             self.state.active = self.state.profiles.first().map(|p| p.id.clone());

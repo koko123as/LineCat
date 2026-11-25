@@ -1055,6 +1055,8 @@ fn main() {
             active: true,
             busy: false,
             is_url: true,
+            is_custom: false,
+            groups: "".into(),
         },
         ProfileItem {
             id: "2".into(),
@@ -1066,6 +1068,8 @@ fn main() {
             active: false,
             busy: true,
             is_url: true,
+            is_custom: false,
+            groups: "".into(),
         },
         ProfileItem {
             id: "3".into(),
@@ -1077,6 +1081,21 @@ fn main() {
             active: false,
             busy: false,
             is_url: false,
+            is_custom: false,
+            groups: "".into(),
+        },
+        ProfileItem {
+            id: "4".into(),
+            name: "自定义分流".into(),
+            subtitle: "自定义".into(),
+            trailing: "".into(),
+            expire: "".into(),
+            expired: false,
+            active: false,
+            busy: false,
+            is_url: false,
+            is_custom: true,
+            groups: "12".into(),
         },
     ])));
     ui.set_sort_titles(ModelRc::new(VecModel::from(
@@ -1454,6 +1473,26 @@ fn main() {
         ("proxies-search", 1, "节点选择", "", 1, "search"),
         ("profiles", 2, "", "", 1, ""),
         ("profiles-add-menu", 2, "", "", 1, "add-menu"),
+        ("profiles-small", 2, "", "", 1, ""),
+        ("profiles-menu-custom", 2, "", "", 1, "menu-custom"),
+        ("profiles-menu-custom-small", 2, "", "", 1, "menu-custom"),
+        ("custom", 2, "", "custom", 1, ""),
+        ("custom-small", 2, "", "custom", 1, "long"),
+        ("custom-wide", 2, "", "custom", 1, ""),
+        ("custom-tablet", 2, "", "custom", 1, ""),
+        ("custom-issues", 2, "", "custom", 1, "issues"),
+        ("custom-issues-small", 2, "", "custom", 1, "issues"),
+        ("custom-menu", 2, "", "custom", 1, "cmenu"),
+        ("custom-menu-wide", 2, "", "custom", 1, "cmenu"),
+        ("custom-placeholder", 2, "", "placeholder", 1, "custom"),
+        (
+            "custom-placeholder-small",
+            2,
+            "",
+            "placeholder",
+            1,
+            "custom",
+        ),
         ("profiles-link", 2, "", "", 1, "link"),
         ("profiles-menu", 2, "", "", 1, "menu"),
         ("profiles-confirm", 2, "", "", 1, "confirm"),
@@ -2025,9 +2064,59 @@ fn main() {
             ui.set_ctx_h(if menu { 72.0 } else { 40.0 });
         }
         ui.set_link_open(*overlay == "link");
-        ui.set_menu_open(*overlay == "menu");
+        ui.set_menu_open(matches!(*overlay, "menu" | "menu-custom"));
         ui.set_menu_more(true);
-        ui.set_menu_item(ui.get_profiles().row_data(0).unwrap());
+        ui.set_menu_item(
+            ui.get_profiles()
+                .row_data(if *overlay == "menu-custom" { 3 } else { 0 })
+                .unwrap(),
+        );
+        if *overlay == "menu-custom" {
+            ui.set_ctx_x(16.0);
+            ui.set_ctx_y(60.0 + 3.0 * 80.0);
+            ui.set_ctx_w(w as f32 - 32.0);
+            ui.set_ctx_h(72.0);
+        }
+        ui.set_custom_open(*page == "custom" || *overlay == "custom");
+        ui.set_custom_title(
+            if *overlay == "long" {
+                "一个名字很长很长的自定义分流配置用来检查标题省略"
+            } else {
+                "自定义分流"
+            }
+            .into(),
+        );
+        ui.set_custom_rows(ModelRc::new(VecModel::from(
+            [
+                ("rules", "rules", "规则", "128", 0),
+                ("providers", "resources", "外部资源", "3", 0),
+                ("dns", "dns", "DNS", "已开启", 1),
+                ("more", "sliders", "更多", "2 项生效", 1),
+            ]
+            .into_iter()
+            .map(|(id, glyph, title, state, tone)| CustomRow {
+                id: id.into(),
+                glyph: glyph.into(),
+                title: title.into(),
+                state: state.into(),
+                tone: if *overlay == "issues" && id == "rules" {
+                    2
+                } else {
+                    tone
+                },
+            })
+            .collect::<Vec<_>>(),
+        )));
+        ui.set_custom_issues(if *overlay == "issues" { 3 } else { 0 });
+        ui.set_custom_group_count(0);
+        ui.set_placeholder_title("规则".into());
+        ui.set_custom_menu_open(*overlay == "cmenu");
+        if *overlay == "cmenu" {
+            ui.set_ctx_x(52.0);
+            ui.set_ctx_y(8.0);
+            ui.set_ctx_w(140.0);
+            ui.set_ctx_h(40.0);
+        }
         ui.set_confirm_title("提示".into());
         ui.set_confirm_text("确定删除当前配置吗？".into());
         ui.set_confirm_action("delete".into());

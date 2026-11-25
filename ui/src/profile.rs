@@ -286,6 +286,24 @@ const PRIVATE_ROUTES: [&str; 11] = [
 /// with the Android branches of `_makeRealProfileTask`; the log level is `info` so the logs
 /// page has something to show (FlClash defaults to `error`).
 pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> Value {
+    overlay_for(
+        base,
+        mode,
+        settings,
+        &crate::custom_profile::Own::default(),
+        Vec::new(),
+    )
+}
+
+/// [overlay] with what the profile brings of its own ([crate::custom_profile::apply_own]) and
+/// the added rules' lines.
+pub fn overlay_for(
+    base: &Value,
+    mode: &str,
+    settings: &crate::store::Settings,
+    own: &crate::custom_profile::Own,
+    added: Vec<String>,
+) -> Value {
     let mut c: Map<String, Value> = base.as_object().cloned().unwrap_or_default();
     c.remove("rule");
     for key in [
@@ -425,7 +443,7 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
     if general.append_system_dns {
         dns.insert("append-system".into(), true.into());
     }
-    crate::overrides::DNS.apply(&settings.dns_override, &mut dns);
+    crate::custom_profile::apply_dns(own, &settings.dns_override, &mut dns);
     set(&mut c, "dns", Value::Object(dns));
     let mut general_patch = Map::new();
     crate::overrides::GENERAL.apply(&settings.general_override, &mut general_patch);
@@ -433,7 +451,7 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
     for (k, v) in general_patch {
         set(&mut c, &k, v);
     }
-    set(&mut c, "rules", json!([]));
+    crate::custom_profile::apply_own(&mut c, own, added);
     Value::Object(c)
 }
 
@@ -710,6 +728,55 @@ mod tests {
         assert_eq!(o["external-controller"], "");
         let o = overlay(&json!({}), "rule", &crate::store::Settings::default());
         assert_eq!(o["dns"]["enhanced-mode"], "fake-ip");
+    }
+
+    #[test]
+    fn a_custom_profile_overlay_carries_its_groups_rules_and_settings() {
+        use crate::custom_profile::{new_profile, own, ProfileRule, ProxyGroupRow};
+        let mut state = crate::store::State::default();
+        let mut p = new_profile("7".into(), "c", 1);
+        p.overrides.sniffer.keys.push("enable".into());
+        p.overrides
+            .sniffer
+            .model
+            .insert("enable".into(), json!(true));
+        state.profiles.push(p.clone());
+        state.proxy_groups.push(ProxyGroupRow {
+            id: 1,
+            profile_id: "7".into(),
+            definition: json!({"name": "G", "type": "select", "proxies": ["DIRECT"]}),
+            order: None,
+        });
+        state.profile_rules.push(ProfileRule {
+            id: 2,
+            profile_id: "7".into(),
+            action: "MATCH".into(),
+            target: "G".into(),
+            ..Default::default()
+        });
+        state.settings.dns_override.keys.push("ipv6".into());
+        state
+            .settings
+            .dns_override
+            .model
+            .insert("ipv6".into(), json!(true));
+        let own = own(&state, &p);
+        let o = overlay_for(
+            &json!({}),
+            "rule",
+            &state.settings,
+            &own,
+            vec!["DOMAIN,x,DIRECT".into()],
+        );
+        assert_eq!(o["proxy-groups"][0]["name"], "G");
+        assert_eq!(o["rules"], json!(["MATCH,G"]));
+        assert_eq!(o["sniffer"]["enable"], true);
+        assert_eq!(o["dns"]["enhanced-mode"], "fake-ip");
+        assert!(o["dns"].get("ipv6").is_none());
+        let file = overlay(&json!({}), "rule", &state.settings);
+        assert_eq!(file["dns"]["ipv6"], true);
+        assert_eq!(file["rules"], json!([]));
+        assert!(file.get("proxy-groups").is_none());
     }
 
     #[test]
