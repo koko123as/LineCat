@@ -389,6 +389,7 @@ pub fn developer(settings: &Settings) -> Vec<SetSection> {
             vec![
                 row("message-test", "action", "", "消息测试", ""),
                 row("logs-test", "action", "", "日志测试", ""),
+                row("live-status-test", "action", "", "实时状态卡片测试", ""),
                 row("clear-data", "action", "", "清除数据", ""),
                 row("prune-cache", "action", "", "修剪缓存", ""),
             ],

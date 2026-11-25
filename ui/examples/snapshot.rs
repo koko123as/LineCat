@@ -985,6 +985,25 @@ fn main() {
         ("dashboard-failed-small", 0, "", "", 1, "failed"),
         ("dashboard-1280x700", 0, "", "", 1, ""),
         ("dashboard-1000x900", 0, "", "", 1, ""),
+        ("live-stopped", 0, "", "", 1, "live:0"),
+        ("live-stopped-small", 0, "", "", 1, "live:0"),
+        ("live-stopped-wide", 0, "", "", 1, "live:0"),
+        ("live-stopped-tablet", 0, "", "", 1, "live:0"),
+        ("live-starting", 0, "", "", 1, "live:1"),
+        ("live-ready", 0, "", "", 1, "live:2"),
+        ("live-ready-dark", 0, "", "", 2, "live:2"),
+        ("live-download", 0, "", "", 1, "live:3"),
+        ("live-consent", 0, "", "", 1, "live:4"),
+        ("live-warnings", 0, "", "", 1, "live:5"),
+        ("live-warnings-small", 0, "", "", 1, "live:5"),
+        ("live-running-wide", 0, "", "", 1, "live:6"),
+        ("live-open", 0, "", "", 1, "live-open"),
+        ("live-open-small", 0, "", "", 1, "live-open"),
+        ("live-open-wide", 0, "", "", 1, "live-open"),
+        ("pill-stopped", 0, "", "", 1, "pill:stopped"),
+        ("pill-warnings-small", 0, "", "", 1, "pill:warnings"),
+        ("pill-download-wide", 0, "", "", 1, "pill:downloading"),
+        ("pill-running-tablet", 0, "", "", 2, "pill:running"),
         ("dashboard-table-1280x1000", 0, "", "", 1, ""),
         ("dashboard-table-1600x1100", 0, "", "", 2, ""),
         ("dashboard-edit", 0, "", "", 1, "edit"),
@@ -1252,6 +1271,40 @@ fn main() {
         ui.set_profile_sheet_open(*overlay == "profsheet");
         ui.set_picker_open(*overlay == "picker");
         ui.set_dash_fault_count(if *overlay == "faults" { 2 } else { 0 });
+        // "live:<front>": the developer page's deck on that card; "live-open" with the
+        // warnings opened; "pill:<kind>": the bar button for one status.
+        let live_front = overlay
+            .strip_prefix("live:")
+            .and_then(|f| f.parse::<usize>().ok());
+        let deck = live_front.is_some() || *overlay == "live-open";
+        let list = live_status::preview();
+        let cards: Vec<LiveCard> = list
+            .iter()
+            .map(|st| live_app::card_model(live_status::card(st, None, "1.4.2")))
+            .collect();
+        ui.set_live_cards(ModelRc::new(VecModel::from(cards)));
+        ui.set_live_front(if *overlay == "live-open" {
+            5
+        } else {
+            live_front.unwrap_or(0) as i32
+        });
+        ui.set_live_expanded(*overlay == "live-open");
+        ui.set_live_asking(false);
+        ui.set_live_open(deck);
+        let pill = match overlay.strip_prefix("pill:") {
+            Some("stopped") => live_status::pill(&list[..1]),
+            Some("warnings") => live_status::pill(&list[5..6]),
+            Some("downloading") => live_status::pill(&list[3..6]),
+            Some("running") => live_status::pill(&list[6..]),
+            _ => None,
+        }
+        .unwrap_or_default();
+        ui.set_live_pill(LivePill {
+            kind: pill.kind.into(),
+            tone: pill.tone,
+            text: pill.text.into(),
+            progress: pill.progress,
+        });
         let mut st = ui.get_dash_status();
         st.failed = *overlay == "failed";
         ui.set_dash_status(st);

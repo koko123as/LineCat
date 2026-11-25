@@ -152,6 +152,38 @@ export struct DashRow {
     cells: [DashCell],
 }
 
+// `LiveStatusButton` and its deck (`live_status.rs`). Tones: 0 neutral, 1 error,
+// 2 warning, 3 success, 4 primary.
+export struct LivePill {
+    kind: string,
+    tone: int,
+    text: string,
+    progress: float,
+}
+
+export struct LiveWarning {
+    path: string,
+    message: string,
+}
+
+export struct LiveCard {
+    kind: string,
+    tint: int,
+    title: string,
+    body: string,
+    action: string,
+    action-tone: int,
+    ask-title: string,
+    ask-body: string,
+    ask-label: string,
+    big: string,
+    tag: string,
+    ticks-on: string,
+    ticks-off: string,
+    chips: [string],
+    warnings: [LiveWarning],
+}
+
 // A card the editor can add (`_AddRow`).
 export struct DashAdd {
     id: string,
@@ -465,6 +497,8 @@ global Icons {
     out property <string> eye-off: "M3 3l18 18 M10.6 6.1A9.7 9.7 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-3 3.6 M6.6 7.6C4 9.4 2.5 12 2.5 12S6 18 12 18c1.6 0 3-.4 4.2-1 M9.9 10a3 3 0 0 0 4.2 4.2";
     out property <string> block: "M12 3a9 9 0 1 0 0.01 0z M5.6 5.6l12.8 12.8";
     out property <string> error: "M12 3a9 9 0 1 0 0.01 0z M12 7.5v5.5 M12 16.5v.01";
+    out property <string> warning: "M12 3.5l9.5 16.5h-19z M12 9.5v4.5 M12 17v.01";
+    out property <string> puzzle: "M4 7h4a2.5 2.5 0 0 1 5 0h4v4a2.5 2.5 0 0 1 0 5v4H4v-4.5a2.5 2.5 0 0 0 0-4.5z";
     out property <string> language: "M4 5h9 M8.5 3v2 M11 5c-1 4-3.5 7-7 9 M6 9c1.5 2.5 3.5 4 6 5 M13 21l4-9 4 9 M14.5 18h5";
     out property <string> apps: "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z";
     out property <string> cloud-sync: "M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.5 1.5A3.8 3.8 0 0 1 17.5 18z M9.5 13.5l2.5-2.5 2.5 2.5 M12 11v5";
@@ -1786,9 +1820,374 @@ component ConnTableCard inherits DashCard {
     }
 }
 
+// `live_status*.dart`'s colors by tone: the container fill and what sits on it.
+global LiveTone {
+    public pure function fill(t: int) -> color {
+        if (t == 1) { return Theme.s.error.with-alpha(0.16); }
+        if (t == 2) { return Theme.warning.with-alpha(0.18); }
+        if (t == 3) { return Theme.success.with-alpha(0.18); }
+        if (t == 4) { return Theme.s.primary-container; }
+        return Theme.s.block;
+    }
+    public pure function on(t: int) -> color {
+        if (t == 1) { return Theme.s.error; }
+        if (t == 2) { return Theme.warning; }
+        if (t == 3) { return Theme.success; }
+        if (t == 4) { return Theme.s.on-primary-container; }
+        return Theme.s.on-surface;
+    }
+    public pure function strong(t: int) -> color {
+        if (t == 1) { return Theme.s.error; }
+        if (t == 2) { return Theme.warning; }
+        if (t == 3) { return Theme.success; }
+        return Theme.s.block;
+    }
+}
+
+// `_PillProgressRing`: the download's share as an arc over a faint ring.
+component ProgressRing inherits Rectangle {
+    in property <float> value;
+    in property <color> tint;
+    in property <length> size: 16px;
+    width: root.size;
+    height: root.size;
+    property <angle> a: clamp(root.value, 0, 0.999) * 360deg;
+    Path {
+        width: root.size;
+        height: root.size;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: "M12 3a9 9 0 1 0 0.01 0z";
+        stroke: root.tint.with-alpha(0.3);
+        stroke-width: 2.6px;
+        fill: transparent;
+    }
+    if root.value > 0: Path {
+        width: root.size;
+        height: root.size;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: "M12 3A9 9 0 " + (root.value > 0.5 ? "1" : "0") + " 1 " + (12 + 9 * Math.sin(root.a)) + " " + (12 - 9 * Math.cos(root.a));
+        stroke: root.tint;
+        stroke-width: 2.6px;
+        stroke-line-cap: round;
+        fill: transparent;
+    }
+}
+
+// `LiveStatusButton`: the most important status's glyph and number, a check for a
+// running core alone.
+component LiveStatusButton inherits Rectangle {
+    in property <LivePill> pill;
+    callback open();
+    property <color> fg: root.pill.kind == "running" ? Theme.success : LiveTone.on(root.pill.tone);
+    height: 32px;
+    width: root.pill.text == "" ? 32px : row.preferred-width * 1.1 + 20px;
+    border-radius: 16px;
+    background: ta.pressed ? LiveTone.fill(root.pill.kind == "running" ? 3 : root.pill.tone).darker(0.1) : LiveTone.fill(root.pill.kind == "running" ? 3 : root.pill.tone);
+    row := HorizontalLayout {
+        alignment: center;
+        spacing: 4px;
+        VerticalLayout {
+            alignment: center;
+            if root.pill.kind == "running": Icon { glyph: Icons.check; size: 16px; tint: root.fg; }
+            if root.pill.kind == "stopped": Icon { glyph: Icons.error; size: 16px; tint: root.fg; }
+            if root.pill.kind == "warnings" || root.pill.kind == "consent": Icon { glyph: root.pill.kind == "warnings" ? Icons.warning : Icons.puzzle; size: 16px; tint: root.fg; }
+            if root.pill.kind == "ready": Icon { glyph: Icons.check-circle; size: 16px; tint: root.fg; }
+            if root.pill.kind == "downloading": ProgressRing { value: root.pill.progress; tint: root.fg; }
+            if root.pill.kind == "starting": Spinner { width: 16px; height: 16px; indeterminate: true; }
+        }
+        if root.pill.text != "": Text { text: root.pill.text; font-size: 13px; font-weight: 700; color: root.fg; vertical-alignment: center; }
+    }
+    ta := TouchArea { clicked => { root.open(); } }
+}
+
+// `_Node`: the app or the core as a round glyph over its label.
+component LiveNode inherits VerticalLayout {
+    in property <string> glyph;
+    in property <string> label;
+    in property <color> fill;
+    in property <color> tint;
+    in property <color> label-color;
+    in property <bool> emphasized;
+    width: 64px;
+    spacing: 6px;
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: 44px;
+            height: 44px;
+            border-radius: 22px;
+            background: root.fill;
+            Icon { glyph: root.glyph; size: 22px; tint: root.tint; }
+        }
+    }
+    Text { text: root.label; font-size: 12px; font-weight: root.emphasized ? 600 : 400; color: root.label-color; horizontal-alignment: center; overflow: elide; }
+}
+
+// `_HeroChip`.
+component LiveChip inherits Rectangle {
+    in property <string> text;
+    in property <color> tint;
+    in property <bool> emphasized;
+    height: 22px;
+    width: min(t.preferred-width + 20px, 120px);
+    border-radius: 11px;
+    background: Theme.s.card;
+    t := Text { x: 10px; width: parent.width - 20px; text: root.text; font-size: 13px; font-weight: root.emphasized ? 600 : 400; color: root.tint; vertical-alignment: center; horizontal-alignment: center; overflow: elide; }
+}
+
+// `_StatusCard`: the hero in its tint, the title and its line, then the action; an
+// action that asks first swaps both for the question and its two buttons.
+component LiveCardView inherits Rectangle {
+    in property <LiveCard> card;
+    in property <bool> asking;
+    in property <bool> expanded;
+    callback action();
+    callback confirm();
+    callback unask();
+    callback discard();
+    background: Theme.s.card;
+    border-radius: 28px;
+    clip: true;
+    VerticalLayout {
+        padding: 8px;
+        hero := Rectangle {
+            vertical-stretch: 1;
+            border-radius: 20px;
+            background: LiveTone.fill(root.card.tint);
+            clip: true;
+            if root.card.kind == "stopped" || root.card.kind == "starting" || root.card.kind == "running": HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    HorizontalLayout {
+                        LiveNode {
+                            glyph: Icons.devices;
+                            label: "应用";
+                            fill: Theme.s.card;
+                            tint: Theme.s.on-surface-variant;
+                            label-color: root.card.kind == "stopped" ? Theme.s.error : root.card.kind == "starting" ? Theme.s.on-primary-container : Theme.s.on-surface-variant;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            padding-bottom: 22px;
+                            width: 32px;
+                            if root.card.kind == "starting": HorizontalLayout { alignment: center; Spinner { width: 16px; height: 16px; indeterminate: true; } }
+                            if root.card.kind == "running": Rectangle { height: 2px; background: Theme.success; }
+                            if root.card.kind == "stopped": HorizontalLayout {
+                                height: 2px;
+                                spacing: 4px;
+                                for d in 4: Rectangle { width: 4px; border-radius: 1px; background: Theme.s.error; }
+                            }
+                        }
+                        LiveNode {
+                            glyph: Icons.memory;
+                            label: "内核";
+                            fill: root.card.kind == "stopped" ? Theme.s.error : root.card.kind == "running" ? Theme.success : Theme.s.card;
+                            tint: root.card.kind == "starting" ? Theme.s.primary : Theme.s.card;
+                            label-color: root.card.kind == "stopped" ? Theme.s.error : root.card.kind == "running" ? Theme.success : Theme.s.on-primary-container;
+                            emphasized: root.card.kind != "starting";
+                        }
+                    }
+                }
+            }
+            if root.card.kind == "downloading": Rectangle {
+                width: 132px;
+                height: 132px;
+                Path { viewbox-width: 132; viewbox-height: 132; commands: root.card.ticks-off; stroke: Theme.s.primary.with-alpha(0.22); stroke-width: 2.4px; stroke-line-cap: round; }
+                if root.card.ticks-on != "": Path { viewbox-width: 132; viewbox-height: 132; commands: root.card.ticks-on; stroke: Theme.s.primary; stroke-width: 2.4px; stroke-line-cap: round; }
+                VerticalLayout {
+                    alignment: center;
+                    Text { text: root.card.big; font-size: 28px; font-weight: 700; color: Theme.s.on-primary-container; horizontal-alignment: center; }
+                    Text { text: root.card.tag; font-size: 12px; color: Theme.s.on-primary-container; horizontal-alignment: center; }
+                }
+            }
+            if root.card.kind == "ready" || root.card.kind == "consent": VerticalLayout {
+                alignment: center;
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 14px;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 60px;
+                        height: 60px;
+                        border-radius: 30px;
+                        background: root.card.kind == "ready" ? Theme.success : Theme.warning;
+                        if root.card.kind == "ready": Icon { glyph: Icons.check; size: 28px; tint: Theme.s.card; }
+                        if root.card.kind == "consent": FilledIcon { glyph: Icons.puzzle; size: 28px; tint: Theme.s.card; }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    for chip[i] in root.card.chips: HorizontalLayout {
+                        spacing: 8px;
+                        if root.card.kind == "ready" && i == 1: VerticalLayout { alignment: center; Icon { glyph: Icons.chevron; size: 16px; tint: Theme.success; } }
+                        LiveChip {
+                            text: chip;
+                            tint: root.card.kind == "ready" && i == 1 ? Theme.success : Theme.s.on-surface-variant;
+                            emphasized: root.card.kind == "ready" && i == 1;
+                        }
+                    }
+                }
+            }
+            if root.card.kind == "ready": IconButton {
+                x: parent.width - self.width - 8px;
+                y: 8px;
+                glyph: Icons.close;
+                tint: Theme.s.on-surface-variant;
+                clicked => { root.discard(); }
+            }
+            // `_WarningsHero`: three a line each, or all of them once opened.
+            if root.card.kind == "warnings": Flickable {
+                interactive: root.expanded;
+                content-height: wl.preferred-height;
+                wl := VerticalLayout {
+                    padding: 8px;
+                    spacing: 6px;
+                    alignment: start;
+                    for w[i] in root.card.warnings: Rectangle {
+                        visible: root.expanded || i < 3;
+                        height: self.visible ? (root.expanded ? max(36px, wrow.preferred-height) : 36px) : 0px;
+                        border-radius: 11px;
+                        background: Theme.s.card;
+                        wrow := HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            padding-top: root.expanded ? 9px : 0px;
+                            padding-bottom: root.expanded ? 9px : 0px;
+                            spacing: 10px;
+                            VerticalLayout { alignment: root.expanded ? start : center; FilledIcon { glyph: Icons.warning; size: 18px; tint: Theme.warning; } }
+                            if !root.expanded: Text { horizontal-stretch: 1; text: w.message; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; }
+                            if !root.expanded && w.path != "": Text { max-width: 96px; text: w.path; font-size: 12px; color: Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; }
+                            if root.expanded: VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text { text: w.message; font-size: 15px; color: Theme.s.on-surface; wrap: word-wrap; }
+                                if w.path != "": Text { text: w.path; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-top: root.expanded ? 8px : 12px;
+            padding-bottom: 4px;
+            spacing: 8px;
+            if !root.expanded: VerticalLayout {
+                height: 52px;
+                spacing: 2px;
+                Text { text: root.asking ? root.card.ask-title : root.card.title; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+                Text { text: root.asking ? root.card.ask-body : root.card.body; font-size: 13px; color: Theme.s.on-surface-variant; wrap: word-wrap; max-height: 34px; overflow: elide; vertical-stretch: 1; }
+            }
+            if root.card.action != "" && !root.asking: Rectangle {
+                height: 44px;
+                border-radius: 22px;
+                background: act.pressed ? LiveTone.strong(root.card.action-tone).darker(0.12) : LiveTone.strong(root.card.action-tone);
+                Text {
+                    text: root.card.kind == "warnings" && root.expanded ? "收起" : root.card.action;
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: root.card.action-tone == 0 ? Theme.s.on-surface : Theme.s.card;
+                }
+                act := TouchArea { clicked => { root.action(); } }
+            }
+            if root.asking: HorizontalLayout {
+                height: 44px;
+                spacing: 8px;
+                Rectangle {
+                    border-radius: 22px;
+                    background: no.pressed ? Theme.s.block.darker(0.12) : Theme.s.block;
+                    Text { text: "取消"; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; }
+                    no := TouchArea { clicked => { root.unask(); } }
+                }
+                Rectangle {
+                    border-radius: 22px;
+                    background: yes.pressed ? Theme.s.error.darker(0.12) : Theme.s.error;
+                    Text { text: root.card.ask-label; font-size: 15px; font-weight: 600; color: Theme.s.card; }
+                    yes := TouchArea { clicked => { root.confirm(); } }
+                }
+            }
+        }
+    }
+}
+
+// `LiveStatusDeck`: the statuses as a stack, the next two leaning back above the
+// front one; a drag down brings the next forward and a drag up takes it back. On a
+// phone it rests about the middle, elsewhere under the bar on the right.
+component LiveDeck inherits Rectangle {
+    in property <[LiveCard]> cards;
+    in property <int> front;
+    in property <bool> asking;
+    in property <bool> expanded;
+    in property <length> top-inset;
+    in property <length> bottom-inset;
+    callback close();
+    callback flip(length);
+    callback action();
+    callback confirm();
+    callback unask();
+    callback discard();
+    background: #00000066;
+    property <bool> mobile: root.width <= 600px;
+    property <length> card-w: min(320px, root.width - 32px);
+    property <length> safe-h: root.height - root.top-inset - root.bottom-inset;
+    property <length> max-h: max(300px, min(460px, root.mobile ? root.safe-h - 48px : root.height - root.bottom-inset - 16px - root.rest-y));
+    property <length> front-h: root.expanded ? max(300px, min(root.max-h, 300px - 172px + 16px + 52px + root.card-list-h)) : 300px;
+    property <length> card-list-h: 16px + root.cards[root.front].warnings.length * 66px;
+    property <length> front-x: root.mobile ? max(0px, min((root.width - root.card-w) / 2, root.width - root.card-w - 24px)) : max(0px, root.width - 16px - 24px - root.card-w);
+    property <length> rest-y: root.mobile ? root.top-inset + (root.safe-h - 300px) / 2 : max(0px, min(root.top-inset + 56px + 8px + 48px, root.height - root.bottom-inset - 16px - 300px));
+    property <length> front-y: root.mobile ? root.rest-y + (300px - root.front-h) / 2 : root.rest-y;
+    property <length> drag-dy;
+    property <bool> dragging;
+    TouchArea { clicked => { root.close(); } }
+    for c[i] in root.cards: Rectangle {
+        // 0 the front, 1 and 2 behind it, the rest hidden.
+        property <int> pos: Math.mod(i - root.front + root.cards.length, root.cards.length);
+        property <float> scale: pos == 0 ? 1 : pos == 1 ? 0.93 : 0.87;
+        property <length> follow: pos == 0 && root.dragging ? clamp(root.drag-dy * 0.6, -60px, 90px) : 0px;
+        visible: pos < 3;
+        z: -pos;
+        opacity: pos == 2 ? 0.85 : 1;
+        width: root.card-w * self.scale;
+        height: (pos == 0 ? root.front-h : 300px) * self.scale;
+        x: root.front-x + (root.card-w - self.width) / 2 + (pos == 1 ? -10px : pos == 2 ? 10px : 0px);
+        y: root.front-y + (pos == 1 ? -44px : pos == 2 ? -92px : 0px) + self.follow;
+        animate x, y, width, height { duration: root.dragging ? 0ms : 300ms; easing: cubic-bezier(0.2, 0.9, 0.25, 1); }
+        TouchArea {
+            pointer-event(e) => {
+                if (pos != 0) { return; }
+                if (e.kind == PointerEventKind.down) { root.dragging = true; root.drag-dy = 0; }
+                else if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                    if (root.dragging) { root.dragging = false; root.flip(root.drag-dy); }
+                }
+            }
+            moved => { if (pos == 0 && root.dragging) { root.drag-dy = self.mouse-y - self.pressed-y; } }
+        }
+        LiveCardView {
+            card: c;
+            asking: pos == 0 && root.asking;
+            expanded: pos == 0 && root.expanded;
+            action => { root.action(); }
+            confirm => { root.confirm(); }
+            unask => { root.unask(); }
+            discard => { root.discard(); }
+        }
+        // A card behind takes a tap as a flip, never to its own buttons.
+        if pos != 0: TouchArea { clicked => { root.flip(100px); } }
+    }
+}
+
 component Dashboard inherits Rectangle {
     // `ServiceFaultsButton`: services that did not start, a badge in the bar.
     in property <int> fault-count;
+    in property <LivePill> live-pill;
+    callback open-live();
     in property <bool> switchable;
     callback open-faults();
     callback open-profile();
@@ -1906,6 +2305,10 @@ component Dashboard inherits Rectangle {
                     }
                     fault-ta := TouchArea { clicked => { root.open-faults(); } }
                 }
+            }
+            if !root.editing && root.live-pill.kind != "": VerticalLayout {
+                alignment: center;
+                LiveStatusButton { pill: root.live-pill; open => { root.open-live(); } }
             }
             if !root.wide: VerticalLayout {
                 alignment: center;
@@ -5912,6 +6315,19 @@ export component AppWindow inherits Window {
     in property <bool> dash-hide-ip;
     in-out property <bool> ip-sheet-open;
     in property <int> dash-fault-count;
+    in property <LivePill> live-pill;
+    in property <[LiveCard]> live-cards;
+    in-out property <bool> live-open;
+    in property <int> live-front;
+    in property <bool> live-asking;
+    in property <bool> live-expanded;
+    callback live-show();
+    callback live-close();
+    callback live-flip(length);
+    callback live-action();
+    callback live-confirm();
+    callback live-unask();
+    callback live-discard();
     in property <string> dash-faults-text;
     in-out property <bool> mem-sheet-open;
     in property <DashMemory> dash-mem;
@@ -6339,6 +6755,7 @@ export component AppWindow inherits Window {
         key-pressed(event) => {
             if (event.text == Key.Back) {
                 if (root.alert-open) { root.alert-open = false; return accept; }
+                if (root.live-open) { root.live-close(); return accept; }
                 if (root.input-open) { root.input-open = false; return accept; }
                 if (root.choice-open) { root.choice-open = false; return accept; }
                 if (root.cond-open) { root.cond-open = false; return accept; }
@@ -6458,6 +6875,8 @@ export component AppWindow inherits Window {
                     copy-ip(a) => { root.copy-text(a); }
                     open-ip => { root.ipq-ip = ""; root.ip-sheet-open = true; }
                     fault-count: root.dash-fault-count;
+                    live-pill: root.live-pill;
+                    open-live => { root.live-show(); }
                     switchable: root.profiles.length > 1;
                     open-faults => {
                         root.alert-title = "未能启动的服务";
@@ -7777,6 +8196,21 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+        }
+
+        if root.live-open && root.live-cards.length > 0: LiveDeck {
+            cards: root.live-cards;
+            front: root.live-front;
+            asking: root.live-asking;
+            expanded: root.live-expanded;
+            top-inset: root.top-inset;
+            bottom-inset: root.bottom-inset;
+            close => { root.live-close(); }
+            flip(d) => { root.live-flip(d); }
+            action => { root.live-action(); }
+            confirm => { root.live-confirm(); }
+            unask => { root.live-unask(); }
+            discard => { root.live-discard(); }
         }
 
         if root.alert-open: Dialog {

@@ -18,6 +18,8 @@ pub mod edges;
 pub mod http_capture;
 pub mod items;
 mod items_app;
+pub mod live_app;
+pub mod live_status;
 pub mod logs;
 mod logs_app;
 pub use items_app::sections as items_sections;
@@ -114,6 +116,7 @@ struct App {
     /// The editor column's card heights, by index, for the drag.
     dash_heights: Mutex<Vec<f32>>,
     dash_table: Mutex<dash_app::DashTable>,
+    live: Mutex<live_app::Live>,
     logs_scheduled: AtomicBool,
     toast_seq: AtomicU64,
     last_id: Mutex<u64>,
@@ -427,8 +430,13 @@ impl App {
         while self.alive.load(Ordering::SeqCst) {
             match Bridge::connect(&name) {
                 Ok(bridge) => {
-                    if let Err(e) = self.setup(&bridge) {
-                        self.toast(format!("内核连接失败: {e}"));
+                    match self.setup(&bridge) {
+                        Err(e) if self.bridge().is_err() => {
+                            self.set_core(live_status::Core::Stopped, Some(e.clone()));
+                            self.toast(format!("内核连接失败: {e}"));
+                        }
+                        Err(e) => self.toast(format!("内核连接失败: {e}")),
+                        Ok(()) => {}
                     }
                     while self.alive.load(Ordering::SeqCst) && !bridge.is_closed() {
                         std::thread::sleep(Duration::from_millis(500));
@@ -437,6 +445,7 @@ impl App {
                     *self.bridge.lock().unwrap() = None;
                     self.configured.store(false, Ordering::SeqCst);
                     self.set_run_state("OFFLINE");
+                    self.set_core(live_status::Core::Stopped, None);
                 }
                 Err(_) => std::thread::sleep(Duration::from_millis(300)),
             }
@@ -502,6 +511,7 @@ impl App {
             CALL,
         )?;
         *self.bridge.lock().unwrap() = Some(bridge.clone());
+        self.set_core(live_status::Core::Running, None);
         let engine = greeting
             .pointer("/engine/state")
             .and_then(Value::as_str)
@@ -615,6 +625,7 @@ impl App {
             params["host"] = host;
         }
         bridge.call("config.apply", params.clone(), APPLY)?;
+        self.load_warnings();
         *self.last_apply.lock().unwrap() = Some(params);
         self.configured.store(true, Ordering::SeqCst);
         self.delays.lock().unwrap().clear();
@@ -2302,6 +2313,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         dash_layout: Mutex::new((false, 2, false)),
         dash_heights: Mutex::new(Vec::new()),
         dash_table: Mutex::new(dash_app::DashTable::default()),
+        live: Mutex::new(live_app::Live::default()),
         logs_scheduled: AtomicBool::new(false),
         toast_seq: AtomicU64::new(0),
         last_id: Mutex::new(0),
@@ -2441,6 +2453,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     app.bind_app_icons(&ui);
     app.bind_logs(&ui);
     app.bind_dashboard(&ui);
+    app.bind_live(&ui);
     let a = app.clone();
     ui.on_dash_layout(move |wide, columns, shown| a.dash_layout_changed(wide, columns, shown));
     app.bind_theme(&ui);

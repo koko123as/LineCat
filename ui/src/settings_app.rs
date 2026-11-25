@@ -680,6 +680,7 @@ impl App {
             (page, id) if overrides::spec(page).is_some() => self.override_clicked(page, id),
             ("developer", "message-test") => self.message_test(),
             ("developer", "logs-test") => self.logs_test(),
+            ("developer", "live-status-test") => self.live_preview(),
             ("developer", "clear-data") => self.confirm(
                 "提示",
                 "确定要清除所有数据？".into(),
