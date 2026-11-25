@@ -1,10 +1,12 @@
 package com.follow.clash
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.LocalServerSocket
 import android.net.LocalSocket
 import android.os.Build
 import android.os.Process
+import androidx.core.graphics.drawable.toBitmap
 import com.follow.clash.common.GlobalState
 import com.follow.clash.core.Core
 import com.follow.clash.core.NativeCore
@@ -23,6 +25,7 @@ import kotlinx.coroutines.withContext
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.LinkedBlockingQueue
@@ -275,6 +278,14 @@ object UiBridge {
             }
         }
 
+        // getPackageIcon, as PNG files the Rust side can decode: each name's file, or "" when
+        // the package has no icon to give.
+        "packages.icons" -> {
+            val names = request.getAsJsonArray("names")?.map { it.asString } ?: emptyList()
+            val paths = withContext(Dispatchers.IO) { names.associateWith { pngIconPath(it) } }
+            ok { add("paths", gson.toJsonTree(paths)) }
+        }
+
         // getChinaPackageNames: the installed apps `intelligentSelected` keeps out of the VPN.
         "packages.china" -> {
             val names = withContext(Dispatchers.IO) { packageResolver.getChinaPackageNames() }
@@ -389,6 +400,26 @@ object UiBridge {
             add(resources.getColor(android.R.color.system_accent1_200, null) and 0xFFFFFF)
         }
     }
+
+    private fun pngIconPath(packageName: String): String = runCatching {
+        val pm = GlobalState.application.packageManager
+        val dir = File(GlobalState.application.cacheDir, "slint_icons").apply { mkdirs() }
+        val updated = pm.getPackageInfo(packageName, 0).lastUpdateTime
+        val file = File(dir, "$packageName-$updated.png")
+        if (!file.exists()) {
+            dir.listFiles { f -> f.name.startsWith("$packageName-") }?.forEach { it.delete() }
+            val bitmap = pm.getApplicationIcon(packageName).toBitmap(96, 96, Bitmap.Config.ARGB_8888)
+            val partial = File.createTempFile(file.name, ".tmp", dir)
+            try {
+                FileOutputStream(partial).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                partial.renameTo(file)
+            } finally {
+                partial.delete()
+                bitmap.recycle()
+            }
+        }
+        if (file.exists()) file.absolutePath else ""
+    }.getOrDefault("")
 
     private fun versionName(): String = runCatching {
         val app = GlobalState.application

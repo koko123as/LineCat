@@ -192,6 +192,8 @@ export struct RecordRow {
     count: string,
     id: int,
     well: string,
+    // The package whose icon takes the well's place once the shell gives it.
+    app: string,
     well-label: bool,
     title: string,
     about: string,
@@ -256,6 +258,7 @@ export struct ReqDetail {
     loading: bool,
     sheet-title: string,
     well: string,
+    app: string,
     well-label: bool,
     title: string,
     subtitle: string,
@@ -455,6 +458,23 @@ global Glyphs {
             : k == "qr" ? Icons.qr : k == "sort" ? Icons.sort : k == "file" ? Icons.file
             : k == "import-file" ? Icons.import-file : k == "cloud" ? Icons.cloud : k == "more-circle" ? Icons.more-circle : "";
     }
+}
+
+// Installed apps' icons by package name; `rev` moves when more arrive, so bindings that pass
+// it ask again.
+export global AppIcons {
+    in-out property <int> rev;
+    pure callback icon(string, int) -> image;
+    pure callback has(string, int) -> bool;
+}
+
+// Where the last long press landed, in window coordinates, so the menu it opens can hang
+// from that row.
+export global Anchor {
+    in-out property <length> x;
+    in-out property <length> y;
+    in-out property <length> w;
+    in-out property <length> h;
 }
 
 component Icon inherits Path {
@@ -2730,6 +2750,10 @@ component SetRowView inherits Rectangle {
         running: root.long-press && ta.pressed && !root.long-fired;
         triggered => {
             root.long-fired = true;
+            Anchor.x = root.absolute-position.x;
+            Anchor.y = root.absolute-position.y;
+            Anchor.w = root.width;
+            Anchor.h = root.height;
             root.clicked("long:" + root.item.id);
         }
     }
@@ -2846,6 +2870,11 @@ component SettingsPage inherits Rectangle {
     in property <string> empty-desc;
     in property <string> empty-action;
     property <bool> is-empty: root.empty != "" && root.sections.length == 0;
+    // The Scaffold's sort mode: the rows below as a reorderable list, ✓ to leave.
+    in property <bool> sorting;
+    in property <[string]> sort-titles;
+    callback sort-moved(int, int);
+    callback sort-done();
     callback back();
     callback action();
     callback action2();
@@ -2856,21 +2885,38 @@ component SettingsPage inherits Rectangle {
             title: root.title;
             can-back: root.can-back;
             back => { root.back(); }
-            if root.action2-glyph != "": VerticalLayout { alignment: center; IconButton { glyph: root.action2-glyph; tint: Theme.s.on-surface; clicked => { root.action2(); } } }
-            if root.action-glyph != "" && !root.is-empty: VerticalLayout { alignment: center; IconButton { glyph: root.action-glyph; tint: Theme.s.on-surface; clicked => { root.action(); } } }
+            if root.sorting: VerticalLayout { alignment: center; IconButton { glyph: Icons.check; tint: Theme.s.on-surface; clicked => { root.sort-done(); } } }
+            if !root.sorting && root.action2-glyph != "": VerticalLayout { alignment: center; IconButton { glyph: root.action2-glyph; tint: Theme.s.on-surface; clicked => { root.action2(); } } }
+            if !root.sorting && root.action-glyph != "" && !root.is-empty: VerticalLayout { alignment: center; IconButton { glyph: root.action-glyph; tint: Theme.s.on-surface; clicked => { root.action(); } } }
         }
-        Flickable {
-            visible: !root.is-empty;
-            content-height: page-col.preferred-height + Dock.pad;
-            page-col := VerticalLayout {
-                alignment: start;
-                padding-bottom: root.bottom-gap;
-                @children
-                Sections {
-                    sections: root.sections;
-                    long-press: root.long-press;
-                    clicked(id) => { root.clicked(id); }
-                    toggled(id, on) => { root.toggled(id, on); }
+        Rectangle {
+            vertical-stretch: 1;
+            Flickable {
+                visible: !root.is-empty && !root.sorting;
+                content-height: page-col.preferred-height + Dock.pad;
+                page-col := VerticalLayout {
+                    alignment: start;
+                    padding-bottom: root.bottom-gap;
+                    @children
+                    Sections {
+                        sections: root.sections;
+                        long-press: root.long-press;
+                        clicked(id) => { root.clicked(id); }
+                        toggled(id, on) => { root.toggled(id, on); }
+                    }
+                }
+            }
+            if root.sorting: Flickable {
+                interactive: !sort-list.dragging;
+                content-height: sort-col.preferred-height + Dock.pad;
+                sort-col := VerticalLayout {
+                    alignment: start;
+                    padding: 16px;
+                    padding-bottom: root.bottom-gap;
+                    sort-list := ReorderList {
+                        titles: root.sort-titles;
+                        moved(f, t) => { root.sort-moved(f, t); }
+                    }
                 }
             }
         }
@@ -4147,12 +4193,19 @@ component ConditionBlock inherits Rectangle {
 component Well inherits Rectangle {
     in property <string> text;
     in property <bool> label;
+    in property <string> app;
     in property <length> size: 40px;
+    property <bool> iconed: root.app != "" && AppIcons.has(root.app, AppIcons.rev);
     width: size;
     height: size;
     border-radius: size * 0.28;
-    background: label ? Theme.s.block : Theme.s.primary-container;
-    Text {
+    background: root.iconed ? transparent : label ? Theme.s.block : Theme.s.primary-container;
+    if root.iconed: Image {
+        width: root.size;
+        height: root.size;
+        source: AppIcons.icon(root.app, AppIcons.rev);
+    }
+    if !root.iconed: Text {
         text: root.text;
         font-size: root.label ? (root.text.character-count > 3 ? root.size * 0.26 : root.size * 0.32) : root.size * 0.42;
         font-weight: 600;
@@ -4191,7 +4244,7 @@ component RecordRowView inherits Rectangle {
             padding-left: 12px;
             padding-right: 14px;
             spacing: 12px;
-            VerticalLayout { alignment: center; Well { text: root.rec.well; label: root.rec.well-label; } }
+            VerticalLayout { alignment: center; Well { text: root.rec.well; label: root.rec.well-label; app: root.rec.app; } }
             VerticalLayout {
                 alignment: center;
                 spacing: 3px;
@@ -4412,7 +4465,7 @@ component DetailView inherits Rectangle {
             padding-right: 8px;
             padding-bottom: root.detail.tabs.length > 1 ? 12px : 8px;
             spacing: 12px;
-            if root.detail.well != "": VerticalLayout { alignment: center; Well { text: root.detail.well; label: root.detail.well-label; size: 48px; } }
+            if root.detail.well != "": VerticalLayout { alignment: center; Well { text: root.detail.well; label: root.detail.well-label; app: root.detail.app; size: 48px; } }
             VerticalLayout {
                 alignment: center;
                 spacing: 2px;
@@ -4661,12 +4714,14 @@ component AccessPage inherits Rectangle {
                             spacing: 16px;
                             VerticalLayout {
                                 alignment: center;
-                                Rectangle {
+                                acc-icon := Rectangle {
+                                    property <bool> iconed: AppIcons.has(r.name, AppIcons.rev);
                                     width: 44px;
                                     height: 44px;
                                     border-radius: 12px;
-                                    background: Theme.s.primary-container;
-                                    Text { text: r.monogram; font-size: 18px; font-weight: 600; color: Theme.s.on-primary-container; }
+                                    background: self.iconed ? transparent : Theme.s.primary-container;
+                                    if acc-icon.iconed: Image { width: 44px; height: 44px; source: AppIcons.icon(r.name, AppIcons.rev); }
+                                    if !acc-icon.iconed: Text { text: r.monogram; font-size: 18px; font-weight: 600; color: Theme.s.on-primary-container; }
                                 }
                             }
                             VerticalLayout {
@@ -5418,6 +5473,9 @@ export component AppWindow inherits Window {
     in-out property <length> ctx-w;
     in-out property <length> ctx-h;
     callback ctx-picked(string, string, string, string);
+    // A settings page in its sort mode, and the rows it reorders.
+    in-out property <bool> set-sorting;
+    in property <[string]> set-sort-titles;
     in-out property <string> proxy-sub;
     in-out property <bool> proxy-searching;
     callback test-node(string, string);
@@ -5644,6 +5702,7 @@ export component AppWindow inherits Window {
     changed req-visible => { if (root.req-visible) { root.page-shown(); } }
     callback tools-page-changed();
     changed tools-page => {
+        root.set-sorting = false;
         if (root.tools-page == "resources") { root.page-shown(); }
         root.tools-page-changed();
     }
@@ -5728,6 +5787,7 @@ export component AppWindow inherits Window {
                 if (root.req-sheet-open) { root.req-sheet-open = false; root.req-sheet-closed(); return accept; }
                 if (root.req-visible && root.req-searching) { root.req-searching = false; root.req-query = ""; return accept; }
                 if (root.ctx-kind != "") { root.ctx-kind = ""; return accept; }
+                if (root.tab == 3 && root.set-sorting) { root.set-sorting = false; return accept; }
                 if (root.proxy-sub != "") { root.proxy-sub = ""; return accept; }
                 if (root.proxy-options-open) { root.proxy-options-open = false; return accept; }
                 if (root.tab == 1 && root.proxy-searching) { root.proxy-searching = false; root.search-proxies(""); return accept; }
@@ -5953,6 +6013,10 @@ export component AppWindow inherits Window {
                     action-glyph: Glyphs.of(root.meta.action);
                     action2-glyph: Glyphs.of(root.meta.action2);
                     long-press: root.meta.long-press;
+                    sorting: root.set-sorting;
+                    sort-titles: root.set-sort-titles;
+                    sort-moved(f, t) => { root.set-clicked(root.tools-page, "sort-move:" + f + ":" + t); }
+                    sort-done => { root.set-sorting = false; }
                     action => { root.set-clicked(root.tools-page, "action"); }
                     action2 => { root.set-clicked(root.tools-page, "action2"); }
                     width: parent.width;
@@ -6923,8 +6987,8 @@ export component AppWindow inherits Window {
                 spacing: 8px;
                 TextButton { text: root.confirm-action == "access-save" ? "不保存" : "取消"; clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, false); } }
                 TextButton {
-                    text: root.confirm-action == "access-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" || root.confirm-action == "color-delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : root.confirm-action == "color-reset" ? "重置" : "确定";
-                    danger: root.confirm-action == "delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset";
+                    text: root.confirm-action == "access-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" || root.confirm-action == "color-delete" || root.confirm-action == "ua-delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : root.confirm-action == "color-reset" ? "重置" : "确定";
+                    danger: root.confirm-action == "delete" || root.confirm-action == "ua-delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset";
                     clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, true); }
                 }
             }

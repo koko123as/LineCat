@@ -1030,6 +1030,14 @@ fn main() {
         ("set-ua-small", 3, "", "user-agents", 1, ""),
         ("set-ua-wide", 3, "", "user-agents", 1, ""),
         ("set-ua-tablet", 3, "", "user-agents", 1, ""),
+        ("set-ua-sort", 3, "", "user-agents", 1, "ua-sort"),
+        ("set-ua-sort-small", 3, "", "user-agents", 1, "ua-sort"),
+        ("set-ua-sort-wide", 3, "", "user-agents", 1, "ua-sort"),
+        ("set-ua-sort-tablet", 3, "", "user-agents", 1, "ua-sort"),
+        ("set-ua-menu", 3, "", "user-agents", 1, "ua-menu"),
+        ("set-ua-menu-small", 3, "", "user-agents", 1, "ua-menu"),
+        ("set-ua-menu-wide", 3, "", "user-agents", 1, "ua-menu"),
+        ("set-ua-menu-tablet", 3, "", "user-agents", 1, "ua-menu"),
         ("set-access", 3, "", "access", 1, ""),
         ("set-access-small", 3, "", "access", 1, ""),
         ("set-access-wide", 3, "", "access", 1, ""),
@@ -1147,6 +1155,42 @@ fn main() {
             ui.set_res_dialog_default(resources::default_url("mmdb").into());
         }
         settings_shot(&ui, w, page, overlay);
+        ui.set_set_sorting(*overlay == "ua-sort");
+        if *overlay == "ua-sort" {
+            ui.set_set_sort_titles(ModelRc::new(VecModel::from(
+                store::Settings::default()
+                    .general
+                    .user_agents
+                    .iter()
+                    .map(|u| slint::SharedString::from(u.as_str()))
+                    .collect::<Vec<_>>(),
+            )));
+        }
+        if *overlay == "ua-menu" {
+            ui.set_ctx_kind("ua".into());
+            ui.set_ctx_names(ModelRc::default());
+            ui.set_ctx_items(ModelRc::new(VecModel::from(vec![
+                ActionItem {
+                    id: "edit".into(),
+                    glyph: "edit".into(),
+                    label: "编辑".into(),
+                    enabled: true,
+                    ..Default::default()
+                },
+                ActionItem {
+                    id: "delete".into(),
+                    glyph: "delete".into(),
+                    label: "删除".into(),
+                    danger: true,
+                    enabled: true,
+                    ..Default::default()
+                },
+            ])));
+            ui.set_ctx_x(16.0);
+            ui.set_ctx_y(124.0);
+            ui.set_ctx_w(w as f32 - 32.0);
+            ui.set_ctx_h(52.0);
+        }
         if *tab == 2 {
             ui.set_profiles_page((*page).into());
             ui.set_tools_page("".into());
@@ -1212,7 +1256,9 @@ fn main() {
         ui.set_dash_traffic(traffic);
         // "nodemenu" / "groupmenu": the anchored menus of a node's long press and the tab
         // bar's ▾, over many groups so the tabs overflow.
-        ui.set_ctx_kind("".into());
+        if *overlay != "ua-menu" {
+            ui.set_ctx_kind("".into());
+        }
         if matches!(*overlay, "groupmenu" | "tabs" | "tabs-list") {
             let mut many: Vec<ProxyGroup> = base_groups.iter().collect();
             for (i, name) in [

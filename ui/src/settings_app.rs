@@ -3,7 +3,9 @@
 //! developer.dart, about.dart, theme.dart).
 
 use crate::settings_view::{self, choices};
-use crate::{overrides, profile, store, ActionItem, App, AppWindow, PageMeta, SetSection, CALL};
+use crate::{
+    overrides, profile, store, ActionItem, Anchor, App, AppWindow, PageMeta, SetSection, CALL,
+};
 use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::sync::Arc;
@@ -171,7 +173,13 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
         "advanced" => meta("进阶配置", ""),
         "network" => meta("网络", "advanced"),
         "user-agents" => PageMeta {
-            action: "plus".into(),
+            action: "add-circle".into(),
+            action2: if settings.general.user_agents.len() > 1 {
+                "sort".into()
+            } else {
+                "".into()
+            },
+            long_press: true,
             ..meta("用户代理", "general")
         },
         "list" | "map" => {
@@ -295,6 +303,20 @@ impl App {
                         }
                     }
                 });
+            }
+        });
+        let a = self.clone();
+        ui.on_ctx_picked(move |kind, arg, _, id| {
+            let Ok(i) = arg.parse::<usize>() else { return };
+            match (kind.as_str(), id.as_str()) {
+                ("ua", "edit") => a.set_clicked("user-agents", &format!("edit:ua:{i}")),
+                ("ua", "delete") => a.confirm(
+                    "提示",
+                    "确定删除当前用户代理吗？".into(),
+                    "ua-delete",
+                    i.to_string(),
+                ),
+                _ => {}
             }
         });
         let a = self.clone();
@@ -464,6 +486,22 @@ impl App {
         self.update_settings(effect, |s| f(&mut s.general));
     }
 
+    /// `_handleDelete`: the user agent goes, and the global one with it when it was that.
+    pub(crate) fn delete_user_agent(self: &Arc<Self>, index: &str) {
+        let Ok(i) = index.parse::<usize>() else {
+            return;
+        };
+        self.update_general(Effect::Reapply, |g| {
+            if i < g.user_agents.len() {
+                let old = g.user_agents.remove(i);
+                if g.global_ua.as_deref() == Some(old.as_str()) {
+                    g.global_ua = None;
+                }
+            }
+        });
+        self.ui(|ui| ui.set_meta_rev(ui.get_meta_rev() + 1));
+    }
+
     fn set_clicked(self: &Arc<Self>, page: &str, id: &str) {
         if self.rules_clicked(page, id) || self.items_clicked(page, id) {
             return;
@@ -472,6 +510,67 @@ impl App {
         match (page, id) {
             ("general", "user-agent") => self.open_page("user-agents"),
             ("user-agents", "action") => self.open_input("user-agent-add", "添加", "用户代理", ""),
+            ("user-agents", "action2") => {
+                let titles: Vec<SharedString> =
+                    g.user_agents.iter().map(|u| u.as_str().into()).collect();
+                self.ui(move |ui| {
+                    ui.set_set_sort_titles(ModelRc::new(VecModel::from(titles)));
+                    ui.set_set_sorting(true);
+                });
+            }
+            ("user-agents", id) if id.starts_with("sort-move:") => {
+                let mut it = id["sort-move:".len()..]
+                    .split(':')
+                    .filter_map(|n| n.parse::<usize>().ok());
+                if let (Some(from), Some(to)) = (it.next(), it.next()) {
+                    self.update_general(Effect::None, |g| {
+                        crate::reorder::move_item(&mut g.user_agents, from, to)
+                    });
+                    let titles: Vec<SharedString> = self
+                        .store
+                        .lock()
+                        .unwrap()
+                        .state
+                        .settings
+                        .general
+                        .user_agents
+                        .iter()
+                        .map(|u| u.as_str().into())
+                        .collect();
+                    self.ui(move |ui| ui.set_set_sort_titles(ModelRc::new(VecModel::from(titles))));
+                }
+            }
+            ("user-agents", id) if id.starts_with("long:ua:") => {
+                if let Ok(i) = id["long:ua:".len()..].parse::<usize>() {
+                    self.ui(move |ui| {
+                        let anchor = ui.global::<Anchor>();
+                        ui.set_ctx_names(ModelRc::default());
+                        ui.set_ctx_items(ModelRc::new(VecModel::from(vec![
+                            ActionItem {
+                                id: "edit".into(),
+                                glyph: "edit".into(),
+                                label: "编辑".into(),
+                                enabled: true,
+                                ..Default::default()
+                            },
+                            ActionItem {
+                                id: "delete".into(),
+                                glyph: "delete".into(),
+                                label: "删除".into(),
+                                danger: true,
+                                enabled: true,
+                                ..Default::default()
+                            },
+                        ])));
+                        ui.set_ctx_a(i.to_string().into());
+                        ui.set_ctx_x(anchor.get_x());
+                        ui.set_ctx_y(anchor.get_y());
+                        ui.set_ctx_w(anchor.get_w());
+                        ui.set_ctx_h(anchor.get_h());
+                        ui.set_ctx_kind("ua".into());
+                    });
+                }
+            }
             ("user-agents", id) => {
                 if let Some(i) = id
                     .strip_prefix("edit:ua:")
@@ -485,7 +584,7 @@ impl App {
                         &value,
                         "",
                         "",
-                        true,
+                        false,
                     );
                 } else if let Some(i) = id.strip_prefix("ua:") {
                     let ua = i
@@ -753,12 +852,14 @@ impl App {
             "auth-pass" => {
                 self.update_general(Effect::Reapply, |g| g.authentication.password = value)
             }
-            "user-agent-add" => self.update_general(Effect::Reapply, |g| {
-                if !g.user_agents.contains(&value) {
-                    g.user_agents.push(value.clone());
-                }
-                g.global_ua = Some(value);
-            }),
+            "user-agent-add" => {
+                self.update_general(Effect::None, |g| {
+                    if !g.user_agents.contains(&value) {
+                        g.user_agents.push(value);
+                    }
+                });
+                self.ui(|ui| ui.set_meta_rev(ui.get_meta_rev() + 1));
+            }
             k if k.starts_with("list:") => self.list_set(k, Some(value)),
             k if k.starts_with("ua-edit:") => {
                 if let Ok(i) = k["ua-edit:".len()..].parse::<usize>() {

@@ -681,6 +681,7 @@ impl ReqState {
         ReqDetail {
             has: true,
             well: s(conn_well(c)),
+            app: s(&c.process),
             well_label: false,
             title: s(c.title()),
             subtitle: s(c.headline(cx.now)),
@@ -1312,6 +1313,7 @@ fn conn_row(c: &Conn, repeats: usize, now: i64) -> RecordRow {
     RecordRow {
         id: c.id as i32,
         well: s(conn_well(c)),
+        app: s(&c.process),
         title: s(c.name()),
         about: s(about),
         about_error: failure.is_some(),

@@ -4,6 +4,7 @@
 
 pub mod access;
 mod access_app;
+pub mod app_icons;
 pub mod backup;
 mod backup_app;
 pub use backup_app::sections as backup_app_sections;
@@ -95,6 +96,7 @@ struct App {
     delays: Mutex<HashMap<String, i32>>,
     sorted_delays: Mutex<HashMap<String, i32>>,
     testing_groups: Mutex<HashSet<String>>,
+    icons_scheduled: AtomicBool,
     proxy_query: Mutex<String>,
     traffic_up: Mutex<VecDeque<i64>>,
     traffic_down: Mutex<VecDeque<i64>>,
@@ -336,6 +338,73 @@ impl App {
                     }
                 }
             });
+        });
+    }
+
+    fn bind_app_icons(self: &Arc<Self>, ui: &AppWindow) {
+        let icons = ui.global::<AppIcons>();
+        let a = self.clone();
+        icons.on_has(move |name, _| {
+            let found = app_icons::cache().lock().unwrap().lookup(&name).is_some();
+            a.schedule_icons();
+            found
+        });
+        icons.on_icon(|name, _| {
+            app_icons::cache()
+                .lock()
+                .unwrap()
+                .lookup(&name)
+                .map(slint::Image::from_rgba8)
+                .unwrap_or_default()
+        });
+    }
+
+    /// Asks the shell for the icons the page wanted, a batch at a time, once the bindings
+    /// that asked have all run.
+    fn schedule_icons(self: &Arc<Self>) {
+        if !app_icons::cache().lock().unwrap().has_pending()
+            || self.icons_scheduled.swap(true, Ordering::SeqCst)
+        {
+            return;
+        }
+        let a = self.clone();
+        slint::Timer::single_shot(Duration::from_millis(80), move || {
+            a.spawn(|app| app.fetch_icons());
+        });
+    }
+
+    fn fetch_icons(self: &Arc<Self>) {
+        loop {
+            let names = app_icons::cache().lock().unwrap().take_pending(48);
+            if names.is_empty() {
+                break;
+            }
+            let paths = self
+                .bridge()
+                .and_then(|b| {
+                    b.shell(
+                        "packages.icons",
+                        json!({ "names": names }),
+                        Duration::from_secs(30),
+                    )
+                })
+                .ok()
+                .and_then(|r| r.get("paths").cloned())
+                .unwrap_or(Value::Null);
+            for name in names {
+                let icon = paths
+                    .get(&name)
+                    .and_then(Value::as_str)
+                    .filter(|p| !p.is_empty())
+                    .and_then(|p| std::fs::read(p).ok())
+                    .and_then(|bytes| app_icons::decode_png(&bytes));
+                app_icons::cache().lock().unwrap().put(name, icon);
+            }
+        }
+        self.icons_scheduled.store(false, Ordering::SeqCst);
+        self.ui(|ui| {
+            let icons = ui.global::<AppIcons>();
+            icons.set_rev(icons.get_rev() + 1);
         });
     }
 
@@ -1883,6 +1952,7 @@ impl App {
             ("clear-data", true) => self.clear_data(),
             ("rules-delete", true) => self.delete_selected_rules(),
             ("script-delete", true) => self.delete_script(&arg),
+            ("ua-delete", true) => self.delete_user_agent(&arg),
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings", true) => self.open_app_settings(),
             ("edit-save", _) => self.save_edit(form, yes),
@@ -2215,6 +2285,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         delays: Mutex::new(HashMap::new()),
         sorted_delays: Mutex::new(HashMap::new()),
         testing_groups: Mutex::new(HashSet::new()),
+        icons_scheduled: AtomicBool::new(false),
         proxy_query: Mutex::new(String::new()),
         traffic_up: Mutex::new(VecDeque::new()),
         traffic_down: Mutex::new(VecDeque::new()),
@@ -2362,6 +2433,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
             a.spawn(|app| app.refresh_groups());
         }
     });
+    app.bind_app_icons(&ui);
     app.bind_logs(&ui);
     app.bind_dashboard(&ui);
     let a = app.clone();
