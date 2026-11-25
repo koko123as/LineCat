@@ -13,6 +13,7 @@ import com.follow.clash.packages.PackageResolver
 import com.follow.clash.service.NetworkObserver
 import com.follow.clash.service.models.VpnOptions
 import com.google.gson.Gson
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
@@ -209,6 +210,7 @@ object UiBridge {
                 addProperty("versionName", versionName())
                 addProperty("state", ServiceState.runState.value.name)
                 edges?.let { add("insets", it) }
+                systemSeeds()?.let { add("seeds", it) }
             }
         }
 
@@ -375,6 +377,17 @@ object UiBridge {
         }
 
         else -> error("unknown op")
+    }
+
+    // DynamicColorPlugin's getCorePalette: the system palette's tones 40 and 80 seed the light
+    // and dark schemes of a theme that follows the system.
+    private fun systemSeeds(): JsonArray? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+        val resources = GlobalState.application.resources
+        return JsonArray().apply {
+            add(resources.getColor(android.R.color.system_accent1_600, null) and 0xFFFFFF)
+            add(resources.getColor(android.R.color.system_accent1_200, null) and 0xFFFFFF)
+        }
     }
 
     private fun versionName(): String = runCatching {

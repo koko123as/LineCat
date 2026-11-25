@@ -30,6 +30,10 @@ pub use settings_app::{page_meta, set_targets};
 pub mod settings_view;
 pub mod store;
 pub mod theme;
+mod theme_app;
+pub use theme_app::{apply as apply_theme, show_color_page};
+pub mod colors;
+pub mod hct;
 
 slint::include_modules!();
 
@@ -219,37 +223,6 @@ fn file_info(path: &std::path::Path) -> String {
     }
 }
 
-/// The accent's schemes; `pureBlack` turns the dark page black.
-fn apply_theme(ui: &AppWindow, accent: usize, pure_black: bool) {
-    let [light, mut dark] = theme::SCHEMES[accent.min(theme::SCHEMES.len() - 1)];
-    if pure_black {
-        dark.page = 0x000000;
-    }
-    ui.global::<Theme>().set_light(scheme(&light));
-    ui.global::<Theme>().set_dark(scheme(&dark));
-}
-
-fn rgb(v: u32) -> slint::Color {
-    slint::Color::from_argb_encoded(0xff00_0000 | v)
-}
-
-fn scheme(p: &theme::Palette) -> Scheme {
-    Scheme {
-        primary: rgb(p.primary),
-        on_primary: rgb(p.on_primary),
-        primary_container: rgb(p.primary_container),
-        on_primary_container: rgb(p.on_primary_container),
-        page: rgb(p.page),
-        card: rgb(p.card),
-        block: rgb(p.block),
-        inset: rgb(p.inset),
-        on_surface: rgb(p.on_surface),
-        on_surface_variant: rgb(p.on_surface_variant),
-        outline_variant: rgb(p.outline_variant),
-        error: rgb(p.error),
-    }
-}
-
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -429,6 +402,11 @@ impl App {
         if let Some(edges) = hello.get("insets") {
             self.set_edges(edges.clone());
         }
+        let seeds = hello.get("seeds").and_then(Value::as_array).and_then(|s| {
+            let get = |i: usize| s.get(i).and_then(Value::as_u64).map(|v| v as u32);
+            Some((get(0)?, get(1)?))
+        });
+        self.set_system_seeds(seeds);
         let greeting = bridge.call(
             "core.hello",
             json!({"protocol": {"min": 1, "max": 1}, "client": {"name": "seasoncat-ui", "version": VERSION}}),
@@ -1936,6 +1914,7 @@ impl App {
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings", true) => self.open_app_settings(),
             ("edit-save", _) => self.save_edit(form, yes),
+            ("color-reset" | "color-delete", true) => self.theme_confirmed(&action, &arg),
             _ => {}
         }
     }
@@ -2287,14 +2266,8 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         started_once: AtomicBool::new(false),
     });
 
-    apply_theme(&ui, settings.accent, settings.pure_black);
-    ui.global::<Theme>().set_mode(settings.theme_mode);
-    ui.set_accent(settings.accent as i32);
-    ui.set_theme_mode(settings.theme_mode);
+    apply_theme(&ui, &settings);
     ui.set_mode(settings.mode);
-    ui.set_accents(ModelRc::new(VecModel::from(
-        theme::ACCENTS.iter().map(|c| rgb(*c)).collect::<Vec<_>>(),
-    )));
     ui.set_logs(ModelRc::new(VecModel::<LogItem>::default()));
     app.refresh_profiles();
 
@@ -2419,45 +2392,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
             ui.set_logs(ModelRc::new(VecModel::<LogItem>::default()));
         }
     });
-    let a = app.clone();
-    let w = ui.as_weak();
-    ui.on_set_accent(move |i| {
-        let i = i.max(0) as usize;
-        if let Some(ui) = w.upgrade() {
-            apply_theme(&ui, i, a.store.lock().unwrap().state.settings.pure_black);
-            ui.set_accent(i as i32);
-        }
-        let mut store = a.store.lock().unwrap();
-        store.state.settings.accent = i;
-        store.save();
-    });
-    let a = app.clone();
-    let w = ui.as_weak();
-    ui.on_set_theme_mode(move |m| {
-        if let Some(ui) = w.upgrade() {
-            ui.global::<Theme>().set_mode(m);
-            ui.set_theme_mode(m);
-        }
-        let mut store = a.store.lock().unwrap();
-        store.state.settings.theme_mode = m;
-        store.save();
-    });
-
-    let a = app.clone();
-    let w = ui.as_weak();
-    ui.on_set_pure_black(move |on| {
-        let accent = {
-            let mut store = a.store.lock().unwrap();
-            store.state.settings.pure_black = on;
-            store.save();
-            store.state.settings.accent
-        };
-        if let Some(ui) = w.upgrade() {
-            apply_theme(&ui, accent, on);
-            ui.set_pure_black(on);
-        }
-    });
-
+    app.bind_theme(&ui);
     app.bind_requests(&ui);
     app.bind_settings(&ui);
     app.bind_access(&ui);

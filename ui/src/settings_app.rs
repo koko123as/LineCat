@@ -672,7 +672,10 @@ impl App {
     fn choice_picked(self: &Arc<Self>, id: &str) {
         let (key, value) = id.split_once(':').unwrap_or((id, ""));
         let value = value.to_string();
-        if self.rules_picked(key, &value) || self.items_picked(key, &value) {
+        if self.rules_picked(key, &value)
+            || self.items_picked(key, &value)
+            || self.theme_picked(key, &value)
+        {
             return;
         }
         match key {

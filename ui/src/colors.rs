@@ -1,0 +1,427 @@
+//! The theme's colours: prism_ui's `seededColorScheme` (plugins/prism_ui/lib/color.dart) for
+//! the palette roles the app draws, `toPureBlack`, the accent list the theme page edits
+//! (lib/views/theme.dart) and the colour picker's maths (lib/widgets/palette.dart).
+
+use crate::hct::{DynamicScheme, Hct, Role, TonalPalette, Variant};
+use crate::theme::{Palette, ACCENTS};
+
+pub const DEFAULT_PRIMARY: u32 = ACCENTS[0];
+
+pub const STYLES: [&str; 4] = ["鲜明", "氛围", "柔和", "单色"];
+pub const VIVID: i32 = 0;
+const TINTED: i32 = 1;
+const SOFT: i32 = 2;
+
+const SURFACE_CHROMA: f64 = 3.0;
+const PAPER_CHROMA: f64 = 1.5;
+const TINT_DIVISOR: f64 = 6.0;
+const MAX_TINT_CHROMA: f64 = 10.0;
+const PRIMARY_CONTAINER_CHROMA: f64 = 48.0;
+
+pub fn style_label(style: i32) -> &'static str {
+    STYLES[style.clamp(0, STYLES.len() as i32 - 1) as usize]
+}
+
+fn variant(style: i32) -> Variant {
+    match style {
+        SOFT => Variant::TonalSpot,
+        3 => Variant::Monochrome,
+        _ => Variant::Content,
+    }
+}
+
+/// `_accent`: vivid and tinted keep the seed itself as the accent, its tone held where text
+/// on it stays white.
+fn accent(seed: u32, source: &Hct, dark: bool) -> (u32, u32) {
+    let tone = if dark {
+        (source.tone + 3.0).clamp(50.0, 75.0)
+    } else {
+        source.tone.clamp(35.0, 60.0)
+    };
+    let primary = if tone == source.tone {
+        seed & 0xff_ffff
+    } else {
+        Hct::from(source.hue, source.chroma, tone).rgb()
+    };
+    let on_primary = if tone <= 60.0 {
+        0xff_ffff
+    } else {
+        TonalPalette::of(source.hue, source.chroma).get(10.0) & 0xff_ffff
+    };
+    (primary, on_primary)
+}
+
+pub fn palette(seed: u32, style: i32, dark: bool) -> Palette {
+    let source = Hct::from_argb(seed);
+    let scheme = DynamicScheme::new(source, variant(style), dark);
+    let tint = (style == TINTED).then(|| (source.chroma / TINT_DIVISOR).min(MAX_TINT_CHROMA));
+    let neutral = |role: Role, max_chroma: f64, dark_tone: Option<f64>| {
+        let p = role.palette(&scheme);
+        let tone = dark_tone
+            .filter(|_| dark)
+            .unwrap_or_else(|| role.tone(&scheme));
+        Hct::from(p.hue, tint.unwrap_or(p.chroma.min(max_chroma)), tone).rgb()
+    };
+    let role = |r: Role| r.argb(&scheme) & 0xff_ffff;
+    let paper = if dark { SURFACE_CHROMA } else { PAPER_CHROMA };
+    let (primary, on_primary) = if style <= TINTED {
+        accent(seed, &source, dark)
+    } else {
+        (role(Role::Primary), role(Role::OnPrimary))
+    };
+    let container = TonalPalette::of(
+        scheme.primary.hue,
+        scheme.primary.chroma.min(PRIMARY_CONTAINER_CHROMA),
+    );
+    let surface = neutral(Role::Surface, paper, None);
+    let bright = neutral(Role::SurfaceBright, paper, None);
+    let c = neutral(Role::SurfaceContainer, SURFACE_CHROMA, Some(15.0));
+    let high = neutral(Role::SurfaceContainerHigh, SURFACE_CHROMA, Some(21.0));
+    let on_surface = if dark {
+        Role::OnSurface.palette(&scheme).get(97.0) & 0xff_ffff
+    } else {
+        role(Role::OnSurface)
+    };
+    Palette {
+        primary,
+        on_primary,
+        primary_container: container.get(if dark { 30.0 } else { 90.0 }) & 0xff_ffff,
+        on_primary_container: container.get(if dark { 90.0 } else { 30.0 }) & 0xff_ffff,
+        page: if dark { surface } else { c },
+        card: if dark { c } else { bright },
+        block: if dark { high } else { c },
+        inset: neutral(Role::SurfaceContainerHighest, SURFACE_CHROMA, Some(27.0)),
+        on_surface,
+        on_surface_variant: role(Role::OnSurfaceVariant),
+        outline_variant: neutral(Role::OutlineVariant, 4.0, None),
+        error: role(Role::Error),
+    }
+}
+
+fn shift_tone(rgb: u32, delta: f64) -> u32 {
+    let h = Hct::from_argb(rgb);
+    Hct::from(h.hue, h.chroma, (h.tone + delta).clamp(0.0, 100.0)).rgb()
+}
+
+/// `toPureBlack` on a dark palette: the page turns black and every raised level drops by the
+/// page's tone, so the steps between them stay.
+pub fn pure_black(p: Palette, surface: u32) -> Palette {
+    let shift = -Hct::from_argb(surface).tone;
+    Palette {
+        page: 0,
+        card: shift_tone(p.card, shift),
+        block: shift_tone(p.block, shift),
+        inset: shift_tone(p.inset, shift),
+        ..p
+    }
+}
+
+pub fn schemes(seeds: (u32, u32), style: i32, black: bool) -> (Palette, Palette) {
+    let light = palette(seeds.0, style, false);
+    let mut dark = palette(seeds.1, style, true);
+    if black {
+        dark = pure_black(dark, dark.page);
+    }
+    (light, dark)
+}
+
+/// `genColorScheme`'s seed: the colour picked, or with none the system's for that brightness.
+pub fn seeds(primary: Option<u32>, system: Option<(u32, u32)>) -> (u32, u32) {
+    match (primary, system) {
+        (Some(c), _) => (c, c),
+        (None, Some(s)) => s,
+        (None, None) => (DEFAULT_PRIMARY, DEFAULT_PRIMARY),
+    }
+}
+
+pub fn add(colors: &mut Vec<u32>, color: u32) -> Option<u32> {
+    if !colors.contains(&color) {
+        colors.push(color);
+    }
+    Some(color)
+}
+
+/// `_handleEdit`: an edit onto a listed colour drops the edited one.
+pub fn edit(colors: &mut Vec<u32>, selected: Option<u32>, old: u32, new: u32) -> Option<u32> {
+    let Some(index) = colors.iter().position(|c| *c == old) else {
+        return selected;
+    };
+    if new == old {
+        return selected;
+    }
+    if colors.contains(&new) {
+        colors.remove(index);
+    } else {
+        colors[index] = new;
+    }
+    if selected == Some(old) {
+        Some(new)
+    } else {
+        selected
+    }
+}
+
+/// `_handleDelete`: a deleted pick falls back to the default, else to the system's.
+pub fn delete(colors: &mut Vec<u32>, selected: Option<u32>, color: u32) -> Option<u32> {
+    colors.retain(|c| *c != color);
+    if selected == Some(color) {
+        colors.contains(&DEFAULT_PRIMARY).then_some(DEFAULT_PRIMARY)
+    } else {
+        selected
+    }
+}
+
+/// The reset button shows while the colours differ from FlClash's defaults.
+pub fn is_default(colors: &[u32], selected: Option<u32>, style: i32) -> bool {
+    selected == Some(DEFAULT_PRIMARY) && colors == ACCENTS && style == VIVID
+}
+
+pub fn hex(rgb: u32) -> String {
+    format!("#{:06X}", rgb & 0xff_ffff)
+}
+
+pub fn hex_digits(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .take(6)
+        .collect::<String>()
+        .to_ascii_uppercase()
+}
+
+/// `HexColorField._parse`: six digits make a colour.
+pub fn parse_hex(digits: &str) -> Option<u32> {
+    (digits.len() == 6)
+        .then(|| u32::from_str_radix(digits, 16).ok())
+        .flatten()
+}
+
+/// `ThemeData.estimateBrightnessForColor(c) == Brightness.dark`: light ink reads on it.
+pub fn is_dark(rgb: u32) -> bool {
+    let lin = |c: u32| {
+        let v = c as f64 / 255.0;
+        if v <= 0.03928 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let l = 0.2126 * lin(rgb >> 16 & 255) + 0.7152 * lin(rgb >> 8 & 255) + 0.0722 * lin(rgb & 255);
+    (l + 0.05) * (l + 0.05) <= 0.15
+}
+
+/// `_ColorGrid`'s hues; iOS's columns skip the teals between green and sky.
+const GRID_HUES: [f64; 12] = [
+    230.0, 262.0, 285.0, 310.0, 340.0, 20.0, 40.0, 60.0, 80.0, 100.0, 120.0, 145.0,
+];
+const GRID_TONES: [f64; 9] = [25.0, 33.0, 41.0, 49.0, 57.0, 65.0, 73.0, 81.0, 89.0];
+pub const GRID_COLUMNS: usize = GRID_HUES.len();
+pub const GRID_ROWS: usize = GRID_TONES.len() + 1;
+
+/// `_ColorGrid._rows`, row by row: grays first, then the hues from dark to light.
+pub fn grid() -> Vec<u32> {
+    let n = GRID_COLUMNS as f64 - 1.0;
+    let grays = (0..GRID_COLUMNS).map(|c| Hct::from(0.0, 0.0, 100.0 - c as f64 * 100.0 / n).rgb());
+    let hues = GRID_TONES.iter().flat_map(|t| {
+        GRID_HUES
+            .iter()
+            .map(move |h| Hct::from(*h, 200.0, *t).rgb())
+    });
+    grays.chain(hues).collect()
+}
+
+fn channels(rgb: u32) -> (f64, f64, f64) {
+    (
+        (rgb >> 16 & 255) as f64 / 255.0,
+        (rgb >> 8 & 255) as f64 / 255.0,
+        (rgb & 255) as f64 / 255.0,
+    )
+}
+
+fn pack(r: f64, g: f64, b: f64) -> u32 {
+    let c = |v: f64| (v * 255.0).round().clamp(0.0, 255.0) as u32;
+    c(r) << 16 | c(g) << 8 | c(b)
+}
+
+fn hue_of(r: f64, g: f64, b: f64, max: f64, delta: f64) -> f64 {
+    if delta == 0.0 {
+        return 0.0;
+    }
+    let h = if max == r {
+        60.0 * (((g - b) / delta) % 6.0)
+    } else if max == g {
+        60.0 * ((b - r) / delta + 2.0)
+    } else {
+        60.0 * ((r - g) / delta + 4.0)
+    };
+    if h.is_nan() {
+        0.0
+    } else if h < 0.0 {
+        h + 360.0
+    } else {
+        h
+    }
+}
+
+/// Flutter's `HSVColor.fromColor`: (hue, saturation, value).
+pub fn to_hsv(rgb: u32) -> (f64, f64, f64) {
+    let (r, g, b) = channels(rgb);
+    let max = r.max(g).max(b);
+    let delta = max - r.min(g).min(b);
+    let s = if max == 0.0 { 0.0 } else { delta / max };
+    (hue_of(r, g, b, max, delta), s, max)
+}
+
+fn from_chroma(h: f64, chroma: f64, x: f64, m: f64) -> u32 {
+    let (r, g, b) = match h {
+        h if h < 60.0 => (chroma, x, 0.0),
+        h if h < 120.0 => (x, chroma, 0.0),
+        h if h < 180.0 => (0.0, chroma, x),
+        h if h < 240.0 => (0.0, x, chroma),
+        h if h < 300.0 => (x, 0.0, chroma),
+        _ => (chroma, 0.0, x),
+    };
+    pack(r + m, g + m, b + m)
+}
+
+pub fn from_hsv(h: f64, s: f64, v: f64) -> u32 {
+    let h = h.rem_euclid(360.0);
+    let chroma = v * s;
+    let x = chroma * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    from_chroma(h, chroma, x, v - chroma)
+}
+
+/// `HSLColor.fromColor`'s hue and lightness, where the spectrum places a colour.
+pub fn to_hl(rgb: u32) -> (f64, f64) {
+    let (r, g, b) = channels(rgb);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    (hue_of(r, g, b, max, max - min), (max + min) / 2.0)
+}
+
+pub fn from_hsl(h: f64, l: f64) -> u32 {
+    let h = h.rem_euclid(360.0);
+    let chroma = (1.0 - (2.0 * l - 1.0).abs()).max(0.0);
+    let x = chroma * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    from_chroma(h, chroma, x, l - chroma / 2.0)
+}
+
+/// `_Spectrum._handlePicked`: a point on the pad as fractions of its width and height.
+pub fn spectrum_pick(fx: f64, fy: f64) -> u32 {
+    from_hsl((fx * 360.0).clamp(0.0, 359.99), 1.0 - fy.clamp(0.0, 1.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::SCHEMES;
+
+    #[test]
+    fn vivid_palettes_match_the_dart_generated_table() {
+        for (i, seed) in ACCENTS.iter().enumerate() {
+            for (d, dark) in [false, true].iter().enumerate() {
+                assert_eq!(
+                    palette(*seed, VIVID, *dark),
+                    SCHEMES[i][d],
+                    "{seed:x} {dark}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn styles_change_the_palette_but_keep_the_vivid_accent_for_tinted() {
+        let vivid = palette(0x34C759, VIVID, false);
+        let tinted = palette(0x34C759, TINTED, false);
+        let soft = palette(0x34C759, SOFT, false);
+        let mono = palette(0x34C759, 3, false);
+        assert_eq!(vivid.primary, tinted.primary);
+        assert_ne!(vivid.page, tinted.page);
+        assert_ne!(vivid.primary, soft.primary);
+        let (r, g, b) = (
+            mono.primary >> 16,
+            mono.primary >> 8 & 255,
+            mono.primary & 255,
+        );
+        assert!(
+            r == g && g == b,
+            "monochrome primary is gray: {:x}",
+            mono.primary
+        );
+    }
+
+    #[test]
+    fn pure_black_turns_the_dark_page_black_and_keeps_levels_apart() {
+        let (_, dark) = schemes((DEFAULT_PRIMARY, DEFAULT_PRIMARY), VIVID, true);
+        assert_eq!(dark.page, 0);
+        assert!(Hct::from_argb(dark.card).tone < Hct::from_argb(dark.block).tone);
+        assert!(Hct::from_argb(dark.block).tone < Hct::from_argb(dark.inset).tone);
+        let (light, _) = schemes((DEFAULT_PRIMARY, DEFAULT_PRIMARY), VIVID, true);
+        assert_eq!(light, palette(DEFAULT_PRIMARY, VIVID, false));
+    }
+
+    #[test]
+    fn follow_system_takes_the_system_seeds() {
+        assert_eq!(seeds(None, Some((1, 2))), (1, 2));
+        assert_eq!(seeds(Some(5), Some((1, 2))), (5, 5));
+        assert_eq!(seeds(None, None), (DEFAULT_PRIMARY, DEFAULT_PRIMARY));
+    }
+
+    #[test]
+    fn color_list_edits_follow_flclash() {
+        let mut colors = ACCENTS.to_vec();
+        assert_eq!(add(&mut colors, 0x123456), Some(0x123456));
+        assert_eq!(add(&mut colors, 0x123456), Some(0x123456));
+        assert_eq!(colors.len(), 9);
+        assert_eq!(
+            edit(&mut colors, Some(0x123456), 0x123456, 0x654321),
+            Some(0x654321)
+        );
+        assert_eq!(colors[8], 0x654321);
+        assert_eq!(edit(&mut colors, None, 0x654321, ACCENTS[1]), None);
+        assert_eq!(colors, ACCENTS);
+        assert_eq!(
+            delete(&mut colors, Some(ACCENTS[2]), ACCENTS[2]),
+            Some(DEFAULT_PRIMARY)
+        );
+        assert_eq!(
+            delete(&mut colors, Some(DEFAULT_PRIMARY), DEFAULT_PRIMARY),
+            None
+        );
+        assert!(is_default(&ACCENTS, Some(DEFAULT_PRIMARY), VIVID));
+        assert!(!is_default(&ACCENTS, None, VIVID));
+    }
+
+    #[test]
+    fn hex_field_reads_six_digits() {
+        assert_eq!(hex(0x007aff), "#007AFF");
+        assert_eq!(hex_digits("#0a-7bZff9"), "0A7BFF");
+        assert_eq!(parse_hex("0A7BFF"), Some(0x0a7bff));
+        assert_eq!(parse_hex("0A7"), None);
+    }
+
+    #[test]
+    fn hsv_and_hsl_round_trip() {
+        for c in [0x007aff, 0xff2d55, 0x34c759, 0x808080, 0xffffff, 0] {
+            let (h, s, v) = to_hsv(c);
+            assert_eq!(from_hsv(h, s, v), c, "{c:x}");
+        }
+        assert_eq!(spectrum_pick(0.0, 0.5), 0xff0000);
+        assert_eq!(spectrum_pick(1.0 / 3.0, 0.5), 0x00ff00);
+        assert_eq!(spectrum_pick(0.5, 0.0), 0xffffff);
+        let (h, l) = to_hl(0x00ff00);
+        assert_eq!((h.round(), l), (120.0, 0.5));
+    }
+
+    #[test]
+    fn grid_runs_white_to_black_then_hues() {
+        let g = grid();
+        assert_eq!(g.len(), GRID_ROWS * GRID_COLUMNS);
+        assert_eq!(g[0], 0xffffff);
+        assert_eq!(g[GRID_COLUMNS - 1], 0);
+    }
+
+    #[test]
+    fn check_ink_follows_flutter_brightness_estimate() {
+        assert!(is_dark(0x007aff) && !is_dark(0xffcc00) && !is_dark(0xffffff));
+    }
+}

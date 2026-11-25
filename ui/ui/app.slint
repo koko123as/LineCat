@@ -219,6 +219,17 @@ export struct ActionItem {
     section: bool,
 }
 
+// A colour of the theme page's swatches; `system` is the one that follows the system.
+export struct Swatch {
+    fill: color,
+    // The system's colour differs between light and dark.
+    fill-dark: color,
+    system: bool,
+    selected: bool,
+    light-ink: bool,
+    light-ink-dark: bool,
+}
+
 export struct ResourceItem {
     key: string,
     title: string,
@@ -287,6 +298,11 @@ global Icons {
     out property <string> pause: "M8 5h3v14H8z M13 5h3v14h-3z";
     out property <string> bolt: "M13 2 4 14h7l-1 8 9-12h-7z";
     out property <string> plus: "M12 5v14 M5 12h14";
+    out property <string> sun: "M12 8a4 4 0 1 0 0.01 0z M12 2.5v2 M12 19.5v2 M5.3 5.3l1.4 1.4 M17.3 17.3l1.4 1.4 M2.5 12h2 M19.5 12h2 M5.3 18.7l1.4-1.4 M17.3 6.7l1.4-1.4";
+    out property <string> moon: "M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z";
+    out property <string> reset: "M4.5 12a7.5 7.5 0 1 0 2.2-5.3 M4.5 4.5v3.5h3.5";
+    out property <string> eyedropper: "M14.5 5.5l4 4 M16.5 3.5l4 4-2 2-4-4z M14.5 7.5l-9 9-1 3 3-1 9-9";
+    out property <string> updown: "M8 9.5l4-4 4 4 M8 14.5l4 4 4-4";
     out property <string> add-circle: "M12 3a9 9 0 1 0 0.01 0z M12 8v8 M8 12h8";
     out property <string> photos: "M4 5h16v14H4z M4 16l5-5 4 4 3-3 4 4 M15 9a1 1 0 1 0 0.01 0z";
     out property <string> sliders: "M4 7h10 M18 7h2 M4 17h4 M12 17h8 M14 5v4 M8 15v4";
@@ -402,28 +418,6 @@ component Card inherits Rectangle {
     border-radius: 12px;
 }
 
-// A card with FlClash's header row: a small icon, then the title.
-component InfoCard inherits Card {
-    in property <string> title;
-    in property <string> glyph;
-    VerticalLayout {
-        padding: 14px;
-        spacing: 10px;
-        HorizontalLayout {
-            spacing: 8px;
-            height: 22px;
-            Icon { glyph: root.glyph; size: 20px; tint: root.selected ? Theme.s.on-primary-container : Theme.s.primary; y: 1px; }
-            Text {
-                text: root.title;
-                font-size: 15px;
-                color: root.selected ? Theme.s.on-primary-container : Theme.s.on-surface;
-                vertical-alignment: center;
-                overflow: elide;
-            }
-        }
-        @children
-    }
-}
 
 component TextButton inherits Rectangle {
     in property <string> text;
@@ -543,41 +537,6 @@ component Empty inherits Rectangle {
     }
 }
 
-component RadioRow inherits Rectangle {
-    in property <string> text;
-    in property <bool> checked;
-    callback clicked();
-    height: 34px;
-    border-radius: 8px;
-    background: ta.pressed ? Theme.s.block : transparent;
-    HorizontalLayout {
-        spacing: 10px;
-        VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 18px;
-                height: 18px;
-                border-radius: 9px;
-                border-width: 2px;
-                border-color: root.checked ? Theme.s.primary : Theme.s.on-surface-variant;
-                Rectangle {
-                    visible: root.checked;
-                    width: 8px;
-                    height: 8px;
-                    border-radius: 4px;
-                    background: Theme.s.primary;
-                }
-            }
-        }
-        Text {
-            text: root.text;
-            font-size: 14px;
-            color: Theme.s.on-surface;
-            vertical-alignment: center;
-        }
-    }
-    ta := TouchArea { clicked => { root.clicked(); } }
-}
 
 // ---------------------------------------------------------------- Dashboard
 
@@ -2494,69 +2453,6 @@ component Logs inherits Rectangle {
     }
 }
 
-component ThemePage inherits Rectangle {
-    in property <[color]> accents;
-    in property <int> accent;
-    in property <int> theme-mode;
-    in property <bool> pure-black;
-    callback set-accent(int);
-    callback set-theme-mode(int);
-    callback set-pure-black(bool);
-    callback back();
-    VerticalLayout {
-        AppBar { title: "主题"; can-back: true; back => { root.back(); } }
-        VerticalLayout {
-            padding-left: 16px;
-            padding-right: 16px;
-            spacing: 12px;
-            alignment: start;
-            InfoCard {
-                title: "主题模式";
-                glyph: Icons.palette;
-                VerticalLayout {
-                    spacing: 2px;
-                    RadioRow { text: "跟随系统"; checked: root.theme-mode == 0; clicked => { root.set-theme-mode(0); } }
-                    RadioRow { text: "浅色"; checked: root.theme-mode == 1; clicked => { root.set-theme-mode(1); } }
-                    RadioRow { text: "深色"; checked: root.theme-mode == 2; clicked => { root.set-theme-mode(2); } }
-                }
-            }
-            InfoCard {
-                title: "纯黑模式";
-                glyph: Icons.palette;
-                VerticalLayout {
-                    spacing: 2px;
-                    RadioRow { text: "标准"; checked: !root.pure-black; clicked => { root.set-pure-black(false); } }
-                    RadioRow { text: "纯黑"; checked: root.pure-black; clicked => { root.set-pure-black(true); } }
-                }
-            }
-            InfoCard {
-                title: "主题色彩";
-                glyph: Icons.palette;
-                HorizontalLayout {
-                    height: 40px;
-                    alignment: space-between;
-                    for c[i] in root.accents: Rectangle {
-                        width: 36px;
-                        height: 36px;
-                        border-radius: 18px;
-                        background: c;
-                        Rectangle {
-                            visible: i == root.accent;
-                            width: 14px;
-                            height: 14px;
-                            border-radius: 7px;
-                            background: white;
-                        }
-                        TouchArea { clicked => { root.set-accent(i); } }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------- Requests
-
 // `ConnectedButtonBar`: one button per choice, joined.
 component SegmentBar inherits HorizontalLayout {
     in property <[string]> items;
@@ -2584,6 +2480,842 @@ component SegmentBar inherits HorizontalLayout {
         seg-ta := TouchArea { clicked => { root.picked(i); } }
     }
 }
+
+// The shapes of lib/views/theme_preview.dart's `_PageSketch`, placed in units of a twentieth
+// of the sketched screen's width.
+component MPill inherits Rectangle {
+    in property <length> u;
+    in property <float> px;
+    in property <float> py;
+    in property <float> pw;
+    in property <float> ph;
+    in property <color> c;
+    x: root.px * root.u;
+    y: root.py * root.u;
+    width: root.pw * root.u;
+    height: root.ph * root.u;
+    border-radius: self.height / 2;
+    background: root.c;
+}
+
+component MDot inherits Rectangle {
+    in property <length> u;
+    in property <float> cx;
+    in property <float> cy;
+    in property <float> r;
+    in property <color> c;
+    x: (root.cx - root.r) * root.u;
+    y: (root.cy - root.r) * root.u;
+    width: root.r * 2 * root.u;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: root.c;
+}
+
+// `_block`: `AppCorner.fit` of five units on the 96-wide sketch is `sm`, of 2.9 `xs`.
+component MBlock inherits Rectangle {
+    in property <length> u;
+    in property <float> px;
+    in property <float> py;
+    in property <float> pw;
+    in property <float> ph;
+    in property <float> corner: 8 / 4.8;
+    in property <color> c;
+    x: root.px * root.u;
+    y: root.py * root.u;
+    width: root.pw * root.u;
+    height: root.ph * root.u;
+    border-radius: root.corner * root.u;
+    background: root.c;
+}
+
+// One page of a `MiniScreen`: 0 dashboard, 1 proxies, 2 profiles, 3 tools.
+component MiniPage inherits Rectangle {
+    in property <Scheme> s;
+    in property <int> page;
+    in property <length> u;
+    property <float> w: 17;
+    property <color> text: root.s.on-surface.with-alpha(0.72);
+    property <color> line: root.s.on-surface-variant.with-alpha(0.4);
+    property <color> faint: root.s.on-surface-variant.with-alpha(0.16);
+    property <int> actions: root.page == 0 ? 1 : root.page == 3 ? 0 : 2;
+    MPill { u: root.u; px: 0; py: 0.45; pw: 7; ph: 1.1; c: root.text; }
+    for i in root.actions: Rectangle {
+        MDot { u: root.u; cx: root.w - 1 - i * 2.4; cy: 1; r: 1; c: root.s.card; }
+        MDot { u: root.u; cx: root.w - 1 - i * 2.4; cy: 1; r: 0.3; c: root.line; }
+    }
+    if root.page == 0: Rectangle {
+        MBlock {
+            u: root.u; px: 0; py: 2.8; pw: root.w; ph: 6.2; c: root.s.card;
+            clip: true;
+            MDot { u: root.u; cx: root.w - 3; cy: 3.1; r: 4.6; c: root.s.primary.with-alpha(0.1); }
+        }
+        MDot { u: root.u; cx: root.w - 3; cy: 5.9; r: 1.8; c: root.s.primary; }
+        MPill { u: root.u; px: root.w - 3.675; py: 5.3; pw: 0.35; ph: 1.2; c: root.s.on-primary; }
+        MPill { u: root.u; px: root.w - 2.675; py: 5.3; pw: 0.35; ph: 1.2; c: root.s.on-primary; }
+        MPill { u: root.u; px: 1; py: 3.7; pw: 3; ph: 0.7; c: root.line; }
+        MDot { u: root.u; cx: 1.9; cy: 5.8; r: 0.9; c: root.s.inset; }
+        MPill { u: root.u; px: 3.5; py: 5.1; pw: 5; ph: 0.9; c: root.text; }
+        MPill { u: root.u; px: 3.5; py: 6.3; pw: 2.4; ph: 0.7; c: root.s.inset; }
+        MPill { u: root.u; px: 1; py: 7.6; pw: 2.4; ph: 0.7; c: root.line; }
+        MPill { u: root.u; px: 4.6; py: 7.6; pw: 3.6; ph: 0.7; c: root.line; }
+        MBlock { u: root.u; px: 0; py: 9.6; pw: root.w; ph: 5.8; c: root.s.card; }
+        MPill { u: root.u; px: 1; py: 10.5; pw: 4.5; ph: 0.7; c: root.line; }
+        for i in 2: MBlock {
+            u: root.u; px: 1 + i * 7.8; py: 11.7; pw: 7.2; ph: 2.9; corner: 4 / 4.8; c: root.s.inset;
+            clip: true;
+            Path {
+                width: 100%;
+                height: 100%;
+                viewbox-width: 7.2;
+                viewbox-height: 2.9;
+                commands: i == 0
+                    ? "M 0.00 1.97 L 0.45 2.25 L 0.90 2.31 L 1.35 2.12 L 1.80 1.82 L 2.25 1.63 L 2.70 1.70 L 3.15 1.98 L 3.60 2.25 L 4.05 2.31 L 4.50 2.12 L 4.95 1.81 L 5.40 1.63 L 5.85 1.71 L 6.30 1.98 L 6.75 2.25 L 7.20 2.31 L 7.20 2.90 L 0 2.90 Z"
+                    : "M 0.00 2.32 L 0.45 2.15 L 0.90 1.85 L 1.35 1.64 L 1.80 1.68 L 2.25 1.94 L 2.70 2.23 L 3.15 2.32 L 3.60 2.15 L 4.05 1.84 L 4.50 1.64 L 4.95 1.68 L 5.40 1.95 L 5.85 2.23 L 6.30 2.32 L 6.75 2.14 L 7.20 1.84 L 7.20 2.90 L 0 2.90 Z";
+                fill: root.s.primary.with-alpha(i == 0 ? 0.1 : 0.2);
+            }
+            Path {
+                width: 100%;
+                height: 100%;
+                viewbox-width: 7.2;
+                viewbox-height: 2.9;
+                commands: i == 0
+                    ? "M 0.00 1.97 L 0.45 2.25 L 0.90 2.31 L 1.35 2.12 L 1.80 1.82 L 2.25 1.63 L 2.70 1.70 L 3.15 1.98 L 3.60 2.25 L 4.05 2.31 L 4.50 2.12 L 4.95 1.81 L 5.40 1.63 L 5.85 1.71 L 6.30 1.98 L 6.75 2.25 L 7.20 2.31"
+                    : "M 0.00 2.32 L 0.45 2.15 L 0.90 1.85 L 1.35 1.64 L 1.80 1.68 L 2.25 1.94 L 2.70 2.23 L 3.15 2.32 L 3.60 2.15 L 4.05 1.84 L 4.50 1.64 L 4.95 1.68 L 5.40 1.95 L 5.85 2.23 L 6.30 2.32 L 6.75 2.14 L 7.20 1.84";
+                stroke: root.s.primary.with-alpha(i == 0 ? 0.5 : 1);
+                stroke-width: root.u * 0.15;
+            }
+            MPill { u: root.u; px: 0.6; py: 0.55; pw: 2.4; ph: 0.7; c: root.line; }
+        }
+        MBlock { u: root.u; px: 0; py: 16; pw: root.w; ph: 4.4; c: root.s.card; }
+        MPill { u: root.u; px: 1; py: 16.9; pw: 4; ph: 0.7; c: root.line; }
+        for i in 3: Rectangle {
+            MPill { u: root.u; px: 1 + i * 5.1; py: 18.1; pw: 4.8; ph: 1.6; c: i == 0 ? root.s.primary : root.s.inset; }
+            MDot { u: root.u; cx: 3.4 + i * 5.1; cy: 18.9; r: 0.3; c: i == 0 ? root.s.on-primary : root.line; }
+        }
+        MBlock { u: root.u; px: 0; py: 21; pw: root.w; ph: 3; c: root.s.card; }
+        MDot { u: root.u; cx: 1.9; cy: 22.5; r: 0.9; c: root.s.primary; }
+        MPill { u: root.u; px: 3.4; py: 22.1; pw: 2.4; ph: 0.8; c: root.line; }
+        MPill { u: root.u; px: root.w - 3.6; py: 21.8; pw: 2.6; ph: 1.4; c: root.s.primary; }
+        MDot { u: root.u; cx: root.w - 1.7; cy: 22.5; r: 0.55; c: root.s.on-primary; }
+        for i in 3: Rectangle {
+            MBlock { u: root.u; px: 0; py: 24.6 + i * 5.1; pw: root.w; ph: 4.5; c: root.s.card; }
+            MPill { u: root.u; px: 1; py: 25.5 + i * 5.1; pw: 3.5 + mod(i, 2); ph: 0.7; c: root.line; }
+        }
+    }
+    if root.page == 1: Rectangle {
+        for i in 9: Rectangle {
+            MBlock { u: root.u; px: 0; py: 2.8 + i * 3.2; pw: root.w; ph: 2.6; c: root.s.card; }
+            MDot { u: root.u; cx: 1.5; cy: 4.1 + i * 3.2; r: 0.8; c: root.s.inset; }
+            MPill { u: root.u; px: 3; py: 3.4 + i * 3.2; pw: 3 + mod(i, 3); ph: 0.7; c: root.line; }
+            MPill { u: root.u; px: 3; py: 4.35 + i * 3.2; pw: 4; ph: 0.5; c: root.faint; }
+            MPill { u: root.u; px: root.w - 4.4; py: 3.85 + i * 3.2; pw: 1.8; ph: 0.5; c: root.faint; }
+            MDot { u: root.u; cx: root.w - 1.3; cy: 4.1 + i * 3.2; r: 0.55; c: root.s.inset; }
+        }
+    }
+    if root.page == 2: Rectangle {
+        for i in 3: Rectangle {
+            MBlock { u: root.u; px: 0; py: 2.8 + i * 3.4; pw: root.w; ph: 2.8; c: root.s.card; }
+            MPill { u: root.u; px: 1; py: 3.5 + i * 3.4; pw: 3.4 - i * 0.6; ph: 0.75; c: root.line; }
+            MPill { u: root.u; px: 4.8 - i * 0.6; py: 3.52 + i * 3.4; pw: 2.6; ph: 0.7; c: root.s.primary.with-alpha(0.16); }
+            MPill { u: root.u; px: 1; py: 4.5 + i * 3.4; pw: 3; ph: 0.5; c: root.faint; }
+            MPill { u: root.u; px: root.w - 4.1; py: 3.95 + i * 3.4; pw: 1.6; ph: 0.5; c: root.faint; }
+            if i == 0: MDot { u: root.u; cx: root.w - 1.4; cy: 4.2; r: 0.6; c: root.s.primary; }
+        }
+    }
+    if root.page == 3: Rectangle {
+        // Two groups of 4 and 7 rows, 2.4 units each, after `_tools`.
+        for g in 2: grp := Rectangle {
+            property <int> rows: g == 0 ? 4 : 7;
+            property <float> top: g == 0 ? 2.8 : 2.8 + 1.3 + 4 * 2.4 + 1.2;
+            MPill { u: root.u; px: 0.8; py: grp.top + 0.2; pw: 1.6 + grp.rows * 0.15; ph: 0.5; c: root.faint; }
+            MBlock { u: root.u; px: 0; py: grp.top + 1.3; pw: root.w; ph: grp.rows * 2.4; c: root.s.card; }
+            for i in grp.rows: row := Rectangle {
+                property <float> top: grp.top + 1.3 + i * 2.4;
+                MDot { u: root.u; cx: 1.3; cy: row.top + 1.2; r: 0.45; c: root.line; }
+                MPill { u: root.u; px: 2.6; py: row.top + 0.85; pw: 4 + mod(i * 3 + grp.rows, 4); ph: 0.7; c: root.line; }
+                if i < grp.rows - 1: MBlock { u: root.u; px: 2.6; py: row.top + 2.37; pw: root.w - 3.4; ph: 0.06; corner: 0; c: root.faint; }
+            }
+        }
+    }
+}
+
+// lib/views/theme_preview.dart's `MiniScreen`: the home page sketched in a scheme. With
+// `previous` set, the page is caught `progress` of the way through a switch from it.
+component MiniScreen inherits Rectangle {
+    in property <Scheme> s;
+    in property <bool> dark;
+    in property <bool> floating: true;
+    in property <int> selected;
+    in property <int> previous: -1;
+    in property <float> progress: 1;
+    in property <bool> fade;
+    callback select(int);
+    property <length> u: self.width / 20;
+    property <length> margin: self.u * 1.5;
+    property <length> bar-h: root.floating ? self.u * 3.2 : self.u * 3.6;
+    property <length> page-bottom: root.floating ? 0 : root.bar-h;
+    property <color> dock: root.dark ? root.s.block : root.s.card;
+    property <color> indicator: root.dark ? root.s.inset : root.s.block;
+    property <float> dir: root.previous > root.selected ? -1 : 1;
+    background: root.s.page;
+    clip: true;
+    Rectangle {
+        x: root.margin;
+        y: root.margin;
+        width: root.width - root.margin * 2;
+        height: root.height - root.margin - root.page-bottom;
+        clip: true;
+        if root.previous >= 0: MiniPage {
+            x: root.fade ? 0 : -root.dir * root.width * root.progress;
+            opacity: root.fade ? 1 - root.progress : 1;
+            s: root.s;
+            page: root.previous;
+            u: root.u;
+        }
+        MiniPage {
+            x: root.previous >= 0 && !root.fade ? root.dir * root.width * (1 - root.progress) : 0;
+            opacity: root.previous >= 0 && root.fade ? root.progress : 1;
+            s: root.s;
+            page: root.selected;
+            u: root.u;
+        }
+    }
+    bar := Rectangle {
+        x: root.floating ? root.margin : 0;
+        y: root.floating ? root.height - root.margin - root.bar-h : root.height - root.bar-h;
+        width: root.floating ? root.width - root.margin * 2 : root.width;
+        height: root.bar-h;
+        border-radius: root.floating ? self.height / 2 : 0;
+        background: root.dock;
+        drop-shadow-color: root.floating ? #0000001f : transparent;
+        drop-shadow-blur: root.u;
+        drop-shadow-offset-y: root.u * 0.3;
+        property <length> cell: self.width / 4;
+        for i in 4: dest := Rectangle {
+            x: i * bar.cell;
+            width: bar.cell;
+            property <bool> on: i == root.selected;
+            property <color> ink: self.on ? root.s.primary : root.s.on-surface-variant;
+            if dest.on: Rectangle {
+                x: root.floating ? root.u * 0.25 : (bar.cell - root.u * 2.8) / 2;
+                y: root.floating ? root.u * 0.25 : bar.height / 2 - root.u * 0.4 - root.u * 0.75;
+                width: root.floating ? bar.cell - root.u * 0.5 : root.u * 2.8;
+                height: root.floating ? bar.height - root.u * 0.5 : root.u * 1.5;
+                border-radius: self.height / 2;
+                background: root.indicator;
+            }
+            Rectangle {
+                x: (bar.cell - self.width) / 2;
+                y: bar.height / 2 - root.u * 0.4 - self.height / 2;
+                width: root.u * 0.9;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: dest.ink;
+            }
+            Rectangle {
+                x: (bar.cell - self.width) / 2;
+                y: bar.height / 2 + root.u * 0.8 - self.height / 2;
+                width: root.u * 1.7;
+                height: root.u * 0.35;
+                border-radius: self.height / 2;
+                background: dest.on ? dest.ink : dest.ink.with-alpha(0.6);
+            }
+            TouchArea { clicked => { root.select(i); } }
+        }
+    }
+}
+
+// `MiniScreenThumb`: the foot of a 96 by 128 sketch, 66 of it tall, shown 30 high.
+component MiniThumb inherits Rectangle {
+    in property <Scheme> s;
+    in property <bool> dark;
+    // A second scheme drawn over the right half, for "follow system".
+    in property <Scheme> s2;
+    in property <bool> split;
+    in property <bool> floating: true;
+    in property <int> selected;
+    in property <int> previous: -1;
+    in property <float> progress: 1;
+    in property <bool> fade;
+    property <length> sw: self.height * 96 / 66;
+    width: self.height * 96 / 66;
+    height: 30px;
+    border-radius: 8px;
+    clip: true;
+    MiniScreen {
+        y: root.height - self.height;
+        width: root.sw;
+        height: root.sw * 128 / 96;
+        s: root.s;
+        dark: root.dark;
+        floating: root.floating;
+        selected: root.selected;
+        previous: root.previous;
+        progress: root.progress;
+        fade: root.fade;
+    }
+    if root.split: Rectangle {
+        x: root.sw / 2;
+        width: root.sw / 2;
+        clip: true;
+        MiniScreen {
+            x: -root.sw / 2;
+            y: root.height - self.height;
+            width: root.sw;
+            height: root.sw * 128 / 96;
+            s: root.s2;
+            dark: true;
+            floating: root.floating;
+        }
+    }
+}
+
+// `InfoHeader`: a section's glyph and label above its group, with actions on the right.
+component InfoHeader inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> glyph;
+    height: 40px;
+    padding-left: 16px;
+    padding-right: 8px;
+    spacing: 8px;
+    VerticalLayout { alignment: center; Icon { glyph: root.glyph; size: 20px; tint: Theme.s.primary; } }
+    Text { text: root.title; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+    @children
+}
+
+// `PreviewChoiceGroup`'s row: the pictogram, the label, and a check on the chosen one.
+component PreviewRow inherits Rectangle {
+    in property <string> text;
+    in property <bool> checked;
+    in property <bool> divider;
+    callback clicked();
+    height: 56px;
+    background: ta.pressed ? Theme.s.inset : transparent;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 14px;
+        VerticalLayout { alignment: center; @children }
+        Text { text: root.text; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        VerticalLayout {
+            alignment: center;
+            width: 22px;
+            if root.checked: Icon { glyph: Icons.check; size: 22px; tint: Theme.s.primary; }
+        }
+    }
+    if root.divider: Rectangle {
+        x: 16px + 44px + 14px;
+        y: parent.height - 1px;
+        width: parent.width - self.x;
+        height: 1px;
+        background: Theme.s.outline-variant.with-alpha(0.6);
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+component Group inherits Rectangle {
+    background: Theme.s.card;
+    border-radius: 16px;
+    clip: true;
+    VerticalLayout { @children }
+}
+
+// `_ColorSwatch`: the colour's dot, a ring round it and a check when chosen; the system's
+// colour carries an eyedropper badge. A long press asks for its menu.
+component SwatchView inherits Rectangle {
+    in property <Swatch> item;
+    callback clicked();
+    callback long-pressed();
+    property <bool> long-fired;
+    property <color> fill: Theme.is-dark ? root.item.fill-dark : root.item.fill;
+    property <bool> light-ink: Theme.is-dark ? root.item.light-ink-dark : root.item.light-ink;
+    width: 44px;
+    height: 44px;
+    if root.item.selected: Rectangle {
+        border-radius: self.width / 2;
+        border-width: 2.5px;
+        border-color: root.fill;
+    }
+    Rectangle {
+        width: 32px;
+        height: 32px;
+        border-radius: 16px;
+        background: root.fill;
+    }
+    if root.item.selected: Icon { glyph: Icons.check; size: 18px; tint: root.light-ink ? #ffffff : #000000; }
+    if root.item.system: Rectangle {
+        x: parent.width - self.width;
+        y: parent.height - self.height;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: Theme.s.card;
+        Rectangle {
+            width: 16px;
+            height: 16px;
+            border-radius: 8px;
+            background: Theme.s.block;
+            Icon { glyph: Icons.eyedropper; size: 12px; tint: Theme.s.on-surface; }
+        }
+    }
+    sw-ta := TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { root.long-fired = false; }
+        }
+        clicked => {
+            if (!root.long-fired) { root.clicked(); }
+        }
+    }
+    Timer {
+        interval: 500ms;
+        running: sw-ta.pressed && !root.long-fired && !root.item.system;
+        triggered => {
+            root.long-fired = true;
+            root.long-pressed();
+        }
+    }
+}
+
+// `_ColorSwatches`: the colours in a wrap whose gaps share out the spare width.
+component SwatchGrid inherits Rectangle {
+    in property <[Swatch]> items;
+    callback picked(int);
+    callback menu(int);
+    callback add();
+    property <length> inset: 10px;
+    property <int> count: root.items.length + 1;
+    property <int> cols: max(1, floor((root.width - root.inset * 2 + 6px) / 50px));
+    property <length> gap: root.cols > 1 ? floor((root.width - root.inset * 2 - root.cols * 44px) / (root.cols - 1) / 1px) * 1px : 0;
+    property <int> rows: ceil(root.count / root.cols);
+    background: Theme.s.card;
+    border-radius: 24px;
+    height: root.inset * 2 + root.rows * 44px + (root.rows - 1) * root.gap;
+    for sw[i] in root.items: SwatchView {
+        x: root.inset + mod(i, root.cols) * (44px + root.gap);
+        y: root.inset + floor(i / root.cols) * (44px + root.gap);
+        item: sw;
+        clicked => { root.picked(i); }
+        long-pressed => { root.menu(i); }
+    }
+    Rectangle {
+        x: root.inset + mod(root.items.length, root.cols) * (44px + root.gap);
+        y: root.inset + floor(root.items.length / root.cols) * (44px + root.gap);
+        width: 44px;
+        height: 44px;
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: add-ta.pressed ? Theme.s.inset : Theme.s.block;
+            Icon { glyph: Icons.plus; size: 20px; tint: Theme.s.on-surface-variant; }
+        }
+        add-ta := TouchArea { clicked => { root.add(); } }
+    }
+}
+
+// `ListItem.options`: the title, the chosen option and the up-down chevron.
+component OptionsRow inherits Rectangle {
+    in property <string> title;
+    in property <string> value;
+    callback clicked();
+    height: 52px;
+    background: ta.pressed ? Theme.s.inset : transparent;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 12px;
+        spacing: 6px;
+        Text { text: root.title; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        Text { text: root.value; font-size: 16px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        VerticalLayout { alignment: center; Icon { glyph: Icons.updown; size: 18px; tint: Theme.s.on-surface-variant; } }
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+// The round reset button beside a section's title (`_ResetButton`).
+component ResetButton inherits Rectangle {
+    callback clicked();
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    background: rb-ta.pressed ? Theme.s.inset : Theme.s.card;
+    Icon { glyph: Icons.reset; size: 18px; tint: Theme.s.on-surface-variant; }
+    rb-ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+// lib/views/theme.dart: theme mode and pure black with sketches of the app, then the colours.
+component ThemePage inherits Rectangle {
+    in property <int> theme-mode;
+    in property <bool> pure-black;
+    in property <[Swatch]> swatches;
+    in property <bool> can-reset;
+    in property <string> style-label;
+    // The schemes the sketches are drawn in: light, dark, and dark standard / pure black.
+    in property <Scheme> light;
+    in property <Scheme> dark;
+    in property <Scheme> dark-standard;
+    in property <Scheme> dark-black;
+    in property <length> bottom-gap: 32px;
+    callback set-theme-mode(int);
+    callback set-pure-black(bool);
+    callback swatch-picked(int);
+    callback swatch-menu(int);
+    callback add-color();
+    callback reset-colors();
+    callback pick-style();
+    callback back();
+    VerticalLayout {
+        AppBar { title: "主题"; can-back: true; back => { root.back(); } }
+        Flickable {
+            content-height: theme-col.preferred-height;
+            theme-col := VerticalLayout {
+                alignment: start;
+                padding-bottom: root.bottom-gap;
+                spacing: 16px;
+                VerticalLayout {
+                    InfoHeader { title: "主题模式"; glyph: Icons.sun; }
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 8px;
+                        Group {
+                            PreviewRow {
+                                text: "自动";
+                                checked: root.theme-mode == 0;
+                                divider: true;
+                                clicked => { root.set-theme-mode(0); }
+                                MiniThumb { s: root.light; s2: root.dark; split: true; }
+                            }
+                            PreviewRow {
+                                text: "浅色";
+                                checked: root.theme-mode == 1;
+                                divider: true;
+                                clicked => { root.set-theme-mode(1); }
+                                MiniThumb { s: root.light; }
+                            }
+                            PreviewRow {
+                                text: "深色";
+                                checked: root.theme-mode == 2;
+                                clicked => { root.set-theme-mode(2); }
+                                MiniThumb { s: root.dark; dark: true; }
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    InfoHeader { title: "纯黑模式"; glyph: Icons.moon; }
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 8px;
+                        Group {
+                            PreviewRow {
+                                text: "标准";
+                                checked: !root.pure-black;
+                                divider: true;
+                                clicked => { root.set-pure-black(false); }
+                                MiniThumb { s: root.dark-standard; dark: true; }
+                            }
+                            PreviewRow {
+                                text: "纯黑";
+                                checked: root.pure-black;
+                                clicked => { root.set-pure-black(true); }
+                                MiniThumb { s: root.dark-black; dark: true; }
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    InfoHeader {
+                        title: "主题色彩";
+                        glyph: Icons.palette;
+                        if root.can-reset: VerticalLayout { alignment: center; ResetButton { clicked => { root.reset-colors(); } } }
+                    }
+                    VerticalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 8px;
+                        spacing: 8px;
+                        SwatchGrid {
+                            items: root.swatches;
+                            picked(i) => { root.swatch-picked(i); }
+                            menu(i) => { root.swatch-menu(i); }
+                            add => { root.add-color(); }
+                        }
+                        Group {
+                            OptionsRow { title: "配色风格"; value: root.style-label; clicked => { root.pick-style(); } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// `_GradientSlider`: a pill of the gradient, ringed faintly, with a thumb of the colour.
+component GradientSlider inherits Rectangle {
+    in property <float> value;
+    in property <brush> track;
+    in property <color> thumb;
+    callback changed(float);
+    height: 28px;
+    property <length> travel: self.width - 28px;
+    Rectangle {
+        y: 4px;
+        height: 20px;
+        border-radius: 10px;
+        background: root.track;
+        border-width: 1px;
+        border-color: Theme.s.outline-variant.with-alpha(0.6);
+    }
+    Rectangle {
+        x: root.travel * clamp(root.value, 0, 1);
+        width: 28px;
+        height: 28px;
+        border-radius: 14px;
+        background: #ffffff;
+        drop-shadow-color: #00000047;
+        drop-shadow-blur: 2.5px;
+        drop-shadow-offset-y: 1px;
+        Rectangle { width: 22px; height: 22px; border-radius: 11px; background: root.thumb; }
+    }
+    gs-ta := TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.changed(clamp((self.mouse-x - 14px) / root.travel, 0, 1));
+            }
+        }
+        moved => {
+            if (self.pressed) { root.changed(clamp((self.mouse-x - 14px) / root.travel, 0, 1)); }
+        }
+    }
+}
+
+component LabeledSlider inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 10px;
+    HorizontalLayout {
+        Text { text: root.label; font-size: 15px; font-weight: 600; color: Theme.s.on-surface-variant; horizontal-stretch: 1; }
+        Text { text: root.value; font-size: 15px; color: Theme.s.on-surface-variant; }
+    }
+    @children
+}
+
+// The custom colour sheet (`_CustomColorSheet`): the colour sketched light and dark beside
+// its hex digits, then lib/widgets/palette.dart's grid, spectrum and sliders.
+component ColorPage inherits Rectangle {
+    in property <color> draft;
+    in property <Scheme> light;
+    in property <Scheme> dark;
+    in-out property <string> hex;
+    in-out property <int> mode;
+    in property <[color]> grid;
+    in property <int> grid-cols: 12;
+    in property <int> grid-selected: -1;
+    in property <bool> grid-light-ink;
+    in property <float> spec-x;
+    in property <float> spec-y;
+    in property <float> hue;
+    in property <float> sat;
+    in property <float> val;
+    in property <color> hue-color;
+    in property <color> sat-from;
+    in property <color> sat-to;
+    in property <color> val-to;
+    in property <length> bottom-gap: 20px;
+    pure callback hex-filter(string) -> string;
+    callback hex-edited(string);
+    callback grid-pick(int);
+    callback spectrum-pick(float, float);
+    callback hsv(float, float, float);
+    callback confirm();
+    callback back();
+    property <int> grid-rows: ceil(root.grid.length / root.grid-cols);
+    VerticalLayout {
+        AppBar {
+            title: "自定义颜色";
+            can-back: true;
+            back => { root.back(); }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.check; tint: Theme.s.on-surface; clicked => { root.confirm(); } } }
+        }
+        Flickable {
+            content-height: color-col.preferred-height;
+            color-col := VerticalLayout {
+                alignment: start;
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 8px;
+                padding-bottom: root.bottom-gap;
+                spacing: 16px;
+                Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 24px;
+                    HorizontalLayout {
+                        padding: 16px;
+                        spacing: 12px;
+                        Rectangle {
+                            width: 72px;
+                            height: 96px;
+                            border-radius: 16px;
+                            clip: true;
+                            MiniScreen { s: root.light; }
+                        }
+                        Rectangle {
+                            width: 72px;
+                            height: 96px;
+                            border-radius: 16px;
+                            clip: true;
+                            MiniScreen { s: root.dark; dark: true; }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            min-width: 96px;
+                            Rectangle {
+                                height: 48px;
+                                border-radius: 14px;
+                                background: Theme.s.block;
+                                HorizontalLayout {
+                                    padding-left: 16px;
+                                    padding-right: 12px;
+                                    spacing: 2px;
+                                    Text { text: "#"; font-size: 16px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 0; }
+                                    hex-input := TextInput {
+                                        horizontal-stretch: 1;
+                                        text <=> root.hex;
+                                        font-size: 16px;
+                                        color: Theme.s.on-surface;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                        input-type: text;
+                                        edited => {
+                                            let clean = root.hex-filter(self.text);
+                                            if (clean != self.text) { self.text = clean; }
+                                            root.hex-edited(clean);
+                                        }
+                                    }
+                                }
+                                if root.hex == "": Text { x: 30px; text: "十六进制"; font-size: 16px; color: Theme.s.on-surface-variant.with-alpha(0.6); vertical-alignment: center; }
+                            }
+                        }
+                    }
+                }
+                SegmentBar {
+                    items: ["网格", "光谱", "滑块"];
+                    value: root.mode;
+                    picked(i) => { root.mode = i; }
+                }
+                if root.mode == 0: Rectangle {
+                    height: self.width * root.grid-rows / root.grid-cols;
+                    border-radius: 8px;
+                    clip: true;
+                    property <length> cw: self.width / root.grid-cols;
+                    property <length> ch: self.height / root.grid-rows;
+                    for c[i] in root.grid: Rectangle {
+                        x: floor(mod(i, root.grid-cols) * parent.cw / 1px) * 1px;
+                        y: floor(floor(i / root.grid-cols) * parent.ch / 1px) * 1px;
+                        width: floor((mod(i, root.grid-cols) + 1) * parent.cw / 1px) * 1px - self.x;
+                        height: floor((floor(i / root.grid-cols) + 1) * parent.ch / 1px) * 1px - self.y;
+                        background: c;
+                        if i == root.grid-selected: Rectangle {
+                            x: 1.5px;
+                            y: 1.5px;
+                            width: parent.width - 3px;
+                            height: parent.height - 3px;
+                            border-radius: 4px;
+                            border-width: 3px;
+                            border-color: root.grid-light-ink ? #ffffff : #000000;
+                        }
+                    }
+                    TouchArea {
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down) { root.pick-cell(self.mouse-x, self.mouse-y, self.width, self.height); }
+                        }
+                        moved => {
+                            if (self.pressed) { root.pick-cell(self.mouse-x, self.mouse-y, self.width, self.height); }
+                        }
+                    }
+                }
+                if root.mode == 1: Rectangle {
+                    height: self.width * 5 / 6;
+                    border-radius: 8px;
+                    clip: true;
+                    background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.67%, #00ff00 33.33%, #00ffff 50%, #0000ff 66.67%, #ff00ff 83.33%, #ff0000 100%);
+                    Rectangle {
+                        background: @linear-gradient(180deg, #ffffff 0%, #ffffff00 50%, #00000000 50%, #000000 100%);
+                    }
+                    Rectangle {
+                        x: root.spec-x * parent.width - 14px;
+                        y: root.spec-y * parent.height - 14px;
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: #ffffff;
+                        drop-shadow-color: #00000047;
+                        drop-shadow-blur: 2.5px;
+                        drop-shadow-offset-y: 1px;
+                        Rectangle { width: 22px; height: 22px; border-radius: 11px; background: root.draft; }
+                    }
+                    TouchArea {
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down) { root.spectrum-pick(clamp(self.mouse-x / self.width, 0, 1), clamp(self.mouse-y / self.height, 0, 1)); }
+                        }
+                        moved => {
+                            if (self.pressed) { root.spectrum-pick(clamp(self.mouse-x / self.width, 0, 1), clamp(self.mouse-y / self.height, 0, 1)); }
+                        }
+                    }
+                }
+                if root.mode == 2: Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 24px;
+                    VerticalLayout {
+                        padding: 16px;
+                        padding-bottom: 20px;
+                        spacing: 20px;
+                        LabeledSlider {
+                            label: "色相";
+                            value: round(root.hue) + "°";
+                            GradientSlider {
+                                value: root.hue / 360;
+                                thumb: root.hue-color;
+                                track: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.67%, #00ff00 33.33%, #00ffff 50%, #0000ff 66.67%, #ff00ff 83.33%, #ff0000 100%);
+                                changed(v) => { root.hsv(v * 360, root.sat, root.val); }
+                            }
+                        }
+                        LabeledSlider {
+                            label: "饱和度";
+                            value: round(root.sat * 100) + "%";
+                            GradientSlider {
+                                value: root.sat;
+                                thumb: root.draft;
+                                track: @linear-gradient(90deg, root.sat-from 0%, root.sat-to 100%);
+                                changed(v) => { root.hsv(root.hue, v, root.val); }
+                            }
+                        }
+                        LabeledSlider {
+                            label: "亮度";
+                            value: round(root.val * 100) + "%";
+                            GradientSlider {
+                                value: root.val;
+                                thumb: root.draft;
+                                track: @linear-gradient(90deg, #000000 0%, root.val-to 100%);
+                                changed(v) => { root.hsv(root.hue, root.sat, v); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    function pick-cell(px: length, py: length, w: length, h: length) {
+        let col = clamp(floor(px / w * root.grid-cols), 0, root.grid-cols - 1);
+        let row = clamp(floor(py / h * root.grid-rows), 0, root.grid-rows - 1);
+        root.grid-pick(row * root.grid-cols + col);
+    }
+}
+
+// ---------------------------------------------------------------- Requests
 
 // `SegmentedControl` (compact): a tray with the chosen segment raised.
 component StatusBar inherits Rectangle {
@@ -3643,7 +4375,7 @@ component ActionSheet inherits Rectangle {
                                 Icon {
                                     size: 20px;
                                     tint: a.danger ? Theme.s.error : Theme.s.on-surface-variant;
-                                    glyph: a.glyph == "copy" ? Icons.copy : a.glyph == "filter" ? Icons.filter : a.glyph == "eye-off" ? Icons.eye-off : a.glyph == "block" ? Icons.block : a.glyph == "sync" ? Icons.sync : a.glyph == "edit" ? Icons.edit : a.glyph == "fold" ? Icons.fold : a.glyph == "unfold" ? Icons.unfold : "";
+                                    glyph: a.glyph == "copy" ? Icons.copy : a.glyph == "filter" ? Icons.filter : a.glyph == "eye-off" ? Icons.eye-off : a.glyph == "block" ? Icons.block : a.glyph == "sync" ? Icons.sync : a.glyph == "edit" ? Icons.edit : a.glyph == "delete" ? Icons.delete : a.glyph == "fold" ? Icons.fold : a.glyph == "unfold" ? Icons.unfold : "";
                                 }
                             }
                             VerticalLayout {
@@ -3889,11 +4621,42 @@ export component AppWindow inherits Window {
     in property <[LogItem]> logs;
     callback clear-logs();
     // Settings
-    in property <[color]> accents;
-    in property <int> accent;
     in property <int> theme-mode;
-    callback set-accent(int);
     callback set-theme-mode(int);
+    // Theme colours (lib/views/theme.dart) and the custom colour page.
+    in property <[Swatch]> swatches;
+    in property <bool> colors-can-reset;
+    in property <string> color-style-label;
+    in property <Scheme> scheme-dark-standard;
+    in property <Scheme> scheme-dark-black;
+    callback swatch-picked(int);
+    callback swatch-menu(int);
+    callback add-color();
+    callback reset-colors();
+    callback pick-color-style();
+    in property <color> color-draft;
+    in property <Scheme> color-light;
+    in property <Scheme> color-dark;
+    in-out property <string> color-hex;
+    in-out property <int> color-mode;
+    in property <[color]> color-grid;
+    in property <int> color-grid-selected: -1;
+    in property <bool> color-light-ink;
+    in property <float> color-spec-x;
+    in property <float> color-spec-y;
+    in property <float> color-hue;
+    in property <float> color-sat;
+    in property <float> color-val;
+    in property <color> color-hue-color;
+    in property <color> color-sat-from;
+    in property <color> color-sat-to;
+    in property <color> color-val-to;
+    pure callback color-hex-filter(string) -> string;
+    callback color-hex-edited(string);
+    callback color-grid-pick(int);
+    callback color-spectrum-pick(float, float);
+    callback color-hsv(float, float, float);
+    callback color-confirm();
     // Requests (tab 4 beside the bar, tools page "requests" under it)
     in-out property <int> req-segment;
     in property <bool> req-shows-http;
@@ -4124,6 +4887,7 @@ export component AppWindow inherits Window {
                 if (root.ports-open) { root.ports-open = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "access" && root.acc-searching) { root.acc-query = ""; root.acc-searching = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "access") { root.acc-back(); return accept; }
+                if (root.tab == 3 && root.tools-page == "theme-color") { root.tools-page = "theme"; return accept; }
                 if (root.tab == 3 && root.meta.known) { root.tools-page = root.meta.parent; return accept; }
                 if (root.tab == 3 && root.tools-page == "editor") { root.tools-page = root.tools-editor-parent; return accept; }
                 if (root.tab == 3 && root.tools-page != "") {
@@ -4399,14 +5163,52 @@ export component AppWindow inherits Window {
                 if root.tab == 3 && root.tools-page == "theme": ThemePage {
                     width: parent.width;
                     height: parent.height;
-                    accents: root.accents;
-                    accent: root.accent;
                     theme-mode: root.theme-mode;
                     pure-black: root.pure-black;
-                    set-accent(i) => { root.set-accent(i); }
+                    swatches: root.swatches;
+                    can-reset: root.colors-can-reset;
+                    style-label: root.color-style-label;
+                    light: Theme.light;
+                    dark: Theme.dark;
+                    dark-standard: root.scheme-dark-standard;
+                    dark-black: root.scheme-dark-black;
                     set-theme-mode(m) => { root.set-theme-mode(m); }
                     set-pure-black(on) => { root.set-pure-black(on); }
+                    swatch-picked(i) => { root.swatch-picked(i); }
+                    swatch-menu(i) => { root.swatch-menu(i); }
+                    add-color => { root.add-color(); }
+                    reset-colors => { root.reset-colors(); }
+                    pick-style => { root.pick-color-style(); }
                     back => { root.tools-page = ""; }
+                }
+                if root.tab == 3 && root.tools-page == "theme-color": ColorPage {
+                    width: parent.width;
+                    height: parent.height;
+                    draft: root.color-draft;
+                    light: root.color-light;
+                    dark: root.color-dark;
+                    hex <=> root.color-hex;
+                    mode <=> root.color-mode;
+                    grid: root.color-grid;
+                    grid-selected: root.color-grid-selected;
+                    grid-light-ink: root.color-light-ink;
+                    spec-x: root.color-spec-x;
+                    spec-y: root.color-spec-y;
+                    hue: root.color-hue;
+                    sat: root.color-sat;
+                    val: root.color-val;
+                    hue-color: root.color-hue-color;
+                    sat-from: root.color-sat-from;
+                    sat-to: root.color-sat-to;
+                    val-to: root.color-val-to;
+                    bottom-gap: 20px + root.keyboard;
+                    hex-filter(t) => { return root.color-hex-filter(t); }
+                    hex-edited(t) => { root.color-hex-edited(t); }
+                    grid-pick(i) => { root.color-grid-pick(i); }
+                    spectrum-pick(x, y) => { root.color-spectrum-pick(x, y); }
+                    hsv(h, sv, v) => { root.color-hsv(h, sv, v); }
+                    confirm => { root.color-confirm(); }
+                    back => { root.tools-page = "theme"; }
                 }
 
                 if root.toast != "": Rectangle {
@@ -4750,8 +5552,8 @@ export component AppWindow inherits Window {
                 spacing: 8px;
                 TextButton { text: root.confirm-action == "access-save" ? "不保存" : "取消"; clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, false); } }
                 TextButton {
-                    text: root.confirm-action == "access-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : "确定";
-                    danger: root.confirm-action == "delete" || root.confirm-action == "close-active";
+                    text: root.confirm-action == "access-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" || root.confirm-action == "color-delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : root.confirm-action == "color-reset" ? "重置" : "确定";
+                    danger: root.confirm-action == "delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset";
                     clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, true); }
                 }
             }

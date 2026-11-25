@@ -9,8 +9,12 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Settings {
-    /// Index into `theme::ACCENTS`.
-    pub accent: usize,
+    /// `ThemeProps`' colours; None follows the system. Older versions saved `accent` instead.
+    pub primary_color: Option<u32>,
+    pub primary_colors: Vec<u32>,
+    pub color_style: i32,
+    #[serde(rename = "accent", skip_serializing)]
+    pub legacy_accent: Option<usize>,
     /// 0 follow system, 1 light, 2 dark.
     pub theme_mode: i32,
     /// 0 rule, 1 global, 2 direct.
@@ -174,10 +178,22 @@ pub const DEFAULT_USER_AGENTS: [&str; 2] = ["clash-verge/v2.4.2", "ClashforWindo
 pub const DELAY_TEST_TIMEOUTS: [i64; 5] = [500, 1000, 2000, 5000, 8000];
 pub const DEFAULT_DELAY_TEST_TIMEOUT: i64 = 8000;
 
+impl Settings {
+    pub fn migrate(&mut self) {
+        if let Some(i) = self.legacy_accent.take() {
+            let accents = crate::theme::ACCENTS;
+            self.primary_color = Some(accents[i.min(accents.len() - 1)]);
+        }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            accent: 0,
+            primary_color: Some(crate::colors::DEFAULT_PRIMARY),
+            primary_colors: crate::theme::ACCENTS.to_vec(),
+            color_style: crate::colors::VIVID,
+            legacy_accent: None,
             theme_mode: 0,
             mode: 0,
             proxies: ProxiesStyle::default(),
@@ -406,10 +422,11 @@ impl Store {
     pub fn open(home: &Path) -> Store {
         let dir = home.join("ui");
         let _ = std::fs::create_dir_all(dir.join("profiles"));
-        let state = std::fs::read(dir.join("state.json"))
+        let mut state: State = std::fs::read(dir.join("state.json"))
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default();
+        state.settings.migrate();
         Store { dir, state }
     }
 
@@ -458,7 +475,8 @@ mod tests {
     fn state_survives_a_round_trip() {
         let home = std::env::temp_dir().join(format!("sc-store-{}", std::process::id()));
         let mut store = Store::open(&home);
-        store.state.settings.accent = 3;
+        store.state.settings.primary_color = None;
+        store.state.settings.color_style = 2;
         store.state.profiles.push(Profile {
             id: "1".into(),
             name: "a".into(),
@@ -473,6 +491,18 @@ mod tests {
         assert_eq!(again.state, store.state);
         assert_eq!(again.active().unwrap().name, "a");
         let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn older_accent_index_becomes_the_primary_colour() {
+        let mut s: Settings = serde_json::from_str(r#"{"accent":2}"#).unwrap();
+        s.migrate();
+        assert_eq!(s.primary_color, Some(crate::theme::ACCENTS[2]));
+        assert!(!serde_json::to_string(&s).unwrap().contains("accent"));
+        let mut s: Settings = serde_json::from_str(r#"{"primary_color":null}"#).unwrap();
+        s.migrate();
+        assert_eq!(s.primary_color, None);
+        assert_eq!(s.primary_colors, crate::theme::ACCENTS);
     }
 
     #[test]

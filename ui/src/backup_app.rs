@@ -352,9 +352,7 @@ impl App {
         self.publish_settings();
         self.ping_dav();
         self.ui(move |ui| {
-            crate::apply_theme(&ui, settings.accent, settings.pure_black);
-            ui.set_accent(settings.accent as i32);
-            ui.set_theme_mode(settings.theme_mode);
+            crate::apply_theme(&ui, &settings);
             ui.set_mode(settings.mode);
         });
         self.reapply();

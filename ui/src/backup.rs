@@ -199,7 +199,8 @@ pub fn read(bytes: &[u8]) -> Result<Restored, String> {
         .iter()
         .find(|(n, _)| n == STATE_ENTRY)
         .ok_or("无效备份文件")?;
-    let archive: Archive = serde_json::from_slice(&state.1).map_err(|_| "无效备份文件")?;
+    let mut archive: Archive = serde_json::from_slice(&state.1).map_err(|_| "无效备份文件")?;
+    archive.state.settings.migrate();
     if archive.version > ARCHIVE_VERSION {
         return Err("备份来自更新的版本".into());
     }

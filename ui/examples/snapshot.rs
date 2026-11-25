@@ -232,6 +232,21 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             seasoncat_ui::overrides::GENERAL.add(&mut s.general_override, k);
         }
     }
+    if overlay.starts_with("custom") {
+        s.primary_colors.push(0x5856D6);
+        s.primary_color = Some(0x5856D6);
+        s.color_style = 1;
+        s.pure_black = true;
+    }
+    apply_theme(ui, &s);
+    if page == "theme-color" {
+        show_color_page(ui, &s, 0x5856D6);
+        ui.set_color_mode(match overlay {
+            "spectrum" => 1,
+            "sliders" => 2,
+            _ => 0,
+        });
+    }
     let m = |v: Vec<SetSection>| ModelRc::new(VecModel::from(v));
     ui.set_tools_sections(m(settings_view::tools(&s, width <= 600, &[])));
     let sections = match page {
@@ -406,32 +421,7 @@ fn main() {
     let ui = AppWindow::new().unwrap();
     window.set_size(slint::PhysicalSize::new(w, h));
 
-    let [light, dark] = theme::SCHEMES[0];
-    let scheme = |p: &theme::Palette| {
-        let c = |v: u32| slint::Color::from_argb_encoded(0xff00_0000 | v);
-        Scheme {
-            primary: c(p.primary),
-            on_primary: c(p.on_primary),
-            primary_container: c(p.primary_container),
-            on_primary_container: c(p.on_primary_container),
-            page: c(p.page),
-            card: c(p.card),
-            block: c(p.block),
-            inset: c(p.inset),
-            on_surface: c(p.on_surface),
-            on_surface_variant: c(p.on_surface_variant),
-            outline_variant: c(p.outline_variant),
-            error: c(p.error),
-        }
-    };
-    ui.global::<Theme>().set_light(scheme(&light));
-    ui.global::<Theme>().set_dark(scheme(&dark));
-    ui.set_accents(ModelRc::new(VecModel::from(
-        theme::ACCENTS
-            .iter()
-            .map(|c| slint::Color::from_argb_encoded(0xff00_0000 | c))
-            .collect::<Vec<_>>(),
-    )));
+    apply_theme(&ui, &store::Settings::default());
     ui.set_run_state("STARTED".into());
     ui.set_dash_run_time("02:13:57".into());
     ui.set_dash_status(DashStatus {
@@ -798,6 +788,33 @@ fn main() {
         ("set-theme-small", 3, "", "theme", 1, ""),
         ("set-theme-wide", 3, "", "theme", 1, ""),
         ("set-theme-tablet", 3, "", "theme", 1, ""),
+        ("set-theme-dark", 3, "", "theme", 2, ""),
+        ("set-theme-custom", 3, "", "theme", 1, "custom"),
+        ("set-theme-custom-dark", 3, "", "theme", 2, "custom"),
+        ("set-theme-custom-small", 3, "", "theme", 1, "custom"),
+        ("set-color", 3, "", "theme-color", 1, "grid"),
+        ("set-color-small", 3, "", "theme-color", 1, "grid"),
+        ("set-color-wide", 3, "", "theme-color", 1, "grid"),
+        ("set-color-tablet", 3, "", "theme-color", 1, "grid"),
+        ("set-color-spectrum", 3, "", "theme-color", 1, "spectrum"),
+        (
+            "set-color-spectrum-small",
+            3,
+            "",
+            "theme-color",
+            1,
+            "spectrum",
+        ),
+        ("set-color-sliders", 3, "", "theme-color", 1, "sliders"),
+        (
+            "set-color-sliders-small",
+            3,
+            "",
+            "theme-color",
+            1,
+            "sliders",
+        ),
+        ("set-color-sliders-dark", 3, "", "theme-color", 2, "sliders"),
         ("set-language", 3, "", "", 1, "choice:language"),
         ("set-language-small", 3, "", "", 1, "choice:language"),
         ("set-language-wide", 3, "", "", 1, "choice:language"),
