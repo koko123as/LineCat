@@ -61,6 +61,8 @@ pub struct Settings {
     pub disabled_services: Vec<String>,
     /// `AppSettingProps.tableColumnWidths`: dragged column widths by table id.
     pub table_column_widths: BTreeMap<String, BTreeMap<String, f32>>,
+    /// `Config.excludeSSIDs`: Wi-Fi networks a run is suspended on.
+    pub exclude_ssids: Vec<String>,
 }
 
 /// The network page's settings: `VpnProps`, `NetworkProps` and the TUN part of
@@ -231,6 +233,7 @@ impl Default for Settings {
             service_order: Vec::new(),
             disabled_services: Vec::new(),
             table_column_widths: BTreeMap::new(),
+            exclude_ssids: Vec::new(),
         }
     }
 }

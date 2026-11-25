@@ -152,6 +152,7 @@ pub fn general(settings: &Settings) -> Vec<SetSection> {
             "自动运行会在打开应用时启动代理。",
             vec![
                 toggle("auto-run", "自动运行", g.auto_run),
+                open("on-demand", "", "按需运行"),
                 toggle("minimize-on-exit", "退出时最小化", g.minimize_on_exit),
                 toggle("hidden", "从最近任务中隐藏", g.hidden),
                 toggle(

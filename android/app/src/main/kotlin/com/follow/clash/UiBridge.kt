@@ -12,6 +12,7 @@ import com.follow.clash.core.Core
 import com.follow.clash.core.NativeCore
 import com.follow.clash.models.SharedState
 import com.follow.clash.packages.PackageResolver
+import com.follow.clash.plugins.DefaultNetworkWatcher
 import com.follow.clash.service.NetworkObserver
 import com.follow.clash.service.models.VpnOptions
 import com.google.gson.Gson
@@ -64,6 +65,16 @@ object UiBridge {
         started = true
         runCatching { Core.load() }.onFailure { GlobalState.log("Unable to load the Core: $it") }
         NetworkObserver.start()
+        context.getSystemService(android.net.ConnectivityManager::class.java)?.let { connectivity ->
+            DefaultNetworkWatcher(connectivity) { state ->
+                val wifi = state["wifi"] == true
+                onWifi = wifi
+                broadcast(JsonObject().apply {
+                    addProperty("ev", "network")
+                    addProperty("wifi", wifi)
+                })
+            }.start()
+        }
         val server = runCatching { LocalServerSocket("${context.packageName}.ui") }
             .onFailure { GlobalState.log("Unable to open the UI bridge: $it") }
             .getOrNull() ?: return
@@ -76,6 +87,14 @@ object UiBridge {
                 })
             }
         }
+    }
+
+    @Volatile
+    private var onWifi = false
+
+    /** The activity came back to the front: permissions may have changed in the settings. */
+    fun resumed() {
+        broadcast(JsonObject().apply { addProperty("ev", "resume") })
     }
 
     val isStopped: Boolean
@@ -212,6 +231,7 @@ object UiBridge {
                 addProperty("sdkInt", Build.VERSION.SDK_INT)
                 addProperty("versionName", versionName())
                 addProperty("state", ServiceState.runState.value.name)
+                addProperty("wifi", onWifi)
                 edges?.let { add("insets", it) }
                 systemSeeds()?.let { add("seeds", it) }
             }
@@ -385,6 +405,31 @@ object UiBridge {
                 }?.setExcludeFromRecents(hidden)
             }
             ok()
+        }
+
+        // WifiSsidPlugin and BatteryPlugin, for the on-demand page.
+        "wifi.ssid" -> {
+            val ssid = OnDemandHost.ssid()
+            ok { addProperty("ssid", ssid) }
+        }
+
+        "wifi.permission" -> {
+            val permission = OnDemandHost.checkPermission()
+            ok { addProperty("permission", permission) }
+        }
+
+        "wifi.request" -> {
+            val host = activity ?: error("界面未就绪")
+            val permission = OnDemandHost.requestPermission(host)
+            ok { addProperty("permission", permission) }
+        }
+
+        "battery.ignored" -> ok { addProperty("ignored", OnDemandHost.ignoringOptimizations()) }
+
+        "battery.request" -> {
+            val host = activity ?: error("界面未就绪")
+            val ignored = OnDemandHost.requestIgnoreOptimizations(host)
+            ok { addProperty("ignored", ignored) }
         }
 
         else -> error("unknown op")

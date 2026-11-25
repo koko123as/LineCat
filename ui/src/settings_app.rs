@@ -165,6 +165,9 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
     if let Some(meta) = crate::items_app::page_meta(page) {
         return meta;
     }
+    if let Some(meta) = crate::on_demand_app::page_meta(page) {
+        return meta;
+    }
     let t = targets().lock().unwrap();
     match page {
         "general" => meta("常规", ""),
@@ -248,6 +251,9 @@ impl App {
             if let Some(e) = a.items_check(&key, &v1, &v2) {
                 return e.into();
             }
+            if let Some(e) = a.on_demand_check(&key, &v1) {
+                return e.into();
+            }
             if key.starts_with("map:") {
                 return if v1.trim().is_empty() {
                     "键不能为空".into()
@@ -322,6 +328,8 @@ impl App {
         let a = self.clone();
         ui.on_check_update(move || a.check_update(true));
         let a = self.clone();
+        ui.on_od_clicked(move |id| a.on_demand_clicked(&id));
+        let a = self.clone();
         ui.on_about_logo_tapped(move || a.logo_tapped());
         self.publish_settings();
     }
@@ -344,6 +352,7 @@ impl App {
                 "backup" => app.backup_sections(&settings),
                 "advanced" => settings_view::advanced(&settings),
                 "network" => settings_view::network(&settings),
+                "on-demand" => Vec::new(),
                 "user-agents" => settings_view::user_agents(&settings),
                 "list" => {
                     let key = targets().lock().unwrap().list.0.clone();
@@ -509,6 +518,10 @@ impl App {
         let g = self.store.lock().unwrap().state.settings.general.clone();
         match (page, id) {
             ("general", "user-agent") => self.open_page("user-agents"),
+            ("general", "on-demand") => {
+                self.open_on_demand();
+                self.open_page("on-demand");
+            }
             ("user-agents", "action") => self.open_input("user-agent-add", "添加", "用户代理", ""),
             ("user-agents", "action2") => {
                 let titles: Vec<SharedString> =
@@ -830,7 +843,7 @@ impl App {
     }
 
     fn input_submit(self: &Arc<Self>, key: &str, v1: &str, v2: &str) {
-        if self.items_input(key, v1, v2) {
+        if self.items_input(key, v1, v2) || self.on_demand_input(key, v1) {
             return;
         }
         let Ok(value) = settings_view::check_input(key, v1) else {

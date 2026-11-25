@@ -1178,6 +1178,32 @@ fn main() {
         ("set-network-tablet", 3, "", "network", 1, ""),
         ("set-list", 3, "", "list", 1, ""),
         ("set-list-small", 3, "", "list", 1, ""),
+        ("set-ondemand", 3, "", "on-demand", 1, ""),
+        ("set-ondemand-small", 3, "", "on-demand", 1, ""),
+        ("set-ondemand-wide", 3, "", "on-demand", 1, ""),
+        ("set-ondemand-tablet", 3, "", "on-demand", 1, ""),
+        ("set-ondemand-empty", 3, "", "on-demand", 1, "od-empty"),
+        (
+            "set-ondemand-empty-small",
+            3,
+            "",
+            "on-demand",
+            1,
+            "od-empty",
+        ),
+        ("set-ondemand-select", 3, "", "on-demand", 1, "od-select"),
+        (
+            "set-ondemand-select-small",
+            3,
+            "",
+            "on-demand",
+            1,
+            "od-select",
+        ),
+        ("set-ondemand-drag", 3, "", "on-demand", 1, "drag:316:70"),
+        ("set-general-od", 3, "", "general", 1, ""),
+        ("dash-suspended", 0, "", "", 1, "suspended"),
+        ("dash-suspended-wide", 0, "", "", 1, "suspended"),
         ("set-ua", 3, "", "user-agents", 1, ""),
         ("set-ua-small", 3, "", "user-agents", 1, ""),
         ("set-ua-wide", 3, "", "user-agents", 1, ""),
@@ -1365,6 +1391,28 @@ fn main() {
             ui.set_res_dialog_value("https://example.com/geo".into());
             ui.set_res_dialog_default(resources::default_url("mmdb").into());
         }
+        let ssids: Vec<slint::SharedString> = if *overlay == "od-empty" {
+            Vec::new()
+        } else {
+            [
+                "Home-5G",
+                "Office",
+                "MEIZU-20Pro-Hotspot-with-a-very-long-name",
+            ]
+            .iter()
+            .map(|s| (*s).into())
+            .collect()
+        };
+        let picked: Vec<bool> = (0..ssids.len())
+            .map(|i| *overlay == "od-select" && i != 1)
+            .collect();
+        ui.set_od_selecting(*overlay == "od-select");
+        ui.set_od_ssids(ModelRc::new(VecModel::from(ssids)));
+        ui.set_od_selected(ModelRc::new(VecModel::from(picked)));
+        ui.set_od_battery(if *overlay == "od-select" { 0 } else { 1 });
+        ui.set_od_location(*overlay != "od-empty");
+        ui.global::<Suspend>()
+            .set_suspended(*overlay == "suspended");
         settings_shot(&ui, w, page, overlay);
         ui.set_set_sorting(*overlay == "ua-sort");
         if *overlay == "ua-sort" {

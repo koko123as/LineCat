@@ -24,6 +24,8 @@ pub mod logs;
 mod logs_app;
 pub use items_app::sections as items_sections;
 pub use logs_app::log_item;
+pub mod on_demand;
+mod on_demand_app;
 pub mod overrides;
 pub mod profile;
 pub mod proxies;
@@ -452,11 +454,16 @@ impl App {
         }
     }
 
-    fn set_run_state(self: &Arc<Self>, state: &str) {
+    fn set_run_state(self: &Arc<Self>, service: &str) {
+        let shown = self.shown_run_state(service);
+        let state = shown.as_str();
         let previous = std::mem::replace(&mut *self.run_state.lock().unwrap(), state.to_string());
         let s: SharedString = state.into();
         self.ui(move |ui| ui.set_run_state(s));
         if previous == state {
+            if service == "STARTED" {
+                self.sync_suspend();
+            }
             return;
         }
         match state {
@@ -473,6 +480,9 @@ impl App {
             }
             _ => {}
         }
+        if service == "STARTED" {
+            self.sync_suspend();
+        }
     }
 
     fn setup(self: &Arc<Self>, bridge: &Bridge) -> Result<(), String> {
@@ -486,6 +496,8 @@ impl App {
                     }
                 }
                 Some("insets") => app.set_edges(event),
+                Some("network") => app.on_network(event["wifi"].as_bool() == Some(true)),
+                Some("resume") => app.on_resume(),
                 _ => {}
             }
         }));
@@ -553,6 +565,7 @@ impl App {
             self.apply_active()?;
         }
         self.on_connected(&hello);
+        self.on_demand_connected(&hello);
         Ok(())
     }
 
@@ -697,11 +710,12 @@ impl App {
     /// and directly otherwise, then what kind of address it is.
     fn probe_ip(self: &Arc<Self>) {
         let seq = self.ip_seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let proxy = if self.run_state.lock().unwrap().as_str() == "STARTED" {
-            ""
-        } else {
-            "DIRECT"
-        };
+        let proxy =
+            if self.run_state.lock().unwrap().as_str() == "STARTED" && !on_demand_app::parked() {
+                ""
+            } else {
+                "DIRECT"
+            };
         self.ui(|ui| {
             let mut s = ui.get_dash_status();
             s.probing = true;
@@ -818,48 +832,56 @@ impl App {
 
     fn toggle_vpn(self: &Arc<Self>) {
         let state = self.run_state.lock().unwrap().clone();
+        if state == "STARTED" && self.unpark_instead_of_stop() {
+            return;
+        }
+        if state != "STARTED" && self.park_instead_of_start() {
+            return;
+        }
         self.spawn(move |app| {
-            let result = (|| -> Result<(), String> {
-                let bridge = app.bridge()?;
-                if state == "STARTED" {
-                    bridge.shell("vpn.stop", json!({}), APPLY)?;
-                    return Ok(());
-                }
-                let (name, settings) = {
-                    let store = app.store.lock().unwrap();
-                    match store.active() {
-                        Some(p) => (p.name.clone(), store.state.settings.clone()),
-                        None => return Err("添加一个配置文件后即可开始使用".into()),
-                    }
-                };
-                if !app.configured.load(Ordering::SeqCst)
-                    || app.last_apply.lock().unwrap().is_none()
-                {
-                    app.apply_active()?;
-                }
-                let setup = app
-                    .last_apply
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .unwrap_or(Value::Null);
-                bridge.shell(
-                    "vpn.start",
-                    json!({
-                        "profileName": name,
-                        "vpnOptions": profile::vpn_options(&settings),
-                        "setupParams": setup,
-                        "onlyStatisticsProxy": settings.general.only_statistics_proxy,
-                        "showStopAction": settings.general.show_notification_stop_action,
-                    }),
-                    Duration::from_secs(300),
-                )?;
-                Ok(())
-            })();
+            let result = if state == "STARTED" {
+                app.bridge()
+                    .and_then(|b| b.shell("vpn.stop", json!({}), APPLY))
+                    .map(|_| ())
+            } else {
+                app.start_vpn()
+            };
             if let Err(e) = result {
                 app.toast(e);
             }
         });
+    }
+
+    fn start_vpn(self: &Arc<Self>) -> Result<(), String> {
+        let bridge = self.bridge()?;
+        let (name, settings) = {
+            let store = self.store.lock().unwrap();
+            match store.active() {
+                Some(p) => (p.name.clone(), store.state.settings.clone()),
+                None => return Err("添加一个配置文件后即可开始使用".into()),
+            }
+        };
+        if !self.configured.load(Ordering::SeqCst) || self.last_apply.lock().unwrap().is_none() {
+            self.apply_active()?;
+        }
+        let setup = self
+            .last_apply
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or(Value::Null);
+        bridge.shell(
+            "vpn.start",
+            json!({
+                "profileName": name,
+                "vpnOptions": profile::vpn_options(&settings),
+                "setupParams": setup,
+                "onlyStatisticsProxy": settings.general.only_statistics_proxy,
+                "showStopAction": settings.general.show_notification_stop_action,
+            }),
+            Duration::from_secs(300),
+        )?;
+        Ok(())
     }
 
     fn set_mode(self: &Arc<Self>, mode: i32) {
@@ -1968,7 +1990,7 @@ impl App {
             ("script-delete", true) => self.delete_script(&arg),
             ("ua-delete", true) => self.delete_user_agent(&arg),
             ("access-save", _) => self.access_save_answer(yes),
-            ("app-settings", true) => self.open_app_settings(),
+            ("app-settings" | "location-settings", true) => self.open_app_settings(),
             ("edit-save", _) => self.save_edit(form, yes),
             ("color-reset" | "color-delete", true) => self.theme_confirmed(&action, &arg),
             _ => {}

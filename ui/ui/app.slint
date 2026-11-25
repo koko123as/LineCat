@@ -507,6 +507,7 @@ global Icons {
     out property <string> send: "M21 3 3 10l7 3 3 7z M10 13l11-10";
     out property <string> external: "M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6";
     out property <string> select-all: "M4 4h16v16H4z M8 12l3 3 5-6";
+    out property <string> wifi: "M2.5 9a14 14 0 0 1 19 0 M5.5 12.5a9.5 9.5 0 0 1 13 0 M8.5 16a5 5 0 0 1 7 0 M12 19.5v0.01";
     out property <string> deselect: "M4 4h16v16H4z M9 9l6 6 M15 9l-6 6";
     out property <string> key: "M8 15a4 4 0 1 1 3.5-6H21v3h-2v3h-3v-3h-4.5A4 4 0 0 1 8 15z M7 11h.01";
     out property <string> memory: "M6 6h12v12H6z M9 9h6v6H9z M9 3v3 M15 3v3 M9 18v3 M15 18v3 M3 9h3 M3 15h3 M18 9h3 M18 15h3";
@@ -533,6 +534,11 @@ global Glyphs {
 
 // Installed apps' icons by package name; `rev` moves when more arrive, so bindings that pass
 // it ask again.
+// `suspendProvider` while started: the Wi-Fi in use is excluded and the run is parked.
+export global Suspend {
+    in property <bool> suspended;
+}
+
 export global AppIcons {
     in-out property <int> rev;
     pure callback icon(string, int) -> image;
@@ -852,8 +858,8 @@ component StatusCard inherits DashCard {
                 glyph: Icons.status;
                 title: "状态";
                 Chip {
-                    text: root.run-state == "STARTED" ? "运行中" : root.run-state == "STARTING" ? "启动中" : root.run-state == "STOPPING" ? "停止中" : "未运行";
-                    tone: root.on ? Theme.success : Theme.s.on-surface-variant;
+                    text: root.on && Suspend.suspended ? "挂起中…" : root.run-state == "STARTED" ? "运行中" : root.run-state == "STARTING" ? "启动中" : root.run-state == "STOPPING" ? "停止中" : "未运行";
+                    tone: root.on && Suspend.suspended ? Theme.warning : root.on ? Theme.success : Theme.s.on-surface-variant;
                     dot: true;
                 }
             }
@@ -3793,6 +3799,197 @@ component NullStatus inherits Rectangle {
     }
 }
 
+// `_buildAuthorizeButton`: filled once authorized, error-toned until then, as wide as the
+// longer of its two labels.
+component AuthorizeButton inherits Rectangle {
+    in property <bool> authorized;
+    callback clicked();
+    height: 40px;
+    width: max(80px, ab-sizer.preferred-width * 1.1 + 24px);
+    border-radius: 20px;
+    background: root.authorized ? (ab-ta.pressed ? Theme.s.primary.darker(0.1) : Theme.s.primary) : (ab-ta.pressed ? Theme.s.error.with-alpha(0.22) : Theme.s.error.with-alpha(0.14));
+    ab-sizer := Text { text: "点击授权"; font-size: 14px; opacity: 0; }
+    Text {
+        text: root.authorized ? "已授权" : "点击授权";
+        font-size: 14px;
+        font-weight: 600;
+        color: root.authorized ? Theme.s.on-primary : Theme.s.error;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ab-ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+// `OnDemandView` below the bar: the prerequisites, then the excluded SSIDs with their
+// header actions, each row with its circle checkbox; a long press lifts a row to drag it.
+component OnDemandBody inherits VerticalLayout {
+    // 0 while asking, 1 not exempt, 2 exempt.
+    in property <int> battery;
+    in property <bool> location;
+    in property <[string]> ssids;
+    in property <[bool]> selected;
+    out property <bool> dragging: root.drag-from >= 0;
+    callback clicked(string);
+    in property <bool> selecting;
+    property <length> row-h: 52px;
+    property <int> drag-from: -1;
+    property <length> press-y;
+    property <length> shift;
+    property <bool> fired;
+    property <int> drag-to: root.drag-from < 0 ? -1 : max(0, min(root.ssids.length - 1, root.drag-from + round(root.shift / root.row-h)));
+    padding-left: 16px;
+    padding-right: 16px;
+    spacing: 0px;
+    HorizontalLayout {
+        padding-left: 14px;
+        Text { text: "前置条件"; height: 36px; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+    }
+    Rectangle {
+        background: Theme.s.card;
+        border-radius: 16px;
+        VerticalLayout {
+            for p[i] in [{ id: "battery", title: "忽略电池优化" }, { id: "location", title: "位置权限" }]: Rectangle {
+                height: 56px;
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 12px;
+                    spacing: 12px;
+                    Text { text: p.title; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                    VerticalLayout {
+                        alignment: center;
+                        if p.id == "battery" && root.battery == 0: HorizontalLayout { alignment: end; width: 80px; Spinner { width: 24px; height: 24px; indeterminate: true; } }
+                        if p.id != "battery" || root.battery != 0: AuthorizeButton {
+                            authorized: p.id == "battery" ? root.battery == 2 : root.location;
+                            clicked => { root.clicked(p.id); }
+                        }
+                    }
+                }
+                if i == 0: Rectangle {
+                    x: 16px;
+                    y: parent.height - 1px;
+                    width: parent.width - 16px;
+                    height: 1px;
+                    background: Theme.s.outline-variant.with-alpha(0.6);
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 6px;
+        Text { text: "根据系统要求，获取Wi-Fi名称需要您授予位置权限。Android 上请选择“始终允许”，否则应用在后台时无法获取 Wi-Fi 名称。"; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+    }
+    Rectangle { height: 12px; }
+    HorizontalLayout {
+        padding-left: 14px;
+        height: 40px;
+        Text { text: "排除SSIDs"; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
+        if root.selecting: IconButton { glyph: Icons.delete; tint: Theme.s.on-surface; clicked => { root.clicked("delete"); } }
+        if root.selecting: IconButton { glyph: Icons.select-all; tint: Theme.s.on-surface; clicked => { root.clicked("select-all"); } }
+        if !root.selecting: IconButton { glyph: Icons.add-circle; tint: Theme.s.on-surface; clicked => { root.clicked("add"); } }
+    }
+    if root.ssids.length == 0: VerticalLayout {
+        padding-top: 48px;
+        padding-bottom: 48px;
+        spacing: 12px;
+        HorizontalLayout { alignment: center; Icon { glyph: Icons.wifi; size: 48px; tint: Theme.s.on-surface-variant.with-alpha(0.6); } }
+        Text { text: "SSIDs为空"; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; }
+    }
+    if root.ssids.length > 0: Rectangle {
+        height: root.ssids.length * root.row-h;
+        z: root.dragging ? 1 : 0;
+        Rectangle { background: Theme.s.card; border-radius: 16px; }
+        for t[i] in root.ssids: Rectangle {
+            property <bool> lifted: i == root.drag-from;
+            property <bool> on: i < root.selected.length && root.selected[i];
+            y: root.drag-from < 0 || self.lifted ? i * root.row-h
+                : i > root.drag-from && i <= root.drag-to ? (i - 1) * root.row-h
+                : i < root.drag-from && i >= root.drag-to ? (i + 1) * root.row-h
+                : i * root.row-h;
+            z: self.lifted ? 1 : 0;
+            height: root.row-h;
+            animate y { duration: 150ms; easing: ease-out; }
+            Rectangle {
+                y: parent.lifted ? root.shift : 0px;
+                background: parent.lifted ? Theme.s.card : od-ta.pressed ? Theme.s.inset : transparent;
+                border-radius: parent.lifted || i == 0 || i == root.ssids.length - 1 ? 16px : 0px;
+                drop-shadow-offset-y: parent.lifted ? 6px : 0px;
+                drop-shadow-blur: parent.lifted ? 16px : 0px;
+                drop-shadow-color: parent.lifted ? #00000033 : transparent;
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 10px;
+                    spacing: 8px;
+                    Text { text: t; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                    Rectangle { width: 36px; }
+                }
+                if !parent.lifted && i < root.ssids.length - 1: Rectangle {
+                    x: 16px;
+                    y: parent.height - 1px;
+                    width: parent.width - 16px;
+                    height: 1px;
+                    background: Theme.s.outline-variant.with-alpha(0.6);
+                }
+            }
+            od-ta := TouchArea {
+                width: parent.width - 52px;
+                x: 0;
+                changed pressed => {
+                    if (self.pressed) {
+                        root.fired = false;
+                    } else if (root.drag-from == i) {
+                        let from = root.drag-from;
+                        let to = root.drag-to;
+                        root.drag-from = -1;
+                        root.shift = 0px;
+                        if (from != to) { root.clicked("move:" + from + ":" + to); }
+                    }
+                }
+                clicked => {
+                    if (root.fired) { return; }
+                    root.clicked((root.selecting ? "select:" : "edit:") + i);
+                }
+                moved => {
+                    if (root.drag-from == i) { root.shift = self.mouse-y - root.press-y; }
+                }
+            }
+            Timer {
+                interval: 400ms;
+                running: od-ta.pressed && root.drag-from < 0 && !root.fired;
+                triggered => {
+                    root.fired = true;
+                    root.press-y = od-ta.mouse-y;
+                    root.shift = 0px;
+                    root.drag-from = i;
+                }
+            }
+            // `Checkbox(isCircle: true)` at the row's end.
+            Rectangle {
+                x: parent.width - 52px;
+                width: 52px;
+                y: parent.lifted ? root.shift : 0px;
+                Rectangle {
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 11px;
+                    border-width: (i < root.selected.length && root.selected[i]) ? 0px : 2px;
+                    border-color: Theme.s.on-surface-variant;
+                    background: (i < root.selected.length && root.selected[i]) ? Theme.s.primary : transparent;
+                    if (i < root.selected.length && root.selected[i]): Icon { glyph: Icons.check; size: 16px; tint: Theme.s.on-primary; }
+                }
+                TouchArea { clicked => { root.clicked("select:" + i); } }
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 6px;
+        Text { text: "连接到被排除 SSID 的 Wi-Fi 时，将会自动切换应用运行状态。"; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+    }
+}
+
 // A settings page: the bar, anything given as children, then the sections.
 component SettingsPage inherits Rectangle {
     in property <string> title;
@@ -3810,6 +4007,8 @@ component SettingsPage inherits Rectangle {
     // The Scaffold's sort mode: the rows below as a reorderable list, ✓ to leave.
     in property <bool> sorting;
     in property <[string]> sort-titles;
+    // A child dragging a row holds the page still.
+    in property <bool> locked;
     callback sort-moved(int, int);
     callback sort-done();
     callback back();
@@ -3830,6 +4029,7 @@ component SettingsPage inherits Rectangle {
             vertical-stretch: 1;
             Flickable {
                 visible: !root.is-empty && !root.sorting;
+                interactive: !root.locked;
                 content-height: page-col.preferred-height + Dock.pad;
                 page-col := VerticalLayout {
                     alignment: start;
@@ -6278,6 +6478,13 @@ export component AppWindow inherits Window {
     in-out property <string> tools-page;
     // Dashboard
     in property <string> run-state: "OFFLINE";
+    // The on-demand page (`OnDemandBody`).
+    in property <int> od-battery;
+    in property <bool> od-location;
+    in property <[string]> od-ssids;
+    in property <[bool]> od-selected;
+    in property <bool> od-selecting;
+    callback od-clicked(string);
     in property <string> profile-name;
     in property <string> up-speed: "0 B/s";
     in property <string> down-speed: "0 B/s";
@@ -7020,6 +7227,7 @@ export component AppWindow inherits Window {
                     open(p) => { root.tools-clicked(p); }
                 }
                 if root.tab == 3 && root.meta.known: SettingsPage {
+                    locked: od-body.dragging;
                     action-glyph: Glyphs.of(root.meta.action);
                     action2-glyph: Glyphs.of(root.meta.action2);
                     long-press: root.meta.long-press;
@@ -7040,6 +7248,16 @@ export component AppWindow inherits Window {
                     back => { root.tools-page = root.meta.parent; }
                     clicked(id) => { root.set-clicked(root.tools-page, id); }
                     toggled(id, on) => { root.set-toggled(root.tools-page, id, on); }
+                    od-body := OnDemandBody {
+                        visible: root.tools-page == "on-demand";
+                        height: root.tools-page == "on-demand" ? self.preferred-height : 0px;
+                        battery: root.od-battery;
+                        location: root.od-location;
+                        ssids: root.od-ssids;
+                        selected: root.od-selected;
+                        selecting: root.od-selecting;
+                        clicked(id) => { root.od-clicked(id); }
+                    }
                 }
                 if root.tab == 3 && root.tools-page == "editor": EditorPage {
                     width: parent.width;

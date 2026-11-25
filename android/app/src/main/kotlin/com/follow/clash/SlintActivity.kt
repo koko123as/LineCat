@@ -24,6 +24,8 @@ class SlintActivity : NativeActivity() {
     private var vpnCallback: ((Boolean) -> Unit)? = null
     private var documentCallback: ((android.net.Uri?) -> Unit)? = null
     private var permissionCallback: ((Boolean) -> Unit)? = null
+    private var permissionsCallback: (() -> Unit)? = null
+    private var settingsCallback: ((Boolean) -> Unit)? = null
     private val layoutListener = ViewTreeObserver.OnGlobalLayoutListener { reportEdges() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,6 +79,7 @@ class SlintActivity : NativeActivity() {
         super.onResume()
         UiBridge.activity = this
         window.decorView.post { reportEdges() }
+        UiBridge.resumed()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -93,6 +96,10 @@ class SlintActivity : NativeActivity() {
         documentCallback = null
         permissionCallback?.invoke(false)
         permissionCallback = null
+        permissionsCallback?.invoke()
+        permissionsCallback = null
+        settingsCallback?.invoke(false)
+        settingsCallback = null
         val exit = isFinishing && UiBridge.isStopped
         super.onDestroy()
         // Nothing runs once the UI is closed and the VPN is off, so the process goes with it
@@ -146,8 +153,36 @@ class SlintActivity : NativeActivity() {
             }
     }
 
+    /** Several runtime permissions in one prompt; [callback] runs once it is answered. */
+    fun askPermissions(permissions: Array<String>, callback: () -> Unit) {
+        permissionsCallback?.invoke()
+        permissionsCallback = callback
+        runCatching { requestPermissions(permissions, PERMISSIONS_REQUEST) }
+            .onFailure {
+                permissionsCallback = null
+                callback()
+            }
+    }
+
+    /** A settings page; [callback] gets true once the user is back from it, false when it did not open. */
+    fun launchForResult(intent: Intent, callback: (Boolean) -> Unit) {
+        settingsCallback?.invoke(false)
+        settingsCallback = callback
+        runCatching { startActivityForResult(intent, SETTINGS_REQUEST) }
+            .onFailure {
+                settingsCallback = null
+                callback(false)
+            }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSIONS_REQUEST) {
+            val callback = permissionsCallback
+            permissionsCallback = null
+            callback?.invoke()
+            return
+        }
         if (requestCode != PERMISSION_REQUEST) return
         val callback = permissionCallback
         permissionCallback = null
@@ -159,6 +194,12 @@ class SlintActivity : NativeActivity() {
             val callback = vpnCallback
             vpnCallback = null
             callback?.invoke(resultCode == RESULT_OK)
+            return
+        }
+        if (requestCode == SETTINGS_REQUEST) {
+            val callback = settingsCallback
+            settingsCallback = null
+            callback?.invoke(true)
             return
         }
         if (requestCode == DOCUMENT_REQUEST) {
@@ -175,6 +216,8 @@ class SlintActivity : NativeActivity() {
         const val NOTIFICATION_REQUEST = 0x4e54
         const val DOCUMENT_REQUEST = 0x4443
         const val PERMISSION_REQUEST = 0x5052
+        const val PERMISSIONS_REQUEST = 0x5053
+        const val SETTINGS_REQUEST = 0x5354
         const val PREFERENCES = "seasoncat_shell"
         const val NOTIFICATION_ASKED = "notification_asked"
     }

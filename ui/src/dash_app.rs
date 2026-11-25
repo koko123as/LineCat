@@ -490,7 +490,9 @@ impl App {
             return;
         }
         self.publish_services();
-        let proxy = if self.run_state.lock().unwrap().as_str() == "STARTED" {
+        let proxy = if self.run_state.lock().unwrap().as_str() == "STARTED"
+            && !crate::on_demand_app::parked()
+        {
             ""
         } else {
             "DIRECT"
