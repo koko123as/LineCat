@@ -2047,7 +2047,7 @@ component SetRowView inherits Rectangle {
     in property <bool> divider;
     callback clicked(string);
     callback toggled(string, bool);
-    property <bool> leading: root.item.glyph != "" && root.item.kind != "value";
+    property <bool> leading: root.item.glyph != "" && root.item.kind != "value" && root.item.kind != "check";
     height: root.item.subtitle != "" ? 64px : 52px;
     background: ta.pressed && root.item.kind != "person" ? Theme.s.inset : transparent;
     opacity: root.item.enabled ? 1 : 0.45;
@@ -2055,6 +2055,11 @@ component SetRowView inherits Rectangle {
         padding-left: 16px;
         padding-right: 16px;
         spacing: 14px;
+        if root.item.kind == "check": VerticalLayout {
+            alignment: center;
+            width: 24px;
+            if root.item.on: Icon { glyph: Icons.check; size: 20px; tint: Theme.s.primary; }
+        }
         if root.leading && root.item.kind == "person": VerticalLayout {
             alignment: center;
             Rectangle {
@@ -2098,6 +2103,7 @@ component SetRowView inherits Rectangle {
             alignment: center;
             Icon { glyph: Icons.external; size: 20px; tint: Theme.s.on-surface-variant; }
         }
+        if root.item.kind == "check" && root.item.glyph == "edit": Rectangle { width: 40px; }
     }
     if root.divider: Rectangle {
         x: root.leading ? 54px : 16px;
@@ -2106,7 +2112,16 @@ component SetRowView inherits Rectangle {
         height: 1px;
         background: Theme.s.outline-variant.with-alpha(0.6);
     }
+    if root.item.kind == "check" && root.item.glyph == "edit": IconButton {
+        x: parent.width - self.width - 8px;
+        y: (parent.height - self.height) / 2;
+        glyph: Icons.edit;
+        tint: Theme.s.on-surface-variant;
+        clicked => { root.clicked("edit:" + root.item.id); }
+    }
     ta := TouchArea {
+        width: root.item.kind == "check" && root.item.glyph == "edit" ? parent.width - 56px : parent.width;
+        x: 0;
         enabled: root.item.enabled && root.item.kind != "person";
         clicked => {
             if (root.item.kind == "toggle") {
@@ -2160,11 +2175,18 @@ component SettingsPage inherits Rectangle {
     in property <bool> can-back: true;
     in property <[SetSection]> sections;
     in property <length> bottom-gap: 24px;
+    in property <string> action-glyph;
     callback back();
+    callback action();
     callback clicked(string);
     callback toggled(string, bool);
     VerticalLayout {
-        AppBar { title: root.title; can-back: root.can-back; back => { root.back(); } }
+        AppBar {
+            title: root.title;
+            can-back: root.can-back;
+            back => { root.back(); }
+            if root.action-glyph != "": VerticalLayout { alignment: center; IconButton { glyph: root.action-glyph; tint: Theme.s.on-surface; clicked => { root.action(); } } }
+        }
         Flickable {
             content-height: page-col.preferred-height;
             page-col := VerticalLayout {
@@ -4020,6 +4042,7 @@ export component AppWindow inherits Window {
                 if (root.tab == 3 && root.tools-page == "hosts") { root.tools-page = "general"; return accept; }
                 if (root.tab == 3 && root.tools-page == "list") { root.tools-page = root.list-parent; return accept; }
                 if (root.tab == 3 && root.tools-page == "network") { root.tools-page = "advanced"; return accept; }
+                if (root.tab == 3 && root.tools-page == "user-agents") { root.tools-page = "general"; return accept; }
                 if (root.tab == 3 && root.tools-page != "") {
                     root.tools-page = "";
                     return accept;
@@ -4161,13 +4184,15 @@ export component AppWindow inherits Window {
                     sections: root.tools-sections;
                     open(p) => { root.tools-clicked(p); }
                 }
-                if root.tab == 3 && (root.tools-page == "general" || root.tools-page == "developer" || root.tools-page == "hosts" || root.tools-page == "backup" || root.tools-page == "advanced" || root.tools-page == "network" || root.tools-page == "list"): SettingsPage {
+                if root.tab == 3 && (root.tools-page == "general" || root.tools-page == "developer" || root.tools-page == "hosts" || root.tools-page == "backup" || root.tools-page == "advanced" || root.tools-page == "network" || root.tools-page == "list" || root.tools-page == "user-agents"): SettingsPage {
+                    action-glyph: root.tools-page == "user-agents" ? Icons.plus : "";
+                    action => { root.set-clicked(root.tools-page, "action"); }
                     width: parent.width;
                     height: parent.height;
-                    title: root.tools-page == "general" ? "常规" : root.tools-page == "developer" ? "开发者模式" : root.tools-page == "backup" ? "备份与恢复" : root.tools-page == "advanced" ? "进阶配置" : root.tools-page == "network" ? "网络" : root.tools-page == "list" ? root.list-title : "Hosts";
+                    title: root.tools-page == "general" ? "常规" : root.tools-page == "developer" ? "开发者模式" : root.tools-page == "backup" ? "备份与恢复" : root.tools-page == "advanced" ? "进阶配置" : root.tools-page == "network" ? "网络" : root.tools-page == "list" ? root.list-title : root.tools-page == "user-agents" ? "用户代理" : "Hosts";
                     sections: root.page-sections;
                     bottom-gap: root.tools-page == "hosts" || root.tools-page == "list" ? 96px : 24px;
-                    back => { root.tools-page = root.tools-page == "hosts" ? "general" : root.tools-page == "list" ? root.list-parent : root.tools-page == "network" ? "advanced" : ""; }
+                    back => { root.tools-page = root.tools-page == "hosts" ? "general" : root.tools-page == "list" ? root.list-parent : root.tools-page == "network" ? "advanced" : root.tools-page == "user-agents" ? "general" : ""; }
                     clicked(id) => { root.set-clicked(root.tools-page, id); }
                     toggled(id, on) => { root.set-toggled(root.tools-page, id, on); }
                 }

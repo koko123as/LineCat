@@ -325,6 +325,20 @@ pub fn check_ports(values: [&str; 3]) -> Result<[i64; 3], String> {
     Ok(out)
 }
 
+/// `UserAgentsView`: the default, then each one with its edit button; the picked one checked.
+pub fn user_agents(settings: &Settings) -> Vec<SetSection> {
+    let g = &settings.general;
+    let mut rows = vec![SetRow {
+        on: g.global_ua.is_none(),
+        ..row("ua:", "check", "", "默认", "")
+    }];
+    rows.extend(g.user_agents.iter().enumerate().map(|(i, u)| SetRow {
+        on: g.global_ua.as_deref() == Some(u.as_str()),
+        ..row(&format!("ua:{i}"), "check", "edit", u, "")
+    }));
+    vec![section("", "", rows)]
+}
+
 /// `validateCidr`: an IPv4 or IPv6 address with a prefix length in range.
 pub fn valid_cidr(value: &str) -> bool {
     let Some((addr, prefix)) = value.split_once('/') else {
@@ -436,15 +450,6 @@ pub fn choices(settings: &Settings, key: &str) -> Vec<(String, String, bool)> {
             .iter()
             .map(|t| (t.to_string(), format!("{t} ms"), *t == g.delay_test_timeout))
             .collect(),
-        "user-agent" => {
-            std::iter::once(("".to_string(), "默认".to_string(), g.global_ua.is_none()))
-                .chain(
-                    g.user_agents
-                        .iter()
-                        .map(|u| (u.clone(), u.clone(), g.global_ua.as_deref() == Some(u))),
-                )
-                .collect()
-        }
         "congestion" => crate::store::CONGESTION_CONTROLLERS
             .iter()
             .map(|c| {
@@ -456,12 +461,14 @@ pub fn choices(settings: &Settings, key: &str) -> Vec<(String, String, bool)> {
     }
 }
 
-/// `_PortForm`'s check of the mixed port, and the account and secret fields'.
+/// The input dialogs' checks: the value as saved, or what is wrong with it.
 pub fn check_input(key: &str, value: &str) -> Result<String, String> {
     let value = value.trim();
     match key {
         "auth-user" => Ok(value.replace(':', "")),
-        "user-agent-add" if value.is_empty() => Err("用户代理不能为空".into()),
+        k if (k == "user-agent-add" || k.starts_with("ua-edit:")) && value.is_empty() => {
+            Err("用户代理不能为空".into())
+        }
         "dav-file" if value.is_empty() => Err("文件不能为空".into()),
         "mtu" => {
             let (min, max, _) = crate::store::TUN_MTU;
@@ -531,6 +538,14 @@ mod tests {
     fn cidr_and_network_rows() {
         use super::*;
         assert_eq!(check_ports(["7890", "0", "0"]), Ok([7890, 0, 0]));
+        let mut s = Settings::default();
+        s.general.user_agents = vec!["a/1".into(), "b/2".into()];
+        s.general.global_ua = Some("b/2".into());
+        let rows: Vec<SetRow> = user_agents(&s)[0].rows.iter().collect();
+        assert_eq!(rows.len(), 3);
+        assert!(!rows[0].on && !rows[1].on && rows[2].on);
+        assert_eq!(rows[2].id, "ua:1");
+        assert!(check_input("ua-edit:0", " ").is_err());
         assert_eq!(
             check_ports(["7890", "7890", "0"]).unwrap_err(),
             "请输入不同的端口"

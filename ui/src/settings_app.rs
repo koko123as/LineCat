@@ -94,6 +94,19 @@ impl App {
             if key.starts_with("list:") {
                 a.list_set(&key, None);
             }
+            if let Some(i) = key
+                .strip_prefix("ua-edit:")
+                .and_then(|i| i.parse::<usize>().ok())
+            {
+                a.update_general(Effect::Reapply, |g| {
+                    if i < g.user_agents.len() {
+                        let old = g.user_agents.remove(i);
+                        if g.global_ua.as_deref() == Some(old.as_str()) {
+                            g.global_ua = None;
+                        }
+                    }
+                });
+            }
             if let Some(host) = key.strip_prefix("host:") {
                 a.update_general(Effect::Reapply, |g| {
                     g.hosts.remove(host);
@@ -126,6 +139,7 @@ impl App {
                 "backup" => app.backup_sections(&settings),
                 "advanced" => settings_view::advanced(&settings),
                 "network" => settings_view::network(&settings),
+                "user-agents" => settings_view::user_agents(&settings),
                 "list" => {
                     let key = list_target().lock().unwrap().0.clone();
                     let mut s = settings.clone();
@@ -172,7 +186,7 @@ impl App {
 
     fn open_choice(self: &Arc<Self>, key: &str, title: &str) {
         let settings = self.store.lock().unwrap().state.settings.clone();
-        let mut items: Vec<ActionItem> = choices(&settings, key)
+        let items: Vec<ActionItem> = choices(&settings, key)
             .into_iter()
             .map(|(id, label, checked)| ActionItem {
                 id: format!("{key}:{id}").into(),
@@ -183,16 +197,6 @@ impl App {
                 ..Default::default()
             })
             .collect();
-        if key == "user-agent" {
-            items.push(ActionItem {
-                id: "user-agent-add:".into(),
-                glyph: "edit".into(),
-                label: "添加".into(),
-                enabled: true,
-                section: true,
-                ..Default::default()
-            });
-        }
         let title: SharedString = title.into();
         self.ui(move |ui| {
             ui.set_choice_title(title);
@@ -263,7 +267,31 @@ impl App {
     fn set_clicked(self: &Arc<Self>, page: &str, id: &str) {
         let g = self.store.lock().unwrap().state.settings.general.clone();
         match (page, id) {
-            ("general", "user-agent") => self.open_choice("user-agent", "用户代理"),
+            ("general", "user-agent") => self.open_page("user-agents"),
+            ("user-agents", "action") => self.open_input("user-agent-add", "添加", "用户代理", ""),
+            ("user-agents", id) => {
+                if let Some(i) = id
+                    .strip_prefix("edit:ua:")
+                    .and_then(|i| i.parse::<usize>().ok())
+                {
+                    let value = g.user_agents.get(i).cloned().unwrap_or_default();
+                    self.open_input_with(
+                        &format!("ua-edit:{i}"),
+                        "编辑",
+                        "用户代理",
+                        &value,
+                        "",
+                        "",
+                        true,
+                    );
+                } else if let Some(i) = id.strip_prefix("ua:") {
+                    let ua = i
+                        .parse::<usize>()
+                        .ok()
+                        .and_then(|i| g.user_agents.get(i).cloned());
+                    self.update_general(Effect::Reapply, |g| g.global_ua = ua);
+                }
+            }
             ("general", "delay-timeout") => self.open_choice("delay-timeout", "延迟测试超时"),
             ("general", "port") => {
                 let ports = [g.mixed_port, g.http_port, g.socks_port]
@@ -434,10 +462,6 @@ impl App {
                     self.update_general(Effect::Reapply, |g| g.delay_test_timeout = ms);
                 }
             }
-            "user-agent" => self.update_general(Effect::Reapply, |g| {
-                g.global_ua = (!value.is_empty()).then_some(value)
-            }),
-            "user-agent-add" => self.open_input("user-agent-add", "添加", "用户代理", ""),
             "acc" => self.access_menu_picked(&value),
             "congestion" => {
                 self.update_settings(Effect::None, |s| s.network.congestion_controller = value)
@@ -477,6 +501,18 @@ impl App {
                 g.global_ua = Some(value);
             }),
             k if k.starts_with("list:") => self.list_set(k, Some(value)),
+            k if k.starts_with("ua-edit:") => {
+                if let Ok(i) = k["ua-edit:".len()..].parse::<usize>() {
+                    self.update_general(Effect::Reapply, |g| {
+                        if i < g.user_agents.len() && !g.user_agents.contains(&value) {
+                            let old = std::mem::replace(&mut g.user_agents[i], value.clone());
+                            if g.global_ua.as_deref() == Some(old.as_str()) {
+                                g.global_ua = Some(value);
+                            }
+                        }
+                    });
+                }
+            }
             _ => {
                 if let Some(old) = key.strip_prefix("host:") {
                     let (host, address) = (value.trim().to_string(), v2.trim().to_string());
