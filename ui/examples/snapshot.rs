@@ -464,6 +464,8 @@ fn service_cells(n: usize, sheet: bool) -> Vec<DashService> {
                 dot: dashboard::service_dot(Some(st), false),
                 place: dashboard::service_where(region, ip, node).into(),
                 loading,
+                ip: (*ip).into(),
+                region: (*region).into(),
             }
         })
         .collect()
@@ -871,6 +873,14 @@ fn main() {
         ("dash-svcsheet-small", 0, "", "", 1, "svcsheet"),
         ("dash-svcsheet-wide", 0, "", "", 1, "svcsheet"),
         ("dash-svcsheet-tablet", 0, "", "", 1, "svcsheet"),
+        ("dash-svcip", 0, "", "", 1, "svcip"),
+        ("dash-svcip-small", 0, "", "", 1, "svcip"),
+        ("dash-svcip-wide", 0, "", "", 1, "svcip"),
+        ("dash-svcip-tablet", 0, "", "", 1, "svcip"),
+        ("dash-preview", 0, "", "", 1, "dashpreview"),
+        ("dash-preview-small", 0, "", "", 1, "dashpreview"),
+        ("dash-preview-wide", 0, "", "", 1, "dashpreview"),
+        ("dash-preview-tablet", 0, "", "", 1, "dashpreview"),
         ("dash-svcmanage", 0, "", "", 1, "svcsheet-manage"),
         ("dash-svcmanage-small", 0, "", "", 1, "svcsheet-manage"),
         ("dash-svcmanage-wide", 0, "", "", 1, "svcsheet-manage"),
@@ -1146,9 +1156,27 @@ fn main() {
         };
         window.set_size(slint::PhysicalSize::new(w, h));
         ui.set_dash_editing(*overlay == "edit" || overlay.starts_with("drag:"));
-        ui.set_ip_sheet_open(*overlay == "ipsheet");
+        ui.set_ip_sheet_open(matches!(*overlay, "ipsheet" | "svcip"));
+        // "svcip": a service row's address opened over the service sheet.
+        ui.set_ipq_ip(
+            if *overlay == "svcip" {
+                "198.51.100.7"
+            } else {
+                ""
+            }
+            .into(),
+        );
+        ui.set_ipq_other(DashStatus {
+            ip: "198.51.100.7".into(),
+            country: "JP".into(),
+            kind: "机房".into(),
+            quality: 2,
+            org: "Example Cloud".into(),
+            probing: false,
+            failed: false,
+        });
         ui.set_mem_sheet_open(*overlay == "memsheet");
-        ui.set_svc_sheet_open(overlay.starts_with("svcsheet"));
+        ui.set_svc_sheet_open(overlay.starts_with("svcsheet") || *overlay == "svcip");
         ui.set_svc_sheet_page(if *overlay == "svcsheet-manage" {
             "manage".into()
         } else {
@@ -1268,6 +1296,12 @@ fn main() {
         } else {
             ui.set_tools_page((*page).into());
             ui.set_profiles_page("".into());
+        }
+        if *overlay == "dashpreview" {
+            ui.set_editor_title("我的机场".into());
+            ui.set_editor_text("mixed-port: 7890\nmode: rule\nlog-level: error\nproxies:\n  - name: 香港 01\n    type: ss\n".into());
+            ui.set_editor_readonly(true);
+            ui.set_profiles_page("preview".into());
         }
         ui.set_proxy_style(ProxyStyle {
             kind: if matches!(*overlay, "tab" | "loose" | "tabs" | "groupmenu") {

@@ -5,7 +5,7 @@ use crate::dashboard;
 use crate::drag;
 use crate::settings_app::Effect;
 use crate::{
-    App, AppWindow, DashAdd, DashProfileDetail, DashService, DashStats, ProviderRow,
+    App, AppWindow, DashAdd, DashProfileDetail, DashService, DashStats, DashStatus, ProviderRow,
     ServiceManageRow,
 };
 use serde_json::{json, Value};
@@ -39,6 +39,8 @@ impl App {
     pub(crate) fn bind_dashboard(self: &Arc<Self>, ui: &AppWindow) {
         let a = self.clone();
         ui.on_dash_move(move |from, to| a.move_dashboard(from as usize, to as usize));
+        let a = self.clone();
+        ui.on_open_service_ip(move |ip, region| a.open_service_ip(ip.into(), region.into()));
         let a = self.clone();
         ui.on_dash_card_height(move |i, h| {
             let Ok(i) = usize::try_from(i) else { return };
@@ -259,6 +261,38 @@ impl App {
         });
     }
 
+    /// `showIpQualitySheet` for a service's address: its region at once, then the lookup.
+    fn open_service_ip(self: &Arc<Self>, ip: String, region: String) {
+        let shown = ip.clone();
+        self.ui(move |ui| {
+            ui.set_ipq_ip(shown.clone().into());
+            ui.set_ipq_other(DashStatus {
+                ip: shown.into(),
+                country: region.into(),
+                probing: true,
+                ..Default::default()
+            });
+            ui.set_ip_sheet_open(true);
+        });
+        self.spawn(move |app| {
+            let quality = dashboard::lookup_quality(&ip);
+            app.ui(move |ui| {
+                if ui.get_ipq_ip().as_str() != ip {
+                    return;
+                }
+                let mut s = ui.get_ipq_other();
+                let (org, kind, level) = quality
+                    .map(|q| (q.org, q.kind, q.level))
+                    .unwrap_or_else(|| (String::new(), "类型未知".into(), 0));
+                s.org = org.into();
+                s.kind = kind.into();
+                s.quality = level;
+                s.probing = false;
+                ui.set_ipq_other(s);
+            });
+        });
+    }
+
     /// The editor column's card heights, as many as it shows.
     fn dash_column(&self, count: i32) -> Vec<f32> {
         let mut heights = self.dash_heights.lock().unwrap().clone();
@@ -445,6 +479,8 @@ impl App {
                     dot: dashboard::service_dot(c.status.as_deref(), c.failed),
                     place: dashboard::service_where(&c.region, &c.ip, &c.node).into(),
                     loading: probing,
+                    ip: c.ip.clone().into(),
+                    region: c.region.clone().into(),
                 }
             };
             let cells: Vec<DashService> = enabled

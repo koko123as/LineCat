@@ -16,14 +16,14 @@ landed and what is left.
 | C3 batch C part 3 | "user agent menu and sort, real app icons" | User agents: long press opens the anchored menu (编辑 / 删除, delete asks 「确定删除当前用户代理吗？」 and clears the global UA when it was that one), the bar's sort turns the page into a drag list with ✓ to leave (no drag area outside sort mode), add no longer selects the new UA. Real app icons: `packages.icons` in UiBridge writes `getApplicationIcon` as 96px PNGs cached by package and update time, Rust decodes them (`app_icons`) into the `AppIcons` global, used by request rows, the connection detail and access control, with the monogram until an icon arrives. |
 | B3 dashboard services | "service status sheet and manage view" | Service card as `ServiceStatusCard`: service badges (Simple Icons marks from `assets/images/services`, status dot in a notch) with the status, a tap opens the sheet on a phone, ⚡ (check the shown ones, spinner) and › on wider dashboards, verdict hidden when stacked. `ServiceStatusSheet`: every enabled service with region · IP (or the node), status, tap checks one, ⚡ checks all; ⇄ opens `ServiceManageView`: switch services (the last one locked on, 显示在仪表盘 on the shown ones) and long-press drag to order, stored as `service_order` / `disabled_services` like `serviceOrder` / `disabledServices`. Checks are tracked per service. Region shows as its code, not a flag emoji. |
 | Fix editor and small window | "dashboard editor drag, addable rows, small window insets" | Editor drag is owned by the column (`drag.rs`): the lifted card follows the finger (scrolling near the top or above the dock), the others slide aside once its leading edge passes their middle, measured by each card's own height, and the order changes only on release. The phone column no longer stretches by `Dock.pad`, which had pushed the 可添加 rows under the dock. Insets follow fk-box's `pushInsets`: the decor view's bars plus the part `getWindowVisibleDisplayFrame` hides at the bottom (Flyme's small window), resent on resume, focus and multi-window changes; the surface-inset guesses are gone. Default log level is error (owner's choice, as FlClash). |
+| B4 dashboard sheets | "service IP sheet and runtime config preview" | A service row's address (region · IP, masked by 隐藏 IP) opens the IP quality sheet for that address (`showIpQualitySheet`): region at once, then the lookup; the status card still opens its own. The profile sheet's 👁 opens 运行时配置 (`PreviewProfileView`) over the dashboard, and back returns to the sheet. |
 
 ## Remaining
 
 - Batch B leftovers: LiveStatusButton and its deck (needs config warnings, update download and MITM consent first),
   the 已暂停 chip (FlClash's suspend is "current SSID in the excluded SSIDs", so it lands with the on-demand page and
   its Wi-Fi SSID bridge method), the connections table on tall
-  desktop windows, the 运行时配置 preview button in the profile sheet (with profile preview), the 扩展脚本 value
-  (with profile extensions).
+  desktop windows, the 扩展脚本 value (with profile extensions).
 - Phase 1 batch C, still open: developer (live status card test, update download test, both need the live status deck
   and update download first); the 「语言」 row waits on the owner. Switching to the split
   requests view already keeps the selection in the pane (`_settleDetail`, kept from C1). 添加到本地代理 in the node

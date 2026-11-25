@@ -110,6 +110,9 @@ export struct DashService {
     // The sheet's line under the name (`_OutboundIpLine`) and its checking state.
     place: string,
     loading: bool,
+    // Where the check left from; a tap on the address opens its IP quality sheet.
+    ip: string,
+    region: string,
 }
 
 // A row of `ServiceManageView`: shown on the dashboard, and the last enabled one locked on.
@@ -5621,6 +5624,11 @@ export component AppWindow inherits Window {
     in property <[ServiceManageRow]> dash-service-manage;
     in property <bool> dash-services-checking;
     callback dash-check-service(string);
+    // The IP quality sheet: the status card's address, or another one a service row opened.
+    in-out property <string> ipq-ip;
+    in property <DashStatus> ipq-other;
+    property <DashStatus> ipq: root.ipq-ip == "" ? root.dash-status : root.ipq-other;
+    callback open-service-ip(string, string);
     callback dash-service-move(int, int);
     callback dash-service-toggle(string, bool);
     in property <DashStats> dash-stats;
@@ -6074,6 +6082,7 @@ export component AppWindow inherits Window {
                 if (root.add-menu-open) { root.add-menu-open = false; return accept; }
                 if (root.link-open) { root.link-open = false; return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
+                if (root.tab == 0 && root.profiles-page == "preview") { root.profiles-page = ""; root.profile-sheet-open = true; return accept; }
                 if (root.tab == 2 && root.profiles-page != "") { root.profiles-page = ""; return accept; }
                 if (root.dav-open) { root.dav-open = false; return accept; }
                 if (root.ports-open) { root.ports-open = false; return accept; }
@@ -6158,7 +6167,7 @@ export component AppWindow inherits Window {
                     }
                     refresh-ip => { root.refresh-ip(); }
                     copy-ip(a) => { root.copy-text(a); }
-                    open-ip => { root.ip-sheet-open = true; }
+                    open-ip => { root.ipq-ip = ""; root.ip-sheet-open = true; }
                     fault-count: root.dash-fault-count;
                     switchable: root.profiles.length > 1;
                     open-faults => {
@@ -6270,14 +6279,17 @@ export component AppWindow inherits Window {
                     edit-file => { root.edit-file(); }
                     upload-file => { root.upload-file(); }
                 }
-                if root.tab == 2 && (root.profiles-page == "editor" || root.profiles-page == "preview"): EditorPage {
+                if (root.tab == 2 && root.profiles-page == "editor") || ((root.tab == 2 || root.tab == 0) && root.profiles-page == "preview"): EditorPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.editor-title;
                     text <=> root.editor-text;
                     readonly: root.editor-readonly;
                     save(t) => { root.editor-save(t); }
-                    back => { root.profiles-page = root.profiles-page == "editor" ? "edit" : ""; }
+                    back => {
+                        if (root.tab == 0) { root.profile-sheet-open = true; }
+                        root.profiles-page = root.profiles-page == "editor" ? "edit" : "";
+                    }
                 }
                 if root.tab == 3 && root.tools-page == "": Tools {
                     width: parent.width;
@@ -6765,6 +6777,7 @@ export component AppWindow inherits Window {
                     height: 64px;
                     background: svr-ta.pressed && !sr.loading ? Theme.s.block.with-alpha(0.5) : transparent;
                     border-radius: 16px;
+                    svr-ta := TouchArea { clicked => { if (!sr.loading) { root.dash-check-service(sr.id); } } }
                     HorizontalLayout {
                         padding-left: 12px;
                         padding-right: 16px;
@@ -6775,7 +6788,21 @@ export component AppWindow inherits Window {
                             spacing: 2px;
                             horizontal-stretch: 1;
                             Text { text: sr.label; font-size: 16px; color: Theme.s.on-surface; overflow: elide; }
-                            Text { text: sr.loading ? "…" : sr.place; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+                            if sr.loading || sr.ip == "": Text { text: sr.loading ? "…" : sr.place; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+                            if !sr.loading && sr.ip != "": HorizontalLayout {
+                                alignment: start;
+                                Rectangle {
+                                    border-radius: 6px;
+                                    background: sip-ta.pressed ? Theme.s.block : transparent;
+                                    sip-text := Text {
+                                        text: (sr.region == "" ? "" : sr.region + " · ") + (root.dash-hide-ip ? "*****" : sr.ip);
+                                        font-size: 13px;
+                                        color: Theme.s.on-surface-variant;
+                                        overflow: elide;
+                                    }
+                                    sip-ta := TouchArea { clicked => { root.open-service-ip(sr.ip, sr.region); } }
+                                }
+                            }
                         }
                         Text {
                             text: sr.status;
@@ -6795,7 +6822,6 @@ export component AppWindow inherits Window {
                         height: 1px;
                         background: Theme.s.outline-variant.with-alpha(0.6);
                     }
-                    svr-ta := TouchArea { clicked => { if (!sr.loading) { root.dash-check-service(sr.id); } } }
                 }
             }
             if root.svc-sheet-page == "manage": ServiceManageList {
@@ -6858,8 +6884,13 @@ export component AppWindow inherits Window {
             bottom-inset: root.bottom-inset;
             action-glyph: root.dash-profile.syncable ? (root.dash-profile.busy ? Icons.clock : Icons.sync) : "";
             action-enabled: !root.dash-profile.busy;
+            action2-glyph: Icons.eye;
             close => { root.profile-sheet-open = false; }
             action => { root.update-profile(root.dash-profile.id); }
+            action2 => {
+                root.profile-sheet-open = false;
+                root.preview-profile(root.dash-profile.id);
+            }
             HorizontalLayout {
                 spacing: 8px;
                 padding-top: 8px;
@@ -7025,21 +7056,21 @@ export component AppWindow inherits Window {
                                         height: 48px;
                                         spacing: 12px;
                                         Text { text: "IP 地址"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.dash-hide-ip ? "*****" : root.dash-status.ip; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: root.dash-hide-ip ? "*****" : root.ipq.ip; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                     Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
                                         Text { text: "类型"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.dash-status.kind == "" ? "—" : root.dash-status.kind; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: root.ipq.kind == "" ? "—" : root.ipq.kind; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                     Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
                                         Text { text: "等级"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.dash-status.quality == 1 ? "优" : root.dash-status.quality == 2 ? "普通" : root.dash-status.quality == 3 ? "风险" : "—"; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: root.ipq.quality == 1 ? "优" : root.ipq.quality == 2 ? "普通" : root.ipq.quality == 3 ? "风险" : "—"; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                 }
                             }
@@ -7056,14 +7087,14 @@ export component AppWindow inherits Window {
                                         height: 48px;
                                         spacing: 12px;
                                         Text { text: "区域"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.dash-status.country == "" ? "—" : root.dash-status.country; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: root.ipq.country == "" ? "—" : root.ipq.country; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                     Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
                                         Text { text: "组织"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.dash-status.org == "" ? "—" : root.dash-status.org; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: root.ipq.org == "" ? "—" : root.ipq.org; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                 }
                             }
