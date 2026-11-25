@@ -130,18 +130,28 @@ jobs:
         with:
           cache-read-only: true
 
-      # The repository has no signing secrets, so this run signs with a throwaway key made
-      # here; an APK from one run will not install over one from another.
-      - name: Throwaway signing key
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          pass="$(openssl rand -hex 16)"
-          keytool -genkeypair -v -keystore android/app/keystore.jks -alias seasoncat-ci \
-            -storepass "$pass" -keypass "$pass" -keyalg RSA -keysize 2048 -validity 3650 \
-            -dname "CN=SeasonCat CI throwaway"
+          if [ -n "$KEYSTORE" ] && [ -n "$KEY_ALIAS" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "$KEYSTORE" | base64 --decode > android/app/keystore.jks
+            alias="$KEY_ALIAS"; spass="$STORE_PASSWORD"; kpass="$KEY_PASSWORD"
+            echo "Signing with the repository release key"
+          else
+            spass="$(openssl rand -hex 16)"; kpass="$spass"; alias=seasoncat-ci
+            keytool -genkeypair -v -keystore android/app/keystore.jks -alias "$alias" \
+              -storepass "$spass" -keypass "$kpass" -keyalg RSA -keysize 2048 -validity 3650 \
+              -dname "CN=SeasonCat CI throwaway"
+            echo "::warning::No signing secrets; this APK will not install over one from another run"
+          fi
           {
-            echo "keyAlias=seasoncat-ci"
-            echo "storePassword=$pass"
-            echo "keyPassword=$pass"
+            echo "keyAlias=$alias"
+            echo "storePassword=$spass"
+            echo "keyPassword=$kpass"
           } >> android/local.properties
 
       - name: Get Flutter dependencies
