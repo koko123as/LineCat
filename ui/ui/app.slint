@@ -3235,6 +3235,9 @@ component RequestsPage inherits Rectangle {
     in-out property <bool> searching;
     in-out property <string> query;
     out property <bool> split: !root.mobile && root.width >= 392px + 496px;
+    // `_settleDetail`: the selection moves between the sheet and the pane.
+    callback split-changed(bool);
+    changed split => { root.split-changed(root.split); }
     callback back();
     callback search(string);
     callback open-menu();
@@ -4276,6 +4279,9 @@ export component AppWindow inherits Window {
                     edit-condition(i) => { root.req-edit-condition(i); }
                     remove-condition(i) => { root.req-remove-condition(i); }
                     clear-conditions => { root.req-clear-conditions(); }
+                    split-changed(split) => {
+                        if (split) { root.req-sheet-open = false; } else if (root.req-detail.has) { root.req-sheet-open = true; }
+                    }
                     select(id, split) => {
                         if (!split) { root.req-sheet-open = true; }
                         root.req-select(id, split);
