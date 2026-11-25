@@ -3869,6 +3869,14 @@ export component AppWindow inherits Window {
     in property <[SetSection]> tools-sections;
     in property <[SetSection]> page-sections;
     in property <string> list-title;
+    // The port form (`PortForm`)
+    in-out property <bool> ports-open;
+    in-out property <string> port-mixed;
+    in-out property <string> port-http;
+    in-out property <string> port-socks;
+    pure callback ports-check(string, string, string) -> string;
+    callback ports-submit(string, string, string);
+    property <string> ports-error: root.ports-open ? root.ports-check(root.port-mixed, root.port-http, root.port-socks) : "";
     in property <string> list-parent;
     in property <bool> pure-black;
     in property <string> app-version;
@@ -4006,6 +4014,7 @@ export component AppWindow inherits Window {
                 if (root.tab == 2 && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
                 if (root.tab == 2 && root.profiles-page != "") { root.profiles-page = ""; return accept; }
                 if (root.dav-open) { root.dav-open = false; return accept; }
+                if (root.ports-open) { root.ports-open = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "access" && root.acc-searching) { root.acc-query = ""; root.acc-searching = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "access") { root.acc-back(); return accept; }
                 if (root.tab == 3 && root.tools-page == "hosts") { root.tools-page = "general"; return accept; }
@@ -4666,6 +4675,31 @@ export component AppWindow inherits Window {
                     clicked => {
                         root.input-open = false;
                         root.input-submit(root.input-key, root.input-value, root.input-value2);
+                    }
+                }
+            }
+        }
+
+        if root.ports-open: Dialog {
+            title: "端口";
+            keyboard: root.keyboard;
+            top: root.top-inset;
+            dismiss => { root.ports-open = false; }
+            Field { label: "混合端口"; text <=> root.port-mixed; input-type: InputType.number; init => { self.focus-input(); } }
+            Field { label: "端口"; text <=> root.port-http; input-type: InputType.number; }
+            Field { label: "Socks端口"; text <=> root.port-socks; input-type: InputType.number; }
+            if root.ports-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.ports-error; font-size: 13px; color: Theme.s.error; wrap: word-wrap; } }
+            HorizontalLayout {
+                spacing: 8px;
+                TextButton { text: "重置"; clicked => { root.port-mixed = "7890"; root.port-http = "0"; root.port-socks = "0"; } }
+                Rectangle { horizontal-stretch: 1; }
+                TextButton { text: "取消"; clicked => { root.ports-open = false; } }
+                TextButton {
+                    text: "确定";
+                    enabled: root.ports-error == "";
+                    clicked => {
+                        root.ports-open = false;
+                        root.ports-submit(root.port-mixed, root.port-http, root.port-socks);
                     }
                 }
             }

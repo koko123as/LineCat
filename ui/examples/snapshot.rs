@@ -328,14 +328,12 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             .collect();
         ui.set_choice_items(ModelRc::new(VecModel::from(items)));
     }
-    ui.set_input_open(overlay.starts_with("input:"));
+    ui.set_input_open(false);
+    ui.set_ports_open(overlay == "input:port");
     if overlay == "input:port" {
-        ui.set_input_key("port".into());
-        ui.set_input_title("端口".into());
-        ui.set_input_label("混合端口".into());
-        ui.set_input_value("80".into());
-        ui.set_input_label2("".into());
-        ui.set_input_number(true);
+        ui.set_port_mixed("80".into());
+        ui.set_port_http("0".into());
+        ui.set_port_socks("7891".into());
     }
 }
 

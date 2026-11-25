@@ -310,8 +310,8 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
     set(&mut c, "routing-mark", 0.into());
     let general = &settings.general;
     set(&mut c, "mixed-port", general.mixed_port.into());
-    set(&mut c, "port", 0.into());
-    set(&mut c, "socks-port", 0.into());
+    set(&mut c, "port", general.http_port.into());
+    set(&mut c, "socks-port", general.socks_port.into());
     set(&mut c, "redir-port", 0.into());
     set(&mut c, "tproxy-port", 0.into());
     set(&mut c, "allow-lan", general.allow_lan.into());

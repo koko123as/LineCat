@@ -100,6 +100,9 @@ pub struct General {
     pub user_agents: Vec<String>,
     pub check_certificate: bool,
     pub mixed_port: i64,
+    /// `port` and `socksPort`; 0 is off.
+    pub http_port: i64,
+    pub socks_port: i64,
     pub allow_lan: bool,
     pub external_controller: bool,
     pub secret: String,
@@ -127,6 +130,8 @@ impl Default for General {
             user_agents: DEFAULT_USER_AGENTS.iter().map(|s| s.to_string()).collect(),
             check_certificate: true,
             mixed_port: 7890,
+            http_port: 0,
+            socks_port: 0,
             allow_lan: false,
             external_controller: false,
             secret: String::new(),

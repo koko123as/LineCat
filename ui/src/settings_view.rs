@@ -302,6 +302,29 @@ pub fn list(items: &[String]) -> Vec<SetSection> {
     vec![section("", "", rows)]
 }
 
+/// `PortForm._validate` on Android (mixed, http and socks): each in 1024..=49151, the
+/// last two may be 0 (off), and no two the same.
+pub fn check_ports(values: [&str; 3]) -> Result<[i64; 3], String> {
+    const LABELS: [&str; 3] = ["混合端口", "端口", "Socks端口"];
+    let mut out = [0i64; 3];
+    for (i, v) in values.iter().enumerate() {
+        let v = v.trim();
+        let label = LABELS[i];
+        if v.is_empty() {
+            return Err(format!("{label}不能为空"));
+        }
+        let port: i64 = v.parse().map_err(|_| format!("{label}必须为数字"))?;
+        if !(i > 0 && port == 0) && !(1024..=49151).contains(&port) {
+            return Err(format!("{label} 必须在 1024 到 49151 之间"));
+        }
+        if port != 0 && out[..i].contains(&port) {
+            return Err("请输入不同的端口".into());
+        }
+        out[i] = port;
+    }
+    Ok(out)
+}
+
 /// `validateCidr`: an IPv4 or IPv6 address with a prefix length in range.
 pub fn valid_cidr(value: &str) -> bool {
     let Some((addr, prefix)) = value.split_once('/') else {
@@ -437,18 +460,6 @@ pub fn choices(settings: &Settings, key: &str) -> Vec<(String, String, bool)> {
 pub fn check_input(key: &str, value: &str) -> Result<String, String> {
     let value = value.trim();
     match key {
-        "port" => {
-            if value.is_empty() {
-                return Err("混合端口不能为空".into());
-            }
-            let port: i64 = value
-                .parse()
-                .map_err(|_| "混合端口必须为数字".to_string())?;
-            if !(1024..=49151).contains(&port) {
-                return Err("混合端口 必须在 1024 到 49151 之间".into());
-            }
-            Ok(port.to_string())
-        }
         "auth-user" => Ok(value.replace(':', "")),
         "user-agent-add" if value.is_empty() => Err("用户代理不能为空".into()),
         "dav-file" if value.is_empty() => Err("文件不能为空".into()),
@@ -519,6 +530,20 @@ mod tests {
     #[test]
     fn cidr_and_network_rows() {
         use super::*;
+        assert_eq!(check_ports(["7890", "0", "0"]), Ok([7890, 0, 0]));
+        assert_eq!(
+            check_ports(["7890", "7890", "0"]).unwrap_err(),
+            "请输入不同的端口"
+        );
+        assert_eq!(
+            check_ports(["0", "0", "0"]).unwrap_err(),
+            "混合端口 必须在 1024 到 49151 之间"
+        );
+        assert_eq!(check_ports(["7890", "", "0"]).unwrap_err(), "端口不能为空");
+        assert_eq!(
+            check_ports(["7890", "x", "0"]).unwrap_err(),
+            "端口必须为数字"
+        );
         assert!(valid_cidr("10.0.0.0/8"));
         assert!(valid_cidr("fd00::/8"));
         assert!(!valid_cidr("10.0.0.0/33"));
@@ -610,10 +635,6 @@ mod tests {
 
     #[test]
     fn inputs_are_checked_like_the_forms() {
-        assert_eq!(check_input("port", " 7899 ").unwrap(), "7899");
-        assert!(check_input("port", "80").is_err());
-        assert!(check_input("port", "x").is_err());
-        assert!(check_input("port", "").is_err());
         assert_eq!(check_input("auth-user", "a:b").unwrap(), "ab");
         assert!(check_input("user-agent-add", " ").is_err());
     }

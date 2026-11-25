@@ -71,6 +71,22 @@ impl App {
                 .unwrap_or_default()
                 .into()
         });
+        ui.on_ports_check(|m, h, s| {
+            settings_view::check_ports([&m, &h, &s])
+                .err()
+                .unwrap_or_default()
+                .into()
+        });
+        let a = self.clone();
+        ui.on_ports_submit(move |m, h, s| {
+            if let Ok([m, h, s]) = settings_view::check_ports([&m, &h, &s]) {
+                a.update_general(Effect::Reapply, |g| {
+                    g.mixed_port = m;
+                    g.http_port = h;
+                    g.socks_port = s;
+                });
+            }
+        });
         let a = self.clone();
         ui.on_input_submit(move |key, v1, v2| a.input_submit(&key, &v1, &v2));
         let a = self.clone();
@@ -216,7 +232,7 @@ impl App {
             value2.into(),
         );
         self.ui(move |ui| {
-            ui.set_input_number(key == "port" || key == "mtu");
+            ui.set_input_number(key == "mtu");
             ui.set_input_key(key);
             ui.set_input_title(title);
             ui.set_input_label(label);
@@ -250,7 +266,15 @@ impl App {
             ("general", "user-agent") => self.open_choice("user-agent", "用户代理"),
             ("general", "delay-timeout") => self.open_choice("delay-timeout", "延迟测试超时"),
             ("general", "port") => {
-                self.open_input("port", "端口", "混合端口", &g.mixed_port.to_string())
+                let ports = [g.mixed_port, g.http_port, g.socks_port]
+                    .map(|p| SharedString::from(p.to_string()));
+                self.ui(move |ui| {
+                    let [m, h, s] = ports;
+                    ui.set_port_mixed(m);
+                    ui.set_port_http(h);
+                    ui.set_port_socks(s);
+                    ui.set_ports_open(true);
+                });
             }
             ("general", "secret") => self.open_input("secret", "外部控制器密钥", "", &g.secret),
             ("general", "auth-user") => {
@@ -433,11 +457,6 @@ impl App {
             return;
         };
         match key {
-            "port" => {
-                if let Ok(port) = value.parse::<i64>() {
-                    self.update_general(Effect::Reapply, |g| g.mixed_port = port);
-                }
-            }
             "secret" => self.update_general(Effect::Reapply, |g| g.secret = value),
             "dav-file" => self.set_dav_file(&value),
             "mtu" => {
