@@ -94,8 +94,14 @@ object UiBridge {
 
     /** The activity came back to the front: permissions may have changed in the settings. */
     fun resumed() {
-        broadcast(JsonObject().apply { addProperty("ev", "resume") })
+        broadcast(JsonObject().apply {
+            addProperty("ev", "resume")
+            addProperty("fontScale", fontScale())
+        })
     }
+
+    /** `Configuration.fontScale`, which text follows unless the theme sets its own scale. */
+    private fun fontScale(): Float = GlobalState.application.resources.configuration.fontScale
 
     val isStopped: Boolean
         get() = ServiceState.runState.value == RunState.STOPPED
@@ -234,6 +240,7 @@ object UiBridge {
                 addProperty("wifi", onWifi)
                 edges?.let { add("insets", it) }
                 systemSeeds()?.let { add("seeds", it) }
+                addProperty("fontScale", fontScale())
             }
         }
 

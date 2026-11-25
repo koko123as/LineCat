@@ -20,6 +20,12 @@ export struct Scheme {
     error: color,
 }
 
+// `ThemeProps.fontFamily` and the text scale every font size is multiplied by.
+export global Type {
+    in property <float> scale: 1;
+    in property <string> family;
+}
+
 export global Theme {
     in property <Scheme> light;
     in property <Scheme> dark;
@@ -637,7 +643,7 @@ component TextButton inherits Rectangle {
         padding-right: 14px;
         Text {
             text: root.text;
-            font-size: 14px;
+            font-size: 14px * Type.scale;
             color: root.filled ? Theme.s.on-primary : (root.danger ? Theme.s.error : Theme.s.primary);
             vertical-alignment: center;
             horizontal-alignment: center;
@@ -694,7 +700,7 @@ component Fab inherits Rectangle {
         }
         if root.label != "": Text {
             text: root.label;
-            font-size: 15px;
+            font-size: 15px * Type.scale;
             color: Theme.s.on-primary-container;
             vertical-alignment: center;
         }
@@ -721,7 +727,7 @@ component AppBar inherits HorizontalLayout {
     Text {
         horizontal-stretch: 1;
         text: root.title;
-        font-size: 22px;
+        font-size: 22px * Type.scale;
         color: Theme.s.on-surface;
         vertical-alignment: center;
         overflow: elide;
@@ -734,7 +740,7 @@ component Empty inherits Rectangle {
     Text {
         text: root.text;
         color: Theme.s.on-surface-variant;
-        font-size: 14px;
+        font-size: 14px * Type.scale;
         horizontal-alignment: center;
         vertical-alignment: center;
         wrap: word-wrap;
@@ -782,7 +788,7 @@ component Chip inherits Rectangle {
             alignment: center;
             Rectangle { width: 6px; height: 6px; border-radius: 3px; background: root.tone; }
         }
-        Text { text: root.text; font-size: 12px; font-weight: 600; color: root.tone; vertical-alignment: center; }
+        Text { text: root.text; font-size: 12px * Type.scale; font-weight: 600; color: root.tone; vertical-alignment: center; }
     }
 }
 
@@ -805,7 +811,7 @@ component DashHeader inherits HorizontalLayout {
     height: 28px;
     spacing: 8px;
     VerticalLayout { alignment: center; Icon { glyph: root.glyph; size: 18px; tint: Theme.s.on-surface-variant; } }
-    Text { text: root.title; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; }
+    Text { text: root.title; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; }
     @children
     Rectangle { horizontal-stretch: 1; }
     if root.chevron: VerticalLayout { alignment: center; Icon { glyph: Icons.chevron; size: 18px; tint: Theme.s.on-surface-variant; } }
@@ -876,7 +882,7 @@ component StatusCard inherits DashCard {
                         height: 40px;
                         border-radius: 20px;
                         background: badge-ta.pressed ? Theme.s.inset : Theme.s.block;
-                        Text { text: root.status.country == "" ? "—" : root.status.country; font-size: 13px; font-weight: 700; color: Theme.s.on-surface; }
+                        Text { text: root.status.country == "" ? "—" : root.status.country; font-size: 13px * Type.scale; font-weight: 700; color: Theme.s.on-surface; }
                         badge-ta := TouchArea { clicked => { root.refresh(); } }
                     }
                 }
@@ -884,7 +890,7 @@ component StatusCard inherits DashCard {
                     spacing: 4px;
                     Text {
                         text: root.status.failed ? "检测失败" : root.status.ip == "" ? (root.status.probing ? "检测中…" : "—") : root.hide-ip ? "*****" : root.status.ip;
-                        font-size: root.compact || root.narrow ? 18px : 22px;
+                        font-size: (root.compact || root.narrow ? 18px : 22px) * Type.scale;
                         font-weight: 700;
                         color: root.status.failed ? Theme.s.error : Theme.s.on-surface;
                         overflow: elide;
@@ -893,7 +899,7 @@ component StatusCard inherits DashCard {
                             clicked => { root.open-ip(); }
                         }
                     }
-                    if root.status.failed: Text { text: "点击图标重试"; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                    if root.status.failed: Text { text: "点击图标重试"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
                     if !root.status.failed: HorizontalLayout {
                         spacing: 6px;
                         alignment: start;
@@ -909,14 +915,14 @@ component StatusCard inherits DashCard {
                 spacing: 20px;
                 VerticalLayout {
                     spacing: 2px;
-                    Text { text: "运行时长"; font-size: 12px; color: Theme.s.on-surface-variant; }
-                    Text { text: root.run-time; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; }
+                    Text { text: "运行时长"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; }
+                    Text { text: root.run-time; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
                 }
                 VerticalLayout {
                     spacing: 2px;
                     horizontal-stretch: 1;
-                    Text { text: "组织"; font-size: 12px; color: Theme.s.on-surface-variant; }
-                    Text { text: root.status.org == "" ? "—" : root.status.org; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+                    Text { text: "组织"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; }
+                    Text { text: root.status.org == "" ? "—" : root.status.org; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
                 }
             }
         }
@@ -975,9 +981,9 @@ component SpeedTile inherits Rectangle {
         HorizontalLayout {
             spacing: 6px;
             VerticalLayout { alignment: center; Icon { glyph: root.upload ? Icons.up : Icons.down; size: 16px; tint: root.tint; } }
-            Text { text: root.upload ? "上传" : "下载"; font-size: root.header ? 15px : 13px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; }
+            Text { text: root.upload ? "上传" : "下载"; font-size: (root.header ? 15px : 13px) * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
-            if root.peak: Text { text: root.upload ? root.traffic.up-peak : root.traffic.down-peak; font-size: 11px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+            if root.peak: Text { text: root.upload ? root.traffic.up-peak : root.traffic.down-peak; font-size: 11px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
         }
         // The figure's width comes from its character count as well as its measured width,
         // so a device font that draws bold digits wider than it measures, or a width measured
@@ -989,7 +995,7 @@ component SpeedTile inherits Rectangle {
                 x: 0;
                 y: parent.height - self.height;
                 text: root.figure;
-                font-size: root.fig-size;
+                font-size: (root.fig-size) * Type.scale;
                 font-weight: 700;
                 color: Theme.s.on-surface;
                 vertical-alignment: bottom;
@@ -1000,12 +1006,12 @@ component SpeedTile inherits Rectangle {
                 y: parent.height - self.height - 5px;
                 width: root.unit-w;
                 text: root.unit;
-                font-size: 12px;
+                font-size: 12px * Type.scale;
                 font-weight: 600;
                 color: Theme.s.on-surface-variant;
             }
         }
-        Text { text: root.upload ? root.traffic.up-total : root.traffic.down-total; font-size: 12px; color: Theme.s.on-surface-variant; }
+        Text { text: root.upload ? root.traffic.up-total : root.traffic.down-total; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; }
     }
 }
 
@@ -1038,13 +1044,13 @@ component ModeTile inherits Rectangle {
         alignment: center;
         spacing: 4px;
         HorizontalLayout { alignment: center; Icon { glyph: root.glyph; size: 18px; tint: root.active ? Theme.s.on-primary : Theme.s.on-surface-variant; } }
-        Text { text: root.label; font-size: 14px; font-weight: 600; horizontal-alignment: center; color: root.active ? Theme.s.on-primary : Theme.s.on-surface; }
+        Text { text: root.label; font-size: 14px * Type.scale; font-weight: 600; horizontal-alignment: center; color: root.active ? Theme.s.on-primary : Theme.s.on-surface; }
     }
     if root.inline: HorizontalLayout {
         alignment: center;
         spacing: 6px;
         VerticalLayout { alignment: center; Icon { glyph: root.glyph; size: 16px; tint: root.active ? Theme.s.on-primary : Theme.s.on-surface-variant; } }
-        Text { text: root.label; font-size: 14px; font-weight: 600; vertical-alignment: center; color: root.active ? Theme.s.on-primary : Theme.s.on-surface; }
+        Text { text: root.label; font-size: 14px * Type.scale; font-weight: 600; vertical-alignment: center; color: root.active ? Theme.s.on-primary : Theme.s.on-surface; }
     }
     TouchArea { clicked => { root.clicked(); } }
 }
@@ -1080,7 +1086,7 @@ component ModeBar inherits DashCard {
         HorizontalLayout {
             spacing: 8px;
             VerticalLayout { alignment: center; Icon { glyph: Icons.route; size: 18px; tint: Theme.s.on-surface-variant; } }
-            Text { text: "出站模式"; font-size: 14px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; }
+            Text { text: "出站模式"; font-size: 14px * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; }
         }
         Rectangle { horizontal-stretch: 0.2; }
         ModeTile { inline: true; glyph: Icons.rule; label: "规则"; active: root.mode == 0; clicked => { root.set-mode(0); } }
@@ -1115,8 +1121,8 @@ component VpnCard inherits DashCard {
             alignment: center;
             horizontal-stretch: 1;
             spacing: 2px;
-            Text { text: "VPN"; font-size: root.slim ? 14px : 16px; font-weight: 600; color: Theme.s.on-surface; }
-            if !root.slim: Text { text: root.on ? "已启用" : "已停用"; font-size: 12px; color: Theme.s.on-surface-variant; }
+            Text { text: "VPN"; font-size: (root.slim ? 14px : 16px) * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
+            if !root.slim: Text { text: root.on ? "已启用" : "已停用"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; }
         }
         VerticalLayout {
             alignment: center;
@@ -1159,7 +1165,7 @@ component ProfileDashCard inherits DashCard {
             spacing: 4px;
             Text {
                 text: root.profile.name == "" ? "添加配置" : root.profile.name;
-                font-size: 17px;
+                font-size: 17px * Type.scale;
                 font-weight: 600;
                 color: Theme.s.on-surface;
                 overflow: elide;
@@ -1176,18 +1182,18 @@ component ProfileDashCard inherits DashCard {
         }
         if root.profile.name != "": HorizontalLayout {
             spacing: 12px;
-            Text { text: root.profile.updated; font-size: 12px; color: Theme.s.on-surface-variant; horizontal-stretch: 1; overflow: elide; }
-            Text { text: root.profile.end; font-size: 12px; color: root.profile.warn ? Theme.warning : Theme.s.on-surface-variant; }
+            Text { text: root.profile.updated; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; horizontal-stretch: 1; overflow: elide; }
+            Text { text: root.profile.end; font-size: 12px * Type.scale; color: root.profile.warn ? Theme.warning : Theme.s.on-surface-variant; }
         }
         if root.profile.usage: VerticalLayout {
             spacing: 6px;
             padding-top: 4px;
             HorizontalLayout {
                 spacing: 4px;
-                Text { text: root.profile.percent; font-size: 20px; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 20px * 0.62) * 1.1; }
-                VerticalLayout { alignment: end; padding-bottom: 3px; Text { text: "已用"; font-size: 12px; color: Theme.s.on-surface-variant; } }
+                Text { text: root.profile.percent; font-size: 20px * Type.scale; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 20px * 0.62) * 1.1; }
+                VerticalLayout { alignment: end; padding-bottom: 3px; Text { text: "已用"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; } }
                 Rectangle { horizontal-stretch: 1; }
-                VerticalLayout { alignment: end; padding-bottom: 3px; Text { text: root.profile.used; font-size: 12px; color: Theme.s.on-surface-variant; } }
+                VerticalLayout { alignment: end; padding-bottom: 3px; Text { text: root.profile.used; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; } }
             }
             Rectangle {
                 height: 6px;
@@ -1228,7 +1234,7 @@ component GroupsDashCard inherits DashCard {
         if root.groups.length == 0: Text {
             height: 40px;
             text: root.running ? "暂无策略组" : "启动后在这里显示策略组";
-            font-size: 13px;
+            font-size: 13px * Type.scale;
             color: Theme.s.on-surface-variant;
             vertical-alignment: center;
         }
@@ -1254,14 +1260,14 @@ component GroupsDashCard inherits DashCard {
                             height: 34px;
                             border-radius: 10px;
                             background: Theme.s.card;
-                            Text { text: g.monogram; font-size: 14px; font-weight: 700; color: Theme.s.on-surface-variant; }
+                            Text { text: g.monogram; font-size: 14px * Type.scale; font-weight: 700; color: Theme.s.on-surface-variant; }
                         }
                     }
                     VerticalLayout {
                         alignment: center;
                         spacing: 1px;
-                        Text { text: g.name; font-size: 14px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
-                        Text { text: g.now; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                        Text { text: g.name; font-size: 14px * Type.scale; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+                        Text { text: g.now; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
                     }
                 }
             }
@@ -1291,7 +1297,7 @@ component IpDashCard inherits DashCard {
         }
         Text {
             text: root.address == "" ? "无网络" : root.address;
-            font-size: 22px;
+            font-size: 22px * Type.scale;
             font-weight: 700;
             color: root.address == "" ? Theme.s.on-surface-variant : Theme.s.on-surface;
             overflow: elide;
@@ -1305,7 +1311,7 @@ component IpDashCard inherits DashCard {
                 padding-left: 14px;
                 padding-right: 10px;
                 spacing: 8px;
-                Text { text: "局域网代理"; font-size: 14px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                Text { text: "局域网代理"; font-size: 14px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                 VerticalLayout { alignment: center; Switch { checked: root.allow-lan; toggled(v) => { root.set-lan(v); } } }
             }
         }
@@ -1422,7 +1428,7 @@ component ServiceDashCard inherits DashCard {
                         padding-left: 5px;
                         padding-right: 5px;
                         padding-bottom: 3px;
-                        Text { text: sv.status; font-size: 12px; font-weight: 600; color: sv.tone == 1 ? Theme.success : sv.tone == 2 ? Theme.warning : sv.tone == 3 ? Theme.s.error : Theme.s.on-surface-variant; wrap: word-wrap; max-height: 32px; overflow: elide; }
+                        Text { text: sv.status; font-size: 12px * Type.scale; font-weight: 600; color: sv.tone == 1 ? Theme.success : sv.tone == 2 ? Theme.warning : sv.tone == 3 ? Theme.s.error : Theme.s.on-surface-variant; wrap: word-wrap; max-height: 32px; overflow: elide; }
                     }
                 }
                 if !root.tiles: HorizontalLayout {
@@ -1430,7 +1436,7 @@ component ServiceDashCard inherits DashCard {
                     padding-right: 12px;
                     spacing: 8px;
                     VerticalLayout { alignment: center; ServiceBadge { service: sv.id; size: root.cell-h - 14px; radius: 7px; dot: sv.dot; } }
-                    Text { text: sv.status; font-size: 12px; font-weight: 600; color: sv.tone == 1 ? Theme.success : sv.tone == 2 ? Theme.warning : sv.tone == 3 ? Theme.s.error : Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                    Text { text: sv.status; font-size: 12px * Type.scale; font-weight: 600; color: sv.tone == 1 ? Theme.success : sv.tone == 2 ? Theme.warning : sv.tone == 3 ? Theme.s.error : Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
                 }
             }
         }
@@ -1457,8 +1463,8 @@ component StatsDashCard inherits DashCard {
             VerticalLayout {
                 alignment: center;
                 spacing: 2px;
-                Text { text: cell.n == "" ? "0" : cell.n; font-size: 22px; font-weight: 700; color: Theme.s.on-surface; horizontal-alignment: center; overflow: elide; }
-                Text { text: cell.l; font-size: 12px; color: Theme.s.on-surface-variant; horizontal-alignment: center; overflow: elide; }
+                Text { text: cell.n == "" ? "0" : cell.n; font-size: 22px * Type.scale; font-weight: 700; color: Theme.s.on-surface; horizontal-alignment: center; overflow: elide; }
+                Text { text: cell.l; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; horizontal-alignment: center; overflow: elide; }
             }
             st-ta := TouchArea { clicked => { root.open(ci); } }
         }
@@ -1475,8 +1481,8 @@ component MemoryDashCard inherits DashCard {
         spacing: 10px;
         alignment: start;
         DashHeader { glyph: Icons.memory; title: "内存信息"; }
-        Text { text: root.memory == "" ? "—" : root.memory; font-size: 22px; font-weight: 700; color: Theme.s.on-surface; }
-        Text { text: "常驻内存（含内核）"; font-size: 12px; color: Theme.s.on-surface-variant; }
+        Text { text: root.memory == "" ? "—" : root.memory; font-size: 22px * Type.scale; font-weight: 700; color: Theme.s.on-surface; }
+        Text { text: "常驻内存（含内核）"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; }
     }
 }
 
@@ -1581,7 +1587,7 @@ component DashSheet inherits Rectangle {
                 padding-left: root.can-back ? 4px : 20px;
                 padding-right: 8px;
                 if root.can-back: VerticalLayout { alignment: center; IconButton { glyph: Icons.back; tint: Theme.s.on-surface; clicked => { root.back(); } } }
-                Text { text: root.title; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                Text { text: root.title; font-size: 17px * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                 if root.action2-glyph != "": VerticalLayout { alignment: center; IconButton { glyph: root.action2-glyph; tint: Theme.s.on-surface; clicked => { root.action2(); } } }
                 if root.action-glyph != "": VerticalLayout { alignment: center; IconButton { glyph: root.action-glyph; tint: Theme.s.on-surface; enabled: root.action-enabled; loading: root.action-loading; clicked => { root.action(); } } }
                 VerticalLayout { alignment: center; IconButton { glyph: Icons.close; clicked => { root.close(); } } }
@@ -1609,8 +1615,8 @@ component SheetRow inherits HorizontalLayout {
     in property <string> value;
     height: 48px;
     spacing: 12px;
-    Text { text: root.label; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-    Text { text: root.value; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+    Text { text: root.label; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+    Text { text: root.value; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
 }
 
 // `_StatTile`: a count over its label.
@@ -1625,8 +1631,8 @@ component StatTile inherits Rectangle {
         padding-left: 16px;
         alignment: center;
         spacing: 2px;
-        Text { text: root.value == "" ? "…" : root.value; font-size: 22px; font-weight: 700; color: Theme.s.on-surface; overflow: elide; }
-        Text { text: root.label; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+        Text { text: root.value == "" ? "…" : root.value; font-size: 22px * Type.scale; font-weight: 700; color: Theme.s.on-surface; overflow: elide; }
+        Text { text: root.label; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
     }
 }
 
@@ -1682,14 +1688,14 @@ component ConnTableCard inherits DashCard {
                             spacing: 6px;
                             Text {
                                 text: root.counts[i];
-                                font-size: 14px;
+                                font-size: 14px * Type.scale;
                                 font-weight: 700;
                                 color: root.feed == i ? Theme.s.on-primary : Theme.s.on-surface;
                                 vertical-alignment: center;
                             }
                             Text {
                                 text: label;
-                                font-size: 13px;
+                                font-size: 13px * Type.scale;
                                 font-weight: 600;
                                 color: root.feed == i ? Theme.s.on-primary : Theme.s.on-surface-variant;
                                 vertical-alignment: center;
@@ -1726,7 +1732,7 @@ component ConnTableCard inherits DashCard {
                         alignment: c.end ? end : start;
                         Text {
                             text: c.label;
-                            font-size: 12px;
+                            font-size: 12px * Type.scale;
                             font-weight: 600;
                             color: Theme.s.on-surface-variant;
                             vertical-alignment: center;
@@ -1773,7 +1779,7 @@ component ConnTableCard inherits DashCard {
                     y: 0;
                     height: parent.height - 24px;
                     text: "暂无数据";
-                    font-size: 13px;
+                    font-size: 13px * Type.scale;
                     color: Theme.s.on-surface-variant;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -1799,7 +1805,7 @@ component ConnTableCard inherits DashCard {
                                     height: 22px;
                                     border-radius: 7px;
                                     background: Theme.s.block;
-                                    Text { text: cell.badge; font-size: 11px; font-weight: 700; color: Theme.s.on-surface-variant; }
+                                    Text { text: cell.badge; font-size: 11px * Type.scale; font-weight: 700; color: Theme.s.on-surface-variant; }
                                 }
                             }
                             if cell.badge != "" && root.cols[ci].id != "source": VerticalLayout {
@@ -1809,13 +1815,13 @@ component ConnTableCard inherits DashCard {
                                     width: cb.preferred-width + 12px;
                                     border-radius: 9px;
                                     background: Theme.s.block;
-                                    cb := Text { text: cell.badge; font-size: 11px; font-weight: 600; color: Theme.s.on-surface-variant; }
+                                    cb := Text { text: cell.badge; font-size: 11px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; }
                                 }
                             }
                             Text {
                                 horizontal-stretch: 1;
                                 text: cell.text;
-                                font-size: 13px;
+                                font-size: 13px * Type.scale;
                                 font-weight: cell.tone == 2 || cell.tone == 4 ? 600 : 400;
                                 color: cell.tone == 1 ? Theme.s.on-surface-variant : cell.tone == 3 ? Theme.s.error : cell.tone == 4 ? Theme.warning : Theme.s.on-surface;
                                 horizontal-alignment: root.cols[ci].end ? right : left;
@@ -1907,7 +1913,7 @@ component LiveStatusButton inherits Rectangle {
             if root.pill.kind == "downloading": ProgressRing { value: root.pill.progress; tint: root.fg; }
             if root.pill.kind == "starting": Spinner { width: 16px; height: 16px; indeterminate: true; }
         }
-        if root.pill.text != "": Text { text: root.pill.text; font-size: 13px; font-weight: 700; color: root.fg; vertical-alignment: center; }
+        if root.pill.text != "": Text { text: root.pill.text; font-size: 13px * Type.scale; font-weight: 700; color: root.fg; vertical-alignment: center; }
     }
     ta := TouchArea { clicked => { root.open(); } }
 }
@@ -1932,7 +1938,7 @@ component LiveNode inherits VerticalLayout {
             Icon { glyph: root.glyph; size: 22px; tint: root.tint; }
         }
     }
-    Text { text: root.label; font-size: 12px; font-weight: root.emphasized ? 600 : 400; color: root.label-color; horizontal-alignment: center; overflow: elide; }
+    Text { text: root.label; font-size: 12px * Type.scale; font-weight: root.emphasized ? 600 : 400; color: root.label-color; horizontal-alignment: center; overflow: elide; }
 }
 
 // `_HeroChip`.
@@ -1944,7 +1950,7 @@ component LiveChip inherits Rectangle {
     width: min(t.preferred-width + 20px, 120px);
     border-radius: 11px;
     background: Theme.s.card;
-    t := Text { x: 10px; width: parent.width - 20px; text: root.text; font-size: 13px; font-weight: root.emphasized ? 600 : 400; color: root.tint; vertical-alignment: center; horizontal-alignment: center; overflow: elide; }
+    t := Text { x: 10px; width: parent.width - 20px; text: root.text; font-size: 13px * Type.scale; font-weight: root.emphasized ? 600 : 400; color: root.tint; vertical-alignment: center; horizontal-alignment: center; overflow: elide; }
 }
 
 // `_StatusCard`: the hero in its tint, the title and its line, then the action; an
@@ -2009,8 +2015,8 @@ component LiveCardView inherits Rectangle {
                 if root.card.ticks-on != "": Path { viewbox-width: 132; viewbox-height: 132; commands: root.card.ticks-on; stroke: Theme.s.primary; stroke-width: 2.4px; stroke-line-cap: round; }
                 VerticalLayout {
                     alignment: center;
-                    Text { text: root.card.big; font-size: 28px; font-weight: 700; color: Theme.s.on-primary-container; horizontal-alignment: center; }
-                    Text { text: root.card.tag; font-size: 12px; color: Theme.s.on-primary-container; horizontal-alignment: center; }
+                    Text { text: root.card.big; font-size: 28px * Type.scale; font-weight: 700; color: Theme.s.on-primary-container; horizontal-alignment: center; }
+                    Text { text: root.card.tag; font-size: 12px * Type.scale; color: Theme.s.on-primary-container; horizontal-alignment: center; }
                 }
             }
             if root.card.kind == "ready" || root.card.kind == "consent": VerticalLayout {
@@ -2070,13 +2076,13 @@ component LiveCardView inherits Rectangle {
                             padding-bottom: root.expanded ? 9px : 0px;
                             spacing: 10px;
                             VerticalLayout { alignment: root.expanded ? start : center; FilledIcon { glyph: Icons.warning; size: 18px; tint: Theme.warning; } }
-                            if !root.expanded: Text { horizontal-stretch: 1; text: w.message; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; }
-                            if !root.expanded && w.path != "": Text { max-width: 96px; text: w.path; font-size: 12px; color: Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; }
+                            if !root.expanded: Text { horizontal-stretch: 1; text: w.message; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; }
+                            if !root.expanded && w.path != "": Text { max-width: 96px; text: w.path; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; }
                             if root.expanded: VerticalLayout {
                                 horizontal-stretch: 1;
                                 spacing: 2px;
-                                Text { text: w.message; font-size: 15px; color: Theme.s.on-surface; wrap: word-wrap; }
-                                if w.path != "": Text { text: w.path; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                                Text { text: w.message; font-size: 15px * Type.scale; color: Theme.s.on-surface; wrap: word-wrap; }
+                                if w.path != "": Text { text: w.path; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
                             }
                         }
                     }
@@ -2092,8 +2098,8 @@ component LiveCardView inherits Rectangle {
             if !root.expanded: VerticalLayout {
                 height: 52px;
                 spacing: 2px;
-                Text { text: root.asking ? root.card.ask-title : root.card.title; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
-                Text { text: root.asking ? root.card.ask-body : root.card.body; font-size: 13px; color: Theme.s.on-surface-variant; wrap: word-wrap; max-height: 34px; overflow: elide; vertical-stretch: 1; }
+                Text { text: root.asking ? root.card.ask-title : root.card.title; font-size: 17px * Type.scale; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+                Text { text: root.asking ? root.card.ask-body : root.card.body; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; max-height: 34px; overflow: elide; vertical-stretch: 1; }
             }
             if root.card.action != "" && !root.asking: Rectangle {
                 height: 44px;
@@ -2101,7 +2107,7 @@ component LiveCardView inherits Rectangle {
                 background: act.pressed ? LiveTone.strong(root.card.action-tone).darker(0.12) : LiveTone.strong(root.card.action-tone);
                 Text {
                     text: root.card.kind == "warnings" && root.expanded ? "收起" : root.card.action;
-                    font-size: 15px;
+                    font-size: 15px * Type.scale;
                     font-weight: 600;
                     color: root.card.action-tone == 0 ? Theme.s.on-surface : Theme.s.card;
                 }
@@ -2113,13 +2119,13 @@ component LiveCardView inherits Rectangle {
                 Rectangle {
                     border-radius: 22px;
                     background: no.pressed ? Theme.s.block.darker(0.12) : Theme.s.block;
-                    Text { text: "取消"; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; }
+                    Text { text: "取消"; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
                     no := TouchArea { clicked => { root.unask(); } }
                 }
                 Rectangle {
                     border-radius: 22px;
                     background: yes.pressed ? Theme.s.error.darker(0.12) : Theme.s.error;
-                    Text { text: root.card.ask-label; font-size: 15px; font-weight: 600; color: Theme.s.card; }
+                    Text { text: root.card.ask-label; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.card; }
                     yes := TouchArea { clicked => { root.confirm(); } }
                 }
             }
@@ -2311,7 +2317,7 @@ component Dashboard inherits Rectangle {
                         alignment: center;
                         spacing: 4px;
                         VerticalLayout { alignment: center; Icon { glyph: Icons.error; size: 16px; tint: Theme.s.error; } }
-                        Text { text: root.fault-count; font-size: 13px; font-weight: 700; color: Theme.s.error; vertical-alignment: center; }
+                        Text { text: root.fault-count; font-size: 13px * Type.scale; font-weight: 700; color: Theme.s.error; vertical-alignment: center; }
                     }
                     fault-ta := TouchArea { clicked => { root.open-faults(); } }
                 }
@@ -2435,7 +2441,7 @@ component Dashboard inherits Rectangle {
                     padding-top: 6px;
                     HorizontalLayout {
                         padding-left: 8px;
-                        Text { text: "可添加"; font-size: 13px; font-weight: 600; color: Theme.s.on-surface-variant; }
+                        Text { text: "可添加"; font-size: 13px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; }
                     }
                     for h in root.addable: Rectangle {
                         height: 60px;
@@ -2473,8 +2479,8 @@ component Dashboard inherits Rectangle {
                             VerticalLayout {
                                 alignment: center;
                                 horizontal-stretch: 1;
-                                Text { text: h.label; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
-                                if h.desc != "": Text { text: h.desc; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                                Text { text: h.label; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+                                if h.desc != "": Text { text: h.desc; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
                             }
                         }
                     }
@@ -2646,11 +2652,11 @@ component DelayBadge inherits Rectangle {
     height: 18px;
     if root.delay == 0: Icon { glyph: Icons.bolt; size: 15px; tint: root.idle; }
     if root.delay == -4: Icon { glyph: Icons.clock; size: 15px; tint: root.idle.with-alpha(0.5); }
-    if root.delay == -3: Text { text: "···"; font-size: 13px; font-weight: 700; color: Theme.s.primary; horizontal-alignment: center; vertical-alignment: center; }
+    if root.delay == -3: Text { text: "···"; font-size: 13px * Type.scale; font-weight: 700; color: Theme.s.primary; horizontal-alignment: center; vertical-alignment: center; }
     label := Text {
         visible: root.delay > 0 || root.delay == -1 || root.delay == -2;
         text: root.delay == -1 ? "超时" : root.delay == -2 ? "失败" : root.delay + " ms";
-        font-size: 12px;
+        font-size: 12px * Type.scale;
         font-weight: 600;
         horizontal-alignment: right;
         vertical-alignment: center;
@@ -2704,7 +2710,7 @@ component NodeCard inherits Card {
             vertical-stretch: 1;
             Text {
                 text: root.item.name;
-                font-size: 14px;
+                font-size: 14px * Type.scale;
                 color: root.fg;
                 wrap: root.size == 0 ? no-wrap : word-wrap;
                 overflow: elide;
@@ -2723,7 +2729,7 @@ component NodeCard inherits Card {
                 }
             }
         }
-        if root.size == 2: Text { text: root.item.kind; font-size: 12px; color: root.fg2; overflow: elide; }
+        if root.size == 2: Text { text: root.item.kind; font-size: 12px * Type.scale; color: root.fg2; overflow: elide; }
         if root.size == 2: HorizontalLayout {
             DelayBadge { delay: root.item.delay; idle: root.fg2; test => { root.test(); } }
             Rectangle { }
@@ -2734,7 +2740,7 @@ component NodeCard inherits Card {
             Text {
                 horizontal-stretch: 1;
                 text: root.item.kind;
-                font-size: 12px;
+                font-size: 12px * Type.scale;
                 color: root.fg2;
                 overflow: elide;
                 vertical-alignment: center;
@@ -2794,19 +2800,19 @@ component GroupHeader inherits Card {
                 height: 42px;
                 border-radius: 10px;
                 background: Theme.s.block;
-                Text { text: root.group.monogram; font-size: 18px; font-weight: 600; color: Theme.s.on-surface-variant; }
+                Text { text: root.group.monogram; font-size: 18px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; }
             }
         }
         if root.icon == 1: VerticalLayout {
             alignment: center;
-            Text { text: root.group.monogram; width: 28px; font-size: 22px; font-weight: 700; color: Theme.s.primary; horizontal-alignment: center; }
+            Text { text: root.group.monogram; width: 28px; font-size: 22px * Type.scale; font-weight: 700; color: Theme.s.primary; horizontal-alignment: center; }
         }
         VerticalLayout {
             alignment: center;
             spacing: 2px;
             horizontal-stretch: 1;
-            Text { text: root.group.name; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
-            if root.group.now != "": Text { text: root.group.now; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+            Text { text: root.group.name; font-size: 16px * Type.scale; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+            if root.group.now != "": Text { text: root.group.now; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
         }
         if root.group.expanded: VerticalLayout {
             alignment: center;
@@ -2827,7 +2833,7 @@ component GroupHeader inherits Card {
                 }
             }
         }
-        if !root.group.expanded: Text { text: root.group.kind; font-size: 12px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        if !root.group.expanded: Text { text: root.group.kind; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
         VerticalLayout {
             alignment: center;
             IconButton { glyph: root.group.expanded ? Icons.fold : Icons.unfold; clicked => { root.toggle(); } }
@@ -2914,7 +2920,7 @@ component Proxies inherits Rectangle {
                         visible: search-input.text == "";
                         text: "搜索";
                         color: Theme.s.on-surface-variant;
-                        font-size: 15px;
+                        font-size: 15px * Type.scale;
                         vertical-alignment: center;
                         height: parent.height;
                     }
@@ -2924,7 +2930,7 @@ component Proxies inherits Rectangle {
                         height: parent.height;
                         vertical-alignment: center;
                         single-line: true;
-                        font-size: 15px;
+                        font-size: 15px * Type.scale;
                         color: Theme.s.on-surface;
                         text <=> root.query;
                         init => { self.focus(); }
@@ -2953,7 +2959,7 @@ component Proxies inherits Rectangle {
                         width: label.preferred-width + 24px;
                         label := Text {
                             text: g.name;
-                            font-size: 14px;
+                            font-size: 14px * Type.scale;
                             font-weight: parent.active ? 600 : 400;
                             color: parent.active ? Theme.s.primary : Theme.s.on-surface-variant;
                             vertical-alignment: center;
@@ -3080,7 +3086,7 @@ component ProfileCard inherits Card {
                 spacing: 8px;
                 Text {
                     text: root.item.name;
-                    font-size: 17px;
+                    font-size: 17px * Type.scale;
                     color: root.fg;
                     overflow: elide;
                     horizontal-stretch: 1;
@@ -3093,7 +3099,7 @@ component ProfileCard inherits Card {
                     background: (root.item.expired ? Theme.s.error : Theme.s.primary).with-alpha(0.15);
                     chip := Text {
                         text: root.item.expire;
-                        font-size: 11px;
+                        font-size: 11px * Type.scale;
                         font-weight: 600;
                         color: root.item.expired ? Theme.s.error : Theme.s.primary;
                         vertical-alignment: center;
@@ -3102,13 +3108,13 @@ component ProfileCard inherits Card {
                 }
                 Rectangle { horizontal-stretch: 0.001; }
             }
-            Text { text: root.item.subtitle; font-size: 13px; color: root.fg2; overflow: elide; }
+            Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: root.fg2; overflow: elide; }
         }
         VerticalLayout {
             alignment: center;
             Text {
                 text: root.item.busy ? "更新中…" : root.item.trailing;
-                font-size: 12px;
+                font-size: 12px * Type.scale;
                 color: root.fg2;
             }
         }
@@ -3180,8 +3186,8 @@ component Profiles inherits Rectangle {
             VerticalLayout {
                 alignment: center;
                 spacing: 8px;
-                Text { text: "暂无配置"; font-size: 18px; color: Theme.s.on-surface; horizontal-alignment: center; }
-                Text { text: "添加一个配置文件后即可开始使用"; font-size: 14px; color: Theme.s.on-surface-variant; horizontal-alignment: center; }
+                Text { text: "暂无配置"; font-size: 18px * Type.scale; color: Theme.s.on-surface; horizontal-alignment: center; }
+                Text { text: "添加一个配置文件后即可开始使用"; font-size: 14px * Type.scale; color: Theme.s.on-surface-variant; horizontal-alignment: center; }
                 HorizontalLayout {
                     alignment: center;
                     padding-top: 8px;
@@ -3225,7 +3231,7 @@ component Field inherits VerticalLayout {
     callback accepted();
     public function focus-input() { input.focus(); }
     spacing: 6px;
-    if root.label != "": Text { text: root.label; font-size: 13px; color: Theme.s.on-surface-variant; }
+    if root.label != "": Text { text: root.label; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
     Rectangle {
         height: root.multi ? 160px : 50px;
         border-radius: 8px;
@@ -3238,7 +3244,7 @@ component Field inherits VerticalLayout {
             visible: input.text == "";
             text: root.placeholder;
             color: Theme.s.on-surface-variant;
-            font-size: 15px;
+            font-size: 15px * Type.scale;
         }
         input := TextInput {
             x: 14px;
@@ -3249,7 +3255,7 @@ component Field inherits VerticalLayout {
             single-line: !root.multi;
             wrap: root.multi ? word-wrap : no-wrap;
             input-type: root.input-type;
-            font-size: 15px;
+            font-size: 15px * Type.scale;
             color: Theme.s.on-surface;
             selection-background-color: Theme.s.primary-container;
             enabled: root.enabled;
@@ -3296,7 +3302,7 @@ component EditProfilePage inherits Rectangle {
                 Field { label: "age 私钥"; placeholder: "可选"; text <=> root.age; }
                 if root.is-url: HorizontalLayout {
                     height: 48px;
-                    Text { text: "自动更新"; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                    Text { text: "自动更新"; font-size: 16px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
                     VerticalLayout { alignment: center; Switch { checked <=> root.auto; } }
                 }
                 if root.is-url && root.auto: HorizontalLayout {
@@ -3317,8 +3323,8 @@ component EditProfilePage inherits Rectangle {
                             alignment: center;
                             spacing: 2px;
                             horizontal-stretch: 1;
-                            Text { text: "配置"; font-size: 16px; color: Theme.s.on-surface; }
-                            Text { text: root.file-info; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Text { text: "配置"; font-size: 16px * Type.scale; color: Theme.s.on-surface; }
+                            Text { text: root.file-info; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
                         }
                         VerticalLayout { alignment: center; IconButton { glyph: Icons.edit; clicked => { root.edit-file(); } } }
                         VerticalLayout { alignment: center; IconButton { glyph: Icons.upload; clicked => { root.upload-file(); } } }
@@ -3361,7 +3367,7 @@ component EditorPage inherits Rectangle {
                     single-line: false;
                     wrap: word-wrap;
                     font-family: "monospace";
-                    font-size: 13px;
+                    font-size: 13px * Type.scale;
                     color: Theme.s.on-surface;
                     selection-background-color: Theme.s.primary-container;
                 }
@@ -3412,8 +3418,8 @@ component ReorderList inherits Rectangle {
                     alignment: center;
                     spacing: 2px;
                     horizontal-stretch: 1;
-                    Text { text: t; font-size: 16px; color: Theme.s.on-surface; overflow: elide; }
-                    if i < root.subtitles.length && root.subtitles[i] != "": Text { text: root.subtitles[i]; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+                    Text { text: t; font-size: 16px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
+                    if i < root.subtitles.length && root.subtitles[i] != "": Text { text: root.subtitles[i]; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
                 }
                 VerticalLayout { alignment: center; Icon { glyph: "M5 9h14 M5 15h14"; size: 20px; tint: Theme.s.on-surface-variant; } }
             }
@@ -3494,8 +3500,8 @@ component ServiceManageList inherits Rectangle {
                     alignment: center;
                     spacing: 2px;
                     horizontal-stretch: 1;
-                    Text { text: r.label; font-size: 16px; color: r.enabled ? Theme.s.on-surface : Theme.s.on-surface-variant; overflow: elide; }
-                    if r.shown: Text { text: "显示在仪表盘"; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+                    Text { text: r.label; font-size: 16px * Type.scale; color: r.enabled ? Theme.s.on-surface : Theme.s.on-surface-variant; overflow: elide; }
+                    if r.shown: Text { text: "显示在仪表盘"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
                 }
                 VerticalLayout { alignment: center; Switch { checked: r.enabled; opacity: r.locked ? 0.38 : 1; } }
             }
@@ -3559,8 +3565,8 @@ component PopupRow inherits Rectangle {
         padding-right: 12px;
         spacing: 12px;
         if root.glyph != "": VerticalLayout { alignment: center; Icon { glyph: root.glyph; size: 18px; tint: root.danger ? Theme.s.error : Theme.s.on-surface-variant; } }
-        Text { text: root.label; font-size: 15px; color: root.danger ? Theme.s.error : Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-        if root.value != "": Text { text: root.value; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        Text { text: root.label; font-size: 15px * Type.scale; color: root.danger ? Theme.s.error : Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        if root.value != "": Text { text: root.value; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
         if root.more: VerticalLayout { alignment: center; Icon { glyph: Icons.chevron; size: 16px; tint: Theme.s.on-surface-variant; } }
         if root.checked: VerticalLayout { alignment: center; Icon { glyph: Icons.check; size: 18px; tint: Theme.s.primary; } }
     }
@@ -3588,7 +3594,7 @@ component Dialog inherits Rectangle {
             padding: 24px;
             padding-bottom: 16px;
             spacing: 16px;
-            if root.title != "": Text { text: root.title; font-size: 22px; color: Theme.s.on-surface; wrap: word-wrap; }
+            if root.title != "": Text { text: root.title; font-size: 22px * Type.scale; color: Theme.s.on-surface; wrap: word-wrap; }
             @children
         }
     }
@@ -3624,7 +3630,7 @@ component SetRowView inherits Rectangle {
                 height: 40px;
                 border-radius: 20px;
                 background: Theme.s.primary-container;
-                Text { text: root.item.glyph; font-size: 16px; font-weight: 600; color: Theme.s.on-primary-container; }
+                Text { text: root.item.glyph; font-size: 16px * Type.scale; font-weight: 600; color: Theme.s.on-primary-container; }
             }
         }
         if root.leading && root.item.kind == "link": VerticalLayout {
@@ -3645,8 +3651,8 @@ component SetRowView inherits Rectangle {
             alignment: center;
             spacing: 2px;
             horizontal-stretch: 1;
-            Text { text: root.item.title; font-size: 16px; color: root.item.lead == "add" ? Theme.s.primary : Theme.s.on-surface; overflow: elide; }
-            if root.item.subtitle != "": Text { text: root.item.subtitle; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+            Text { text: root.item.title; font-size: 16px * Type.scale; color: root.item.lead == "add" ? Theme.s.primary : Theme.s.on-surface; overflow: elide; }
+            if root.item.subtitle != "": Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
         }
         if root.item.kind == "toggle": VerticalLayout {
             alignment: center;
@@ -3744,7 +3750,7 @@ component Sections inherits VerticalLayout {
     for sec in root.sections: VerticalLayout {
         if sec.rows.length > 0 && sec.title != "": HorizontalLayout {
             padding-left: 14px;
-            Text { text: sec.title; height: 36px; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+            Text { text: sec.title; height: 36px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
         }
         if sec.rows.length > 0 && sec.title == "": Rectangle { height: 8px; }
         if sec.rows.length > 0: Rectangle {
@@ -3765,7 +3771,7 @@ component Sections inherits VerticalLayout {
             padding-left: 14px;
             padding-right: 14px;
             padding-top: 6px;
-            Text { text: sec.footer; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+            Text { text: sec.footer; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
         }
     }
 }
@@ -3781,8 +3787,8 @@ component NullStatus inherits Rectangle {
         spacing: 6px;
         padding-left: 32px;
         padding-right: 32px;
-        Text { text: root.label; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; wrap: word-wrap; }
-        if root.description != "": Text { text: root.description; font-size: 13px; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
+        Text { text: root.label; font-size: 16px * Type.scale; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; wrap: word-wrap; }
+        if root.description != "": Text { text: root.description; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
         if root.action != "": HorizontalLayout {
             alignment: center;
             padding-top: 12px;
@@ -3795,7 +3801,7 @@ component NullStatus inherits Rectangle {
                     alignment: center;
                     spacing: 8px;
                     VerticalLayout { alignment: center; Icon { glyph: Icons.add-circle; size: 20px; tint: Theme.s.on-primary-container; } }
-                    Text { text: root.action; font-size: 15px; font-weight: 600; color: Theme.s.on-primary-container; vertical-alignment: center; }
+                    Text { text: root.action; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-primary-container; vertical-alignment: center; }
                 }
                 nsa := TouchArea { clicked => { root.act(); } }
             }
@@ -3812,10 +3818,10 @@ component AuthorizeButton inherits Rectangle {
     width: max(80px, ab-sizer.preferred-width * 1.1 + 24px);
     border-radius: 20px;
     background: root.authorized ? (ab-ta.pressed ? Theme.s.primary.darker(0.1) : Theme.s.primary) : (ab-ta.pressed ? Theme.s.error.with-alpha(0.22) : Theme.s.error.with-alpha(0.14));
-    ab-sizer := Text { text: "点击授权"; font-size: 14px; opacity: 0; }
+    ab-sizer := Text { text: "点击授权"; font-size: 14px * Type.scale; opacity: 0; }
     Text {
         text: root.authorized ? "已授权" : "点击授权";
-        font-size: 14px;
+        font-size: 14px * Type.scale;
         font-weight: 600;
         color: root.authorized ? Theme.s.on-primary : Theme.s.error;
         horizontal-alignment: center;
@@ -3846,7 +3852,7 @@ component OnDemandBody inherits VerticalLayout {
     spacing: 0px;
     HorizontalLayout {
         padding-left: 14px;
-        Text { text: "前置条件"; height: 36px; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        Text { text: "前置条件"; height: 36px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
     }
     Rectangle {
         background: Theme.s.card;
@@ -3858,7 +3864,7 @@ component OnDemandBody inherits VerticalLayout {
                     padding-left: 16px;
                     padding-right: 12px;
                     spacing: 12px;
-                    Text { text: p.title; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                    Text { text: p.title; font-size: 16px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                     VerticalLayout {
                         alignment: center;
                         if p.id == "battery" && root.battery == 0: HorizontalLayout { alignment: end; width: 80px; Spinner { width: 24px; height: 24px; indeterminate: true; } }
@@ -3882,13 +3888,13 @@ component OnDemandBody inherits VerticalLayout {
         padding-left: 14px;
         padding-right: 14px;
         padding-top: 6px;
-        Text { text: "根据系统要求，获取Wi-Fi名称需要您授予位置权限。Android 上请选择“始终允许”，否则应用在后台时无法获取 Wi-Fi 名称。"; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+        Text { text: "根据系统要求，获取Wi-Fi名称需要您授予位置权限。Android 上请选择“始终允许”，否则应用在后台时无法获取 Wi-Fi 名称。"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
     }
     Rectangle { height: 12px; }
     HorizontalLayout {
         padding-left: 14px;
         height: 40px;
-        Text { text: "排除SSIDs"; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
+        Text { text: "排除SSIDs"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
         if root.selecting: IconButton { glyph: Icons.delete; tint: Theme.s.on-surface; clicked => { root.clicked("delete"); } }
         if root.selecting: IconButton { glyph: Icons.select-all; tint: Theme.s.on-surface; clicked => { root.clicked("select-all"); } }
         if !root.selecting: IconButton { glyph: Icons.add-circle; tint: Theme.s.on-surface; clicked => { root.clicked("add"); } }
@@ -3898,7 +3904,7 @@ component OnDemandBody inherits VerticalLayout {
         padding-bottom: 48px;
         spacing: 12px;
         HorizontalLayout { alignment: center; Icon { glyph: Icons.wifi; size: 48px; tint: Theme.s.on-surface-variant.with-alpha(0.6); } }
-        Text { text: "SSIDs为空"; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; }
+        Text { text: "SSIDs为空"; font-size: 16px * Type.scale; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; }
     }
     if root.ssids.length > 0: Rectangle {
         height: root.ssids.length * root.row-h;
@@ -3925,7 +3931,7 @@ component OnDemandBody inherits VerticalLayout {
                     padding-left: 16px;
                     padding-right: 10px;
                     spacing: 8px;
-                    Text { text: t; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                    Text { text: t; font-size: 16px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                     Rectangle { width: 36px; }
                 }
                 if !parent.lifted && i < root.ssids.length - 1: Rectangle {
@@ -3990,7 +3996,7 @@ component OnDemandBody inherits VerticalLayout {
         padding-left: 14px;
         padding-right: 14px;
         padding-top: 6px;
-        Text { text: "连接到被排除 SSID 的 Wi-Fi 时，将会自动切换应用运行状态。"; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+        Text { text: "连接到被排除 SSID 的 Wi-Fi 时，将会自动切换应用运行状态。"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
     }
 }
 
@@ -4108,7 +4114,7 @@ component AboutPage inherits Rectangle {
                 }
             }
             Rectangle { height: 20px; }
-            Text { text: "SeasonCat"; font-size: 22px; font-weight: 700; color: Theme.s.on-surface; horizontal-alignment: center; }
+            Text { text: "SeasonCat"; font-size: 22px * Type.scale; font-weight: 700; color: Theme.s.on-surface; horizontal-alignment: center; }
             Rectangle { height: 10px; }
             HorizontalLayout {
                 alignment: center;
@@ -4118,20 +4124,20 @@ component AboutPage inherits Rectangle {
                     width: vpill.preferred-width * 1.1 + 24px;
                     border-radius: 12px;
                     background: Theme.s.primary;
-                    vpill := Text { text: root.version; font-size: 12px; font-weight: 600; color: Theme.s.on-primary; horizontal-alignment: center; vertical-alignment: center; }
+                    vpill := Text { text: root.version; font-size: 12px * Type.scale; font-weight: 600; color: Theme.s.on-primary; horizontal-alignment: center; vertical-alignment: center; }
                 }
                 Rectangle {
                     height: 24px;
                     width: lpill.preferred-width * 1.1 + 24px;
                     border-radius: 12px;
                     background: Theme.s.block;
-                    lpill := Text { text: "GPL-3.0"; font-size: 12px; font-weight: 600; color: Theme.s.on-surface-variant; horizontal-alignment: center; vertical-alignment: center; }
+                    lpill := Text { text: "GPL-3.0"; font-size: 12px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; horizontal-alignment: center; vertical-alignment: center; }
                 }
             }
             Rectangle { height: 16px; }
             Text {
                 text: "基于 Concord 内核的多平台代理客户端，简单易用，开源无广告。";
-                font-size: 15px;
+                font-size: 15px * Type.scale;
                 color: Theme.s.on-surface-variant;
                 horizontal-alignment: center;
                 wrap: word-wrap;
@@ -4149,7 +4155,7 @@ component AboutPage inherits Rectangle {
                         alignment: center;
                         spacing: 8px;
                         VerticalLayout { alignment: center; Icon { glyph: Icons.sync; size: 20px; tint: Theme.s.on-primary-container; } }
-                        Text { text: "检查更新"; font-size: 15px; color: Theme.s.on-primary-container; vertical-alignment: center; }
+                        Text { text: "检查更新"; font-size: 15px * Type.scale; color: Theme.s.on-primary-container; vertical-alignment: center; }
                     }
                     uta := TouchArea { enabled: !root.checking; clicked => { root.check-update(); } }
                 }
@@ -4178,7 +4184,7 @@ component LevelLabel inherits Rectangle {
     width: ll-text.preferred-width + 16px;
     border-radius: 11px;
     background: ll-ta.pressed ? root.tone.with-alpha(0.24) : root.tone.with-alpha(0.12);
-    ll-text := Text { text: root.level; font-size: 12px; font-weight: 600; color: root.tone; vertical-alignment: center; horizontal-alignment: center; }
+    ll-text := Text { text: root.level; font-size: 12px * Type.scale; font-weight: 600; color: root.tone; vertical-alignment: center; horizontal-alignment: center; }
     ll-ta := TouchArea { clicked => { root.tapped(); } }
 }
 
@@ -4202,27 +4208,27 @@ component LogRow inherits Rectangle {
             spacing: 6px;
             HorizontalLayout {
                 spacing: 8px;
-                Text { text: root.log.time; font-size: 12px; color: Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; }
+                Text { text: root.log.time; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; }
                 LevelLabel { level: root.log.level; tapped => { root.filter(root.log.level); } }
                 Rectangle { horizontal-stretch: 1; }
             }
             if !root.log.has-route: VerticalLayout {
                 spacing: 2px;
-                Text { text: root.log.message; font-size: 15px; color: Theme.s.on-surface; wrap: word-wrap; }
-                if root.log.tag != "": Text { text: root.log.tag; font-size: 13px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                Text { text: root.log.message; font-size: 15px * Type.scale; color: Theme.s.on-surface; wrap: word-wrap; }
+                if root.log.tag != "": Text { text: root.log.tag; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
             }
             if root.log.has-route: VerticalLayout {
                 spacing: 2px;
-                Text { text: root.log.dest; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; wrap: word-wrap; }
-                if root.log.error != "": Text { text: root.log.error; font-size: 13px; color: root.log.level == "warning" ? Theme.warning : root.log.level == "error" ? Theme.s.error : Theme.s.on-surface-variant; wrap: word-wrap; }
+                Text { text: root.log.dest; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface; wrap: word-wrap; }
+                if root.log.error != "": Text { text: root.log.error; font-size: 13px * Type.scale; color: root.log.level == "warning" ? Theme.warning : root.log.level == "error" ? Theme.s.error : Theme.s.on-surface-variant; wrap: word-wrap; }
                 HorizontalLayout {
                     spacing: 0px;
-                    if root.log.rule != "": Text { text: root.log.rule; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; max-width: lr-col.width * 0.5; }
-                    if root.log.rule != "": Text { text: " → "; font-size: 13px; color: Theme.s.on-surface-variant; }
-                    Text { text: root.log.proxy; font-size: 13px; font-weight: 600; color: Theme.s.primary; overflow: elide; max-width: lr-col.width * (root.log.rule != "" ? 0.45 : 1); }
+                    if root.log.rule != "": Text { text: root.log.rule; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; max-width: lr-col.width * 0.5; }
+                    if root.log.rule != "": Text { text: " → "; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+                    Text { text: root.log.proxy; font-size: 13px * Type.scale; font-weight: 600; color: Theme.s.primary; overflow: elide; max-width: lr-col.width * (root.log.rule != "" ? 0.45 : 1); }
                     Rectangle { horizontal-stretch: 1; }
                 }
-                Text { text: root.log.source; font-size: 13px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                Text { text: root.log.source; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
             }
         }
     }
@@ -4276,7 +4282,7 @@ component Logs inherits Rectangle {
                         visible: log-input.text == "";
                         text: "搜索";
                         color: Theme.s.on-surface-variant;
-                        font-size: 15px;
+                        font-size: 15px * Type.scale;
                         vertical-alignment: center;
                         height: parent.height;
                     }
@@ -4286,7 +4292,7 @@ component Logs inherits Rectangle {
                         height: parent.height;
                         vertical-alignment: center;
                         single-line: true;
-                        font-size: 15px;
+                        font-size: 15px * Type.scale;
                         color: Theme.s.on-surface;
                         text <=> root.query;
                         init => { self.focus(); }
@@ -4315,7 +4321,7 @@ component Logs inherits Rectangle {
                         padding-left: 14px;
                         padding-right: 6px;
                         spacing: 4px;
-                        Text { text: f; font-size: 14px; color: Theme.s.on-surface; vertical-alignment: center; }
+                        Text { text: f; font-size: 14px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
                         Rectangle {
                             width: 26px;
                             Icon { glyph: Icons.close; size: 16px; tint: Theme.s.on-surface-variant; }
@@ -4364,7 +4370,7 @@ component SegmentBar inherits HorizontalLayout {
         background: i == root.value ? Theme.s.primary : (seg-ta.pressed ? Theme.s.inset : Theme.s.block);
         seg-text := Text {
             text: label;
-            font-size: 14px;
+            font-size: 14px * Type.scale;
             font-weight: i == root.value ? 600 : 400;
             color: i == root.value ? Theme.s.on-primary : Theme.s.on-surface;
             horizontal-alignment: center;
@@ -4673,7 +4679,7 @@ component InfoHeader inherits HorizontalLayout {
     padding-right: 8px;
     spacing: 8px;
     VerticalLayout { alignment: center; Icon { glyph: root.glyph; size: 20px; tint: Theme.s.primary; } }
-    Text { text: root.title; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+    Text { text: root.title; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
     @children
 }
 
@@ -4690,7 +4696,7 @@ component PreviewRow inherits Rectangle {
         padding-right: 16px;
         spacing: 14px;
         VerticalLayout { alignment: center; @children }
-        Text { text: root.text; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        Text { text: root.text; font-size: 16px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
         VerticalLayout {
             alignment: center;
             width: 22px;
@@ -4818,8 +4824,8 @@ component OptionsRow inherits Rectangle {
         padding-left: 16px;
         padding-right: 12px;
         spacing: 6px;
-        Text { text: root.title; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
-        Text { text: root.value; font-size: 16px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        Text { text: root.title; font-size: 16px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        Text { text: root.value; font-size: 16px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
         VerticalLayout { alignment: center; Icon { glyph: Icons.updown; size: 18px; tint: Theme.s.on-surface-variant; } }
     }
     ta := TouchArea { clicked => { root.clicked(); } }
@@ -4885,6 +4891,334 @@ component ThemeLivePreview inherits Rectangle {
     }
 }
 
+// prism_ui's gapped `Slider`: a 16-high track split round a 4 by 44 bar, with a tick at
+// every division and the value in a bubble above the bar while it moves.
+component StepSlider inherits Rectangle {
+    in property <float> value;
+    in property <int> divisions;
+    in property <bool> enabled: true;
+    in property <string> label;
+    callback moved(float);
+    callback released(float);
+    property <bool> active: st-ta.pressed;
+    property <length> bar: root.active ? 2px : 4px;
+    property <length> travel: self.width - 4px;
+    property <length> at: 2px + root.travel * clamp(root.value, 0, 1);
+    property <color> on: root.enabled ? Theme.s.primary : Theme.s.on-surface.with-alpha(0.38);
+    property <color> off: root.enabled ? Theme.s.primary-container : Theme.s.on-surface.with-alpha(0.12);
+    height: 44px;
+    Rectangle {
+        y: 14px;
+        width: max(0px, root.at - root.bar / 2 - 6px);
+        height: 16px;
+        x: 0;
+        border-top-left-radius: 8px;
+        border-bottom-left-radius: 8px;
+        border-top-right-radius: 2px;
+        border-bottom-right-radius: 2px;
+        background: root.on;
+    }
+    Rectangle {
+        x: min(root.width, root.at + root.bar / 2 + 6px);
+        y: 14px;
+        width: root.width - self.x;
+        height: 16px;
+        border-top-left-radius: 2px;
+        border-bottom-left-radius: 2px;
+        border-top-right-radius: 8px;
+        border-bottom-right-radius: 8px;
+        background: root.off;
+    }
+    for i in root.divisions + 1: Rectangle {
+        property <length> tx: 2px + root.travel * i / root.divisions;
+        visible: self.tx < root.at - root.bar / 2 - 8px || self.tx > root.at + root.bar / 2 + 8px;
+        x: self.tx - 2px;
+        y: 20px;
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        background: self.tx < root.at
+            ? (root.enabled ? Theme.s.on-primary : Theme.s.page)
+            : (root.enabled ? Theme.s.on-primary-container : Theme.s.on-surface);
+    }
+    Rectangle {
+        x: root.at - root.bar / 2;
+        width: root.bar;
+        height: 44px;
+        border-radius: self.width / 2;
+        background: root.on;
+    }
+    if root.active && root.label != "": Rectangle {
+        x: root.at - self.width / 2;
+        y: -42px;
+        width: st-label.preferred-width + 16px;
+        height: 32px;
+        border-radius: 16px;
+        background: Theme.s.on-surface;
+        st-label := Text { text: root.label; font-size: 14px; font-weight: 600; color: Theme.s.page; }
+    }
+    st-ta := TouchArea {
+        enabled: root.enabled;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.moved(clamp((self.mouse-x - 2px) / root.travel, 0, 1));
+            } else if (e.kind == PointerEventKind.up) {
+                root.released(clamp((self.mouse-x - 2px) / root.travel, 0, 1));
+            }
+        }
+        moved => {
+            if (self.pressed) { root.moved(clamp((self.mouse-x - 2px) / root.travel, 0, 1)); }
+        }
+    }
+}
+
+// `_TextScaleFactorItem`: follow the system or a custom scale, its sample drawn at the
+// scale being chosen, the slider from 80% to 140% in steps of 5%.
+component TextScaleSection inherits VerticalLayout {
+    in property <bool> enable;
+    in property <float> value: 1;
+    callback set-enable(bool);
+    callback set-scale(float);
+    property <bool> dragging;
+    property <float> draft: 1;
+    property <float> shown: root.dragging ? root.draft : root.value;
+    property <string> percent: round(root.shown * 100) + "%";
+    function snap(t: float) -> float {
+        return round((0.8 + t * 0.6) * 20) / 20;
+    }
+    InfoHeader {
+        title: "文本缩放";
+        glyph: Icons.text-size;
+        if root.enable && root.value != 1: VerticalLayout { alignment: center; ResetButton { clicked => { root.set-scale(1); } } }
+    }
+    VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 8px;
+        spacing: 8px;
+        SegmentBar {
+            items: ["跟随系统", "自定义"];
+            value: root.enable ? 1 : 0;
+            picked(i) => { root.set-enable(i == 1); }
+        }
+        Rectangle {
+            background: Theme.s.card;
+            border-radius: 20px;
+            VerticalLayout {
+                padding: 16px;
+                padding-bottom: 8px;
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 12px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 4px;
+                        Text { text: "Aa"; font-size: 20px * root.shown; color: Theme.s.on-surface; }
+                        Text { text: "应用内的文字将以这个大小显示"; font-size: 15px * root.shown; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                    }
+                    VerticalLayout {
+                        alignment: start;
+                        Rectangle {
+                            width: ts-pct.preferred-width + 20px;
+                            height: ts-pct.preferred-height + 8px;
+                            border-radius: self.height / 2;
+                            background: Theme.s.block;
+                            ts-pct := Text { text: root.percent; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text { text: "A"; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                    StepSlider {
+                        horizontal-stretch: 1;
+                        value: (root.shown - 0.8) / 0.6;
+                        divisions: 12;
+                        enabled: root.enable;
+                        label: root.percent;
+                        moved(t) => {
+                            root.draft = root.snap(t);
+                            root.dragging = true;
+                        }
+                        released(t) => {
+                            root.dragging = false;
+                            root.set-scale(root.snap(t));
+                        }
+                    }
+                    Text { text: "A"; font-size: 22px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                }
+            }
+        }
+    }
+}
+
+// `_FontFamilyItem`: "Aa" and the family's name in that family, opening the font page.
+component FontSection inherits VerticalLayout {
+    in property <string> family;
+    callback open();
+    InfoHeader { title: "字体"; glyph: Icons.font; }
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 8px;
+        Rectangle {
+            background: fs-ta.pressed ? Theme.s.block : Theme.s.card;
+            border-radius: 20px;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 12px;
+                padding-top: 11px;
+                padding-bottom: 11px;
+                spacing: 12px;
+                Text { text: "Aa"; font-size: 17px * Type.scale; font-weight: 600; font-family: root.family; color: Theme.s.on-surface; vertical-alignment: center; }
+                Text {
+                    horizontal-stretch: 1;
+                    text: root.family == "" ? "默认" : root.family;
+                    font-size: 15px * Type.scale;
+                    font-family: root.family;
+                    color: Theme.s.on-surface-variant;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                VerticalLayout { alignment: center; Icon { glyph: Icons.chevron; size: 20px; tint: Theme.s.on-surface-variant; } }
+            }
+            fs-ta := TouchArea { clicked => { root.open(); } }
+        }
+    }
+}
+
+// `DecorationListItem` with a `SelectionCheck`, the title in `family` when given.
+component PickRow inherits Rectangle {
+    in property <string> text;
+    in property <string> family;
+    in property <bool> checked;
+    in property <bool> divider;
+    callback clicked();
+    height: max(52px, pr-text.preferred-height + 24px);
+    background: pr-ta.pressed ? Theme.s.inset : transparent;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+        pr-text := Text { text: root.text; font-family: root.family; font-size: 16px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        VerticalLayout {
+            alignment: center;
+            width: 22px;
+            if root.checked: Icon { glyph: Icons.check; size: 22px; tint: Theme.s.primary; }
+        }
+    }
+    if root.divider: Rectangle {
+        x: 16px;
+        y: parent.height - 1px;
+        width: parent.width - self.x;
+        height: 1px;
+        background: Theme.s.outline-variant.with-alpha(0.6);
+    }
+    pr-ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+// lib/views/font_family.dart's `SelectionSheet`: 默认, then 已安装字体 with each name in
+// its own family; a search once there are ten or more.
+component FontPage inherits Rectangle {
+    in property <[string]> families;
+    in property <bool> loading;
+    in property <bool> searchable;
+    in property <string> selected;
+    in-out property <bool> searching;
+    in-out property <string> query;
+    in property <length> bottom-gap: 32px;
+    callback pick(string);
+    callback search(string);
+    callback back();
+    changed query => { root.search(root.query); }
+    VerticalLayout {
+        if !root.searching: AppBar {
+            title: "字体";
+            can-back: true;
+            back => { root.back(); }
+            if root.searchable: VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
+        }
+        if root.searching: HorizontalLayout {
+            height: 56px;
+            padding-left: 4px;
+            padding-right: 8px;
+            spacing: 4px;
+            VerticalLayout {
+                alignment: center;
+                IconButton { glyph: Icons.back; tint: Theme.s.on-surface; clicked => { root.query = ""; root.searching = false; } }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Rectangle {
+                    height: 44px;
+                    border-radius: 22px;
+                    background: Theme.s.block;
+                    Text {
+                        x: 16px;
+                        visible: ff-input.text == "";
+                        text: "搜索";
+                        color: Theme.s.on-surface-variant;
+                        font-size: 15px * Type.scale;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                    ff-input := TextInput {
+                        x: 16px;
+                        width: parent.width - 32px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        single-line: true;
+                        font-size: 15px * Type.scale;
+                        color: Theme.s.on-surface;
+                        text <=> root.query;
+                        init => { self.focus(); }
+                    }
+                }
+            }
+        }
+        if root.loading || (root.searching && root.query != "" && root.families.length == 0): Rectangle { vertical-stretch: 1; }
+        if !root.loading && !(root.searching && root.query != "" && root.families.length == 0): Flickable {
+            vertical-stretch: 1;
+            content-height: ff-col.preferred-height + Dock.pad;
+            ff-col := VerticalLayout {
+                alignment: start;
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 8px;
+                padding-bottom: root.bottom-gap;
+                if !root.searching || root.query == "": VerticalLayout {
+                    padding-bottom: 16px;
+                    Group {
+                        PickRow {
+                            text: "默认";
+                            checked: root.selected == "";
+                            clicked => { root.pick(""); }
+                        }
+                    }
+                }
+                if root.families.length > 0: VerticalLayout {
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-top: 4px;
+                        padding-bottom: 8px;
+                        Text { text: "已安装字体"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+                    }
+                    Group {
+                        for f[i] in root.families: PickRow {
+                            text: f;
+                            family: f;
+                            checked: root.selected == f;
+                            divider: i < root.families.length - 1;
+                            clicked => { root.pick(f); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // lib/views/theme.dart: theme mode and pure black with sketches of the app, then the colours.
 component ThemePage inherits Rectangle {
     in property <int> theme-mode;
@@ -4899,7 +5233,13 @@ component ThemePage inherits Rectangle {
     in property <Scheme> dark-black;
     in property <bool> floating;
     in property <bool> tab-fade;
+    in property <string> font-family;
+    in property <bool> text-scale-enable;
+    in property <float> text-scale: 1;
     in property <length> bottom-gap: 32px;
+    callback open-font();
+    callback set-text-scale-enable(bool);
+    callback set-text-scale(float);
     callback set-floating(bool);
     callback set-tab-animation(int);
     callback set-theme-mode(int);
@@ -5045,6 +5385,13 @@ component ThemePage inherits Rectangle {
                         }
                     }
                 }
+                FontSection { family: root.font-family; open => { root.open-font(); } }
+                TextScaleSection {
+                    enable: root.text-scale-enable;
+                    value: root.text-scale;
+                    set-enable(on) => { root.set-text-scale-enable(on); }
+                    set-scale(v) => { root.set-text-scale(v); }
+                }
             }
         }
     }
@@ -5094,8 +5441,8 @@ component LabeledSlider inherits VerticalLayout {
     in property <string> value;
     spacing: 10px;
     HorizontalLayout {
-        Text { text: root.label; font-size: 15px; font-weight: 600; color: Theme.s.on-surface-variant; horizontal-stretch: 1; }
-        Text { text: root.value; font-size: 15px; color: Theme.s.on-surface-variant; }
+        Text { text: root.label; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; horizontal-stretch: 1; }
+        Text { text: root.value; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; }
     }
     @children
 }
@@ -5178,11 +5525,11 @@ component ColorPage inherits Rectangle {
                                     padding-left: 16px;
                                     padding-right: 12px;
                                     spacing: 2px;
-                                    Text { text: "#"; font-size: 16px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 0; }
+                                    Text { text: "#"; font-size: 16px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 0; }
                                     hex-input := TextInput {
                                         horizontal-stretch: 1;
                                         text <=> root.hex;
-                                        font-size: 16px;
+                                        font-size: 16px * Type.scale;
                                         color: Theme.s.on-surface;
                                         vertical-alignment: center;
                                         single-line: true;
@@ -5194,7 +5541,7 @@ component ColorPage inherits Rectangle {
                                         }
                                     }
                                 }
-                                if root.hex == "": Text { x: 30px; text: "十六进制"; font-size: 16px; color: Theme.s.on-surface-variant.with-alpha(0.6); vertical-alignment: center; }
+                                if root.hex == "": Text { x: 30px; text: "十六进制"; font-size: 16px * Type.scale; color: Theme.s.on-surface-variant.with-alpha(0.6); vertical-alignment: center; }
                             }
                         }
                     }
@@ -5337,7 +5684,7 @@ component StatusBar inherits Rectangle {
                     background: i == root.value ? Theme.s.card : transparent;
                     status-text := Text {
                         text: label;
-                        font-size: 13px;
+                        font-size: 13px * Type.scale;
                         font-weight: i == root.value ? 600 : 400;
                         color: i == root.value ? Theme.s.on-surface : Theme.s.on-surface-variant;
                         horizontal-alignment: center;
@@ -5372,7 +5719,7 @@ component ConditionBlock inherits Rectangle {
                     text: line.label;
                     width: 64px;
                     height: 32px;
-                    font-size: 13px;
+                    font-size: 13px * Type.scale;
                     color: Theme.s.on-surface-variant;
                     vertical-alignment: center;
                     overflow: elide;
@@ -5386,7 +5733,7 @@ component ConditionBlock inherits Rectangle {
                         alignment: start;
                         for item in row.items: HorizontalLayout {
                             spacing: 6px;
-                            if item.or: Text { text: "或"; font-size: 12px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                            if item.or: Text { text: "或"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
                             Rectangle {
                                 height: 32px;
                                 width: min(chip-row.preferred-width, root.width - 120px);
@@ -5396,7 +5743,7 @@ component ConditionBlock inherits Rectangle {
                                     padding-left: 12px;
                                     padding-right: 4px;
                                     spacing: 2px;
-                                    Text { text: item.text; font-size: 13px; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; }
+                                    Text { text: item.text; font-size: 13px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; }
                                     Rectangle {
                                         width: 24px;
                                         Icon { glyph: Icons.close; size: 14px; tint: Theme.s.on-surface-variant; }
@@ -5421,14 +5768,14 @@ component ConditionBlock inherits Rectangle {
             Text {
                 horizontal-stretch: 1;
                 text: "同一行满足其一，各行都要满足";
-                font-size: 12px;
+                font-size: 12px * Type.scale;
                 color: Theme.s.on-surface-variant;
                 vertical-alignment: center;
                 overflow: elide;
             }
             Rectangle {
                 width: clear-text.preferred-width * 1.1 + 16px;
-                clear-text := Text { text: "清除全部"; font-size: 13px; color: Theme.s.primary; vertical-alignment: center; }
+                clear-text := Text { text: "清除全部"; font-size: 13px * Type.scale; color: Theme.s.primary; vertical-alignment: center; }
                 TouchArea { clicked => { root.clear(); } }
             }
         }
@@ -5453,7 +5800,7 @@ component Well inherits Rectangle {
     }
     if !root.iconed: Text {
         text: root.text;
-        font-size: root.label ? (root.text.character-count > 3 ? root.size * 0.26 : root.size * 0.32) : root.size * 0.42;
+        font-size: (root.label ? (root.text.character-count > 3 ? root.size * 0.26 : root.size * 0.32) : root.size * 0.42) * Type.scale;
         font-weight: 600;
         color: root.label ? Theme.s.on-surface-variant : Theme.s.on-primary-container;
         horizontal-alignment: center;
@@ -5475,8 +5822,8 @@ component RecordRowView inherits Rectangle {
         padding-right: 16px;
         padding-top: 14px;
         spacing: 8px;
-        Text { text: root.rec.label; font-size: 13px; font-weight: 600; color: root.muted; vertical-alignment: center; }
-        Text { text: root.rec.count; font-size: 13px; color: root.muted; vertical-alignment: center; horizontal-stretch: 1; }
+        Text { text: root.rec.label; font-size: 13px * Type.scale; font-weight: 600; color: root.muted; vertical-alignment: center; }
+        Text { text: root.rec.count; font-size: 13px * Type.scale; color: root.muted; vertical-alignment: center; horizontal-stretch: 1; }
     }
     if !root.rec.header: Rectangle {
         x: 16px;
@@ -5495,12 +5842,12 @@ component RecordRowView inherits Rectangle {
                 alignment: center;
                 spacing: 3px;
                 horizontal-stretch: 1;
-                Text { text: root.rec.title; font-size: 15px; color: Theme.s.on-surface; overflow: elide; }
+                Text { text: root.rec.title; font-size: 15px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
                 HorizontalLayout {
                     spacing: 4px;
                     about := Text {
                         text: root.rec.about;
-                        font-size: 12px;
+                        font-size: 12px * Type.scale;
                         color: root.rec.about-error ? Theme.s.error : root.muted;
                         overflow: elide;
                         horizontal-stretch: 1;
@@ -5518,7 +5865,7 @@ component RecordRowView inherits Rectangle {
                 top := Text {
                     text: root.rec.top;
                     min-width: self.preferred-width * 1.12;
-                    font-size: 13px;
+                    font-size: 13px * Type.scale;
                     font-weight: root.rec.top-strong ? 600 : 400;
                     horizontal-alignment: right;
                     color: root.rec.top-tone == 1 ? Theme.s.error : root.rec.top-tone == 2 ? Theme.success : root.rec.top-tone == 3 ? Theme.warning : root.rec.top-tone == 4 ? root.muted : Theme.s.on-surface;
@@ -5526,7 +5873,7 @@ component RecordRowView inherits Rectangle {
                 if root.rec.bottom != "": Text {
                     text: root.rec.bottom;
                     min-width: self.preferred-width * 1.12;
-                    font-size: 11px;
+                    font-size: 11px * Type.scale;
                     color: root.muted;
                     horizontal-alignment: right;
                 }
@@ -5601,10 +5948,10 @@ component DetailRowView inherits Rectangle {
             padding-left: 16px;
             padding-right: 16px;
             spacing: 12px;
-            Text { text: root.item.title; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; min-width: min(self.preferred-width, 72px); }
+            Text { text: root.item.title; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; min-width: min(self.preferred-width, 72px); }
             if root.item.value != "": Text {
                 text: root.item.value;
-                font-size: 15px;
+                font-size: 15px * Type.scale;
                 color: root.item.tone == 0 ? root.muted : root.toned;
                 vertical-alignment: center;
                 horizontal-alignment: right;
@@ -5622,8 +5969,8 @@ component DetailRowView inherits Rectangle {
             if root.item.tone == 1: VerticalLayout { alignment: start; Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; } }
             VerticalLayout {
                 spacing: 2px;
-                Text { text: root.item.title; font-size: 15px; color: Theme.s.on-surface; wrap: word-wrap; }
-                Text { text: root.item.value; font-size: 13px; color: root.muted; wrap: word-wrap; overflow: elide; max-height: 54px; }
+                Text { text: root.item.title; font-size: 15px * Type.scale; color: Theme.s.on-surface; wrap: word-wrap; }
+                Text { text: root.item.value; font-size: 13px * Type.scale; color: root.muted; wrap: word-wrap; overflow: elide; max-height: 54px; }
             }
         }
         if root.item.kind == "rail" || root.item.kind == "link": HorizontalLayout {
@@ -5651,13 +5998,13 @@ component DetailRowView inherits Rectangle {
                 alignment: center;
                 spacing: 2px;
                 horizontal-stretch: 1;
-                Text { text: root.item.title; font-size: 15px; font-weight: root.item.mark == 1 && root.item.kind == "rail" ? 600 : 400; color: Theme.s.on-surface; overflow: elide; }
-                if root.item.note != "": Text { text: root.item.note; font-size: 12px; color: root.item.kind == "link" && root.item.tone == 1 ? Theme.s.error : root.muted; overflow: elide; }
+                Text { text: root.item.title; font-size: 15px * Type.scale; font-weight: root.item.mark == 1 && root.item.kind == "rail" ? 600 : 400; color: Theme.s.on-surface; overflow: elide; }
+                if root.item.note != "": Text { text: root.item.note; font-size: 12px * Type.scale; color: root.item.kind == "link" && root.item.tone == 1 ? Theme.s.error : root.muted; overflow: elide; }
             }
             if root.item.trailing != "": Text {
                 text: root.item.trailing;
                 min-width: self.preferred-width * 1.1;
-                font-size: 13px;
+                font-size: 13px * Type.scale;
                 color: root.item.kind == "link" ? root.toned : root.muted;
                 horizontal-alignment: right;
                 vertical-alignment: center;
@@ -5666,7 +6013,7 @@ component DetailRowView inherits Rectangle {
         }
         if root.item.kind == "code": HorizontalLayout {
             padding: 12px;
-            Text { text: root.item.value; font-size: 12px; color: Theme.s.on-surface; wrap: word-wrap; }
+            Text { text: root.item.value; font-size: 12px * Type.scale; color: Theme.s.on-surface; wrap: word-wrap; }
         }
         if root.item.kind == "traffic": HorizontalLayout {
             spacing: 8px;
@@ -5681,10 +6028,10 @@ component DetailRowView inherits Rectangle {
                     HorizontalLayout {
                         spacing: 4px;
                         Icon { glyph: cell.glyph; size: 16px; tint: Theme.s.primary; }
-                        Text { text: cell.label; font-size: 13px; color: root.muted; vertical-alignment: center; }
+                        Text { text: cell.label; font-size: 13px * Type.scale; color: root.muted; vertical-alignment: center; }
                     }
-                    Text { text: cell.figure; font-size: 20px; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 20px * 0.62) * 1.1; }
-                    if cell.speed != "": Text { text: cell.speed + "/s"; font-size: 12px; color: root.muted; }
+                    Text { text: cell.figure; font-size: 20px * Type.scale; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 20px * 0.62) * 1.1; }
+                    if cell.speed != "": Text { text: cell.speed + "/s"; font-size: 12px * Type.scale; color: root.muted; }
                 }
             }
         }
@@ -5716,8 +6063,8 @@ component DetailView inherits Rectangle {
                 alignment: center;
                 spacing: 2px;
                 horizontal-stretch: 1;
-                Text { text: root.detail.title; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
-                if root.detail.subtitle != "": Text { text: root.detail.subtitle; font-size: 13px; color: root.detail.subtitle-error ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
+                Text { text: root.detail.title; font-size: 17px * Type.scale; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+                if root.detail.subtitle != "": Text { text: root.detail.subtitle; font-size: 13px * Type.scale; color: root.detail.subtitle-error ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
             }
             if root.detail.closable: VerticalLayout { alignment: center; IconButton { glyph: Icons.block; tint: Theme.s.error; clicked => { root.close(); } } }
             if root.head-menu && root.detail.menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; clicked => { root.menu(); } } }
@@ -5749,7 +6096,7 @@ component DetailView inherits Rectangle {
                 for sec in root.detail.sections: VerticalLayout {
                     if sec.title != "": HorizontalLayout {
                         padding-left: 14px;
-                        Text { text: sec.title; height: 40px; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: bottom; }
+                        Text { text: sec.title; height: 40px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: bottom; }
                     }
                     if sec.title != "": Rectangle { height: 6px; }
                     if sec.title == "": Rectangle { height: 12px; }
@@ -5907,7 +6254,7 @@ component AccessPage inherits Rectangle {
                         visible: acc-input.text == "";
                         text: "搜索";
                         color: Theme.s.on-surface-variant;
-                        font-size: 15px;
+                        font-size: 15px * Type.scale;
                         vertical-alignment: center;
                         height: parent.height;
                     }
@@ -5917,7 +6264,7 @@ component AccessPage inherits Rectangle {
                         height: parent.height;
                         vertical-alignment: center;
                         single-line: true;
-                        font-size: 15px;
+                        font-size: 15px * Type.scale;
                         color: Theme.s.on-surface;
                         text <=> root.query;
                         init => { self.focus(); }
@@ -5936,8 +6283,8 @@ component AccessPage inherits Rectangle {
                 spacing: 6px;
                 padding-left: 32px;
                 padding-right: 32px;
-                Text { text: "需要读取应用列表权限"; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; wrap: word-wrap; }
-                Text { text: "当前系统在授权前不会提供已安装的应用列表，授权后即可配置分应用代理。"; font-size: 13px; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
+                Text { text: "需要读取应用列表权限"; font-size: 16px * Type.scale; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; wrap: word-wrap; }
+                Text { text: "当前系统在授权前不会提供已安装的应用列表，授权后即可配置分应用代理。"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
                 HorizontalLayout {
                     alignment: center;
                     padding-top: 12px;
@@ -5967,15 +6314,15 @@ component AccessPage inherits Rectangle {
                                     border-radius: 12px;
                                     background: self.iconed ? transparent : Theme.s.primary-container;
                                     if acc-icon.iconed: Image { width: 44px; height: 44px; source: AppIcons.icon(r.name, AppIcons.rev); }
-                                    if !acc-icon.iconed: Text { text: r.monogram; font-size: 18px; font-weight: 600; color: Theme.s.on-primary-container; }
+                                    if !acc-icon.iconed: Text { text: r.monogram; font-size: 18px * Type.scale; font-weight: 600; color: Theme.s.on-primary-container; }
                                 }
                             }
                             VerticalLayout {
                                 alignment: center;
                                 spacing: 2px;
                                 horizontal-stretch: 1;
-                                Text { text: r.label; font-size: 16px; color: Theme.s.on-surface; overflow: elide; }
-                                Text { text: r.name; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+                                Text { text: r.label; font-size: 16px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
+                                Text { text: r.name; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
                             }
                             VerticalLayout {
                                 alignment: center;
@@ -6013,7 +6360,7 @@ component AccessPage inherits Rectangle {
                     padding-bottom: 6px;
                     spacing: 12px;
                     VerticalLayout { alignment: center; Icon { glyph: root.enabled && !root.authorize ? Icons.apps : Icons.info; size: 20px; tint: Theme.s.on-surface-variant; } }
-                    Text { horizontal-stretch: 1; text: root.status; font-size: 13px; color: Theme.s.on-surface; vertical-alignment: center; wrap: word-wrap; overflow: elide; }
+                    Text { horizontal-stretch: 1; text: root.status; font-size: 13px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; wrap: word-wrap; overflow: elide; }
                     if root.authorize: VerticalLayout { alignment: center; TextButton { text: "授权"; clicked => { root.grant(); } } }
                     if root.enabled && !root.authorize: VerticalLayout {
                         alignment: center;
@@ -6022,7 +6369,7 @@ component AccessPage inherits Rectangle {
                             min-width: chip.preferred-width * 1.1 + 20px;
                             border-radius: 14px;
                             background: Theme.s.primary.with-alpha(0.15);
-                            chip := Text { text: root.count; font-size: 13px; color: Theme.s.primary; }
+                            chip := Text { text: root.count; font-size: 13px * Type.scale; color: Theme.s.primary; }
                         }
                     }
                     if !root.enabled: VerticalLayout { alignment: center; TextButton { text: "开启"; clicked => { root.enable(); } } }
@@ -6106,7 +6453,7 @@ component RequestsPage inherits Rectangle {
                         visible: req-input.text == "";
                         text: "搜索";
                         color: Theme.s.on-surface-variant;
-                        font-size: 15px;
+                        font-size: 15px * Type.scale;
                         vertical-alignment: center;
                         height: parent.height;
                     }
@@ -6116,7 +6463,7 @@ component RequestsPage inherits Rectangle {
                         height: parent.height;
                         vertical-alignment: center;
                         single-line: true;
-                        font-size: 15px;
+                        font-size: 15px * Type.scale;
                         color: Theme.s.on-surface;
                         text <=> root.query;
                         init => { self.focus(); }
@@ -6216,8 +6563,8 @@ component ResourceRow inherits Rectangle {
             alignment: center;
             spacing: 2px;
             horizontal-stretch: 1;
-            Text { text: root.item.title; font-size: 16px; color: Theme.s.on-surface; overflow: elide; }
-            Text { text: root.item.subtitle; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+            Text { text: root.item.title; font-size: 16px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
+            Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
         }
         if root.item.busy: VerticalLayout { alignment: center; Spinner { width: 22px; height: 22px; indeterminate: true; } }
         if !root.item.busy && root.item.chip != "": VerticalLayout {
@@ -6227,7 +6574,7 @@ component ResourceRow inherits Rectangle {
                 width: chip-text.preferred-width * 1.1 + 20px;
                 border-radius: 12px;
                 background: Theme.s.block;
-                chip-text := Text { text: root.item.chip; font-size: 12px; font-weight: 600; color: Theme.s.on-surface-variant; horizontal-alignment: center; vertical-alignment: center; }
+                chip-text := Text { text: root.item.chip; font-size: 12px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; horizontal-alignment: center; vertical-alignment: center; }
             }
         }
     }
@@ -6305,7 +6652,7 @@ component ResourcesPage inherits Rectangle {
                             height: 56px;
                             padding-left: 16px;
                             padding-right: 16px;
-                            Text { text: "自动更新"; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                            Text { text: "自动更新"; font-size: 16px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
                             VerticalLayout { alignment: center; Switch { checked: root.auto; toggled(on) => { root.set-auto(on); } } }
                         }
                         if root.auto: HorizontalLayout { padding-left: 16px; Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); } }
@@ -6317,14 +6664,14 @@ component ResourcesPage inherits Rectangle {
                                 padding-right: 16px;
                                 alignment: center;
                                 spacing: 2px;
-                                Text { text: "自动更新间隔"; font-size: 16px; color: Theme.s.on-surface; }
-                                Text { text: root.interval; font-size: 13px; color: Theme.s.on-surface-variant; }
+                                Text { text: "自动更新间隔"; font-size: 16px * Type.scale; color: Theme.s.on-surface; }
+                                Text { text: root.interval; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
                             }
                             ita := TouchArea { clicked => { root.open-interval(); } }
                         }
                     }
                 }
-                HorizontalLayout { padding-left: 14px; Text { text: "Geo"; height: 40px; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: bottom; } }
+                HorizontalLayout { padding-left: 14px; Text { text: "Geo"; height: 40px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: bottom; } }
                 Rectangle {
                     background: Theme.s.card;
                     border-radius: 16px;
@@ -6369,13 +6716,13 @@ component ActionSheet inherits Rectangle {
                 if root.title != "": HorizontalLayout {
                     padding-left: 16px;
                     padding-right: 16px;
-                    Text { text: root.title; font-size: 16px; color: Theme.s.on-surface-variant; height: 40px; vertical-alignment: center; overflow: elide; }
+                    Text { text: root.title; font-size: 16px * Type.scale; color: Theme.s.on-surface-variant; height: 40px; vertical-alignment: center; overflow: elide; }
                 }
                 for a[ai] in root.items: VerticalLayout {
                     if ai > 0 && (a.section || a.heading != ""): Rectangle { height: 8px; Rectangle { y: 3px; height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); } }
                     if a.heading != "": HorizontalLayout {
                         padding-left: 16px;
-                        Text { text: a.heading; font-size: 13px; color: Theme.s.primary; height: 32px; vertical-alignment: center; }
+                        Text { text: a.heading; font-size: 13px * Type.scale; color: Theme.s.primary; height: 32px; vertical-alignment: center; }
                     }
                     Rectangle {
                         height: a.subtitle != "" ? 60px : 48px;
@@ -6397,8 +6744,8 @@ component ActionSheet inherits Rectangle {
                                 alignment: center;
                                 spacing: 2px;
                                 horizontal-stretch: 1;
-                                Text { text: a.label; font-size: 15px; color: a.danger ? Theme.s.error : Theme.s.on-surface; overflow: elide; }
-                                if a.subtitle != "": Text { text: a.subtitle; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                                Text { text: a.label; font-size: 15px * Type.scale; color: a.danger ? Theme.s.error : Theme.s.on-surface; overflow: elide; }
+                                if a.subtitle != "": Text { text: a.subtitle; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
                             }
                             if a.check: VerticalLayout {
                                 alignment: center;
@@ -6495,7 +6842,7 @@ component ChoiceGrid inherits VerticalLayout {
             background: self.i >= root.choices.length ? transparent : self.i == root.value ? Theme.s.primary : Theme.s.block;
             Text {
                 text: parent.i < root.choices.length ? root.choices[parent.i] : "";
-                font-size: 14px;
+                font-size: 14px * Type.scale;
                 color: parent.i == root.value ? Theme.s.on-primary : Theme.s.on-surface;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -6534,7 +6881,7 @@ component NavItem inherits Rectangle {
         }
         Text {
             text: root.label;
-            font-size: 12px;
+            font-size: 12px * Type.scale;
             horizontal-alignment: center;
             color: root.active ? Theme.s.on-surface : Theme.s.on-surface-variant;
         }
@@ -6567,7 +6914,7 @@ component BarItem inherits Rectangle {
         }
         Text {
             text: root.label;
-            font-size: 12px;
+            font-size: 12px * Type.scale;
             font-weight: 600;
             horizontal-alignment: center;
             overflow: elide;
@@ -6600,13 +6947,13 @@ component SideItem inherits Rectangle {
                 Icon { glyph: root.glyph; tint: root.active ? Theme.s.on-primary-container : Theme.s.on-surface-variant; }
             }
         }
-        Text { text: root.label; font-size: 12px; horizontal-alignment: center; color: root.active ? Theme.s.on-surface : Theme.s.on-surface-variant; }
+        Text { text: root.label; font-size: 12px * Type.scale; horizontal-alignment: center; color: root.active ? Theme.s.on-surface : Theme.s.on-surface-variant; }
     }
     if !root.rail: HorizontalLayout {
         padding-left: 12px;
         spacing: 12px;
         VerticalLayout { alignment: center; Icon { glyph: root.glyph; size: 22px; tint: root.active ? Theme.s.on-primary-container : Theme.s.on-surface-variant; } }
-        Text { text: root.label; font-size: 15px; vertical-alignment: center; color: root.active ? Theme.s.on-primary-container : Theme.s.on-surface; }
+        Text { text: root.label; font-size: 15px * Type.scale; vertical-alignment: center; color: root.active ? Theme.s.on-primary-container : Theme.s.on-surface; }
     }
     TouchArea { clicked => { root.clicked(); } }
 }
@@ -6614,7 +6961,8 @@ component SideItem inherits Rectangle {
 export component AppWindow inherits Window {
     title: "SeasonCat";
     background: Theme.s.page;
-    default-font-size: 14px;
+    default-font-size: 14px * Type.scale;
+    default-font-family: Type.family;
 
     // 0 dashboard, 1 proxies, 2 profiles, 3 tools (FlClash's mobile bar)
     in-out property <int> tab: 0;
@@ -6846,6 +7194,19 @@ export component AppWindow inherits Window {
     in property <bool> tab-fade: true;
     callback set-floating-bar(bool);
     callback set-tab-animation(int);
+    // `fontFamily` and `textScale`, and the font page.
+    in property <bool> text-scale-enable;
+    in property <float> text-scale: 1;
+    callback set-text-scale-enable(bool);
+    callback set-text-scale(float);
+    callback open-font-page();
+    in property <[string]> font-families;
+    in property <bool> font-loading;
+    in property <bool> font-searchable;
+    in-out property <bool> font-searching;
+    in-out property <string> font-query;
+    callback font-pick(string);
+    callback font-search(string);
     // Theme colours (lib/views/theme.dart) and the custom colour page.
     in property <[Swatch]> swatches;
     in property <bool> colors-can-reset;
@@ -7188,6 +7549,8 @@ export component AppWindow inherits Window {
                 if (root.tab == 3 && root.tools-page == "access" && root.acc-searching) { root.acc-query = ""; root.acc-searching = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "access") { root.acc-back(); return accept; }
                 if (root.tab == 3 && root.tools-page == "theme-color") { root.tools-page = "theme"; return accept; }
+                if (root.tab == 3 && root.tools-page == "font" && root.font-searching) { root.font-query = ""; root.font-searching = false; return accept; }
+                if (root.tab == 3 && root.tools-page == "font") { root.tools-page = "theme"; return accept; }
                 if (root.tab == 3 && root.meta.known) { root.tools-page = root.meta.parent; return accept; }
                 if (root.tab == 3 && root.tools-page == "editor") { root.tools-page = root.tools-editor-parent; return accept; }
                 if (root.tab == 3 && root.tools-page != "") {
@@ -7579,6 +7942,19 @@ export component AppWindow inherits Window {
                     unfilter(l) => { root.logs-unfilter(l); }
                     open(id) => { root.logs-open(id); }
                 }
+                if root.tab == 3 && root.tools-page == "font": FontPage {
+                    width: parent.width;
+                    height: parent.height;
+                    families: root.font-families;
+                    loading: root.font-loading;
+                    searchable: root.font-searchable;
+                    selected: Type.family;
+                    searching <=> root.font-searching;
+                    query <=> root.font-query;
+                    pick(f) => { root.font-pick(f); }
+                    search(q) => { root.font-search(q); }
+                    back => { root.tools-page = "theme"; }
+                }
                 if root.tab == 3 && root.tools-page == "theme": ThemePage {
                     width: parent.width;
                     height: parent.height;
@@ -7593,6 +7969,12 @@ export component AppWindow inherits Window {
                     dark-black: root.scheme-dark-black;
                     floating: root.floating-bar;
                     tab-fade: root.tab-fade;
+                    font-family: Type.family;
+                    text-scale-enable: root.text-scale-enable;
+                    text-scale: root.text-scale;
+                    open-font => { root.open-font-page(); }
+                    set-text-scale-enable(on) => { root.set-text-scale-enable(on); }
+                    set-text-scale(v) => { root.set-text-scale(v); }
                     set-floating(on) => { root.set-floating-bar(on); }
                     set-tab-animation(i) => { root.set-tab-animation(i); }
                     set-theme-mode(m) => { root.set-theme-mode(m); }
@@ -7646,7 +8028,7 @@ export component AppWindow inherits Window {
                         width: parent.width - 32px;
                         text: root.toast;
                         color: Theme.s.page;
-                        font-size: 14px;
+                        font-size: 14px * Type.scale;
                         wrap: word-wrap;
                         horizontal-alignment: center;
                         vertical-alignment: center;
@@ -7941,8 +8323,8 @@ export component AppWindow inherits Window {
                             alignment: center;
                             spacing: 2px;
                             horizontal-stretch: 1;
-                            Text { text: sr.label; font-size: 16px; color: Theme.s.on-surface; overflow: elide; }
-                            if sr.loading || sr.ip == "": Text { text: sr.loading ? "…" : sr.place; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+                            Text { text: sr.label; font-size: 16px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
+                            if sr.loading || sr.ip == "": Text { text: sr.loading ? "…" : sr.place; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
                             if !sr.loading && sr.ip != "": HorizontalLayout {
                                 alignment: start;
                                 Rectangle {
@@ -7950,7 +8332,7 @@ export component AppWindow inherits Window {
                                     background: sip-ta.pressed ? Theme.s.block : transparent;
                                     sip-text := Text {
                                         text: (sr.region == "" ? "" : sr.region + " · ") + (root.dash-hide-ip ? "*****" : sr.ip);
-                                        font-size: 13px;
+                                        font-size: 13px * Type.scale;
                                         color: Theme.s.on-surface-variant;
                                         overflow: elide;
                                     }
@@ -7960,7 +8342,7 @@ export component AppWindow inherits Window {
                         }
                         Text {
                             text: sr.status;
-                            font-size: 13px;
+                            font-size: 13px * Type.scale;
                             font-weight: 600;
                             color: sr.tone == 1 ? Theme.success : sr.tone == 2 ? Theme.warning : sr.tone == 3 ? Theme.s.error : Theme.s.on-surface-variant;
                             vertical-alignment: center;
@@ -7998,24 +8380,24 @@ export component AppWindow inherits Window {
                 padding-left: 4px;
                 padding-top: 8px;
                 spacing: 6px;
-                Text { text: "总计"; font-size: 15px; color: Theme.s.on-surface-variant; }
-                Text { text: root.dash-mem.total == "" ? "—" : root.dash-mem.total; font-size: 28px; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 28px * 0.62) * 1.1; }
+                Text { text: "总计"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; }
+                Text { text: root.dash-mem.total == "" ? "—" : root.dash-mem.total; font-size: 28px * Type.scale; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 28px * 0.62) * 1.1; }
                 Rectangle { height: 8px; border-radius: 4px; background: Theme.s.primary; }
                 HorizontalLayout {
                     spacing: 6px;
                     alignment: start;
                     VerticalLayout { alignment: center; Rectangle { width: 8px; height: 8px; border-radius: 4px; background: Theme.s.primary; } }
-                    Text { text: root.dash-mem.shared ? "应用及共享" : "应用"; font-size: 12px; color: Theme.s.on-surface-variant; }
-                    Text { text: root.dash-mem.app; font-size: 12px; font-weight: 600; color: Theme.s.on-surface; }
+                    Text { text: root.dash-mem.shared ? "应用及共享" : "应用"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; }
+                    Text { text: root.dash-mem.app; font-size: 12px * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
                 }
-                Text { text: "基于进程常驻内存估算，可能与系统显示的数值不同。"; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                Text { text: "基于进程常驻内存估算，可能与系统显示的数值不同。"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
             }
             Rectangle { height: 4px; }
             HorizontalLayout {
                 padding-left: 4px;
                 padding-right: 4px;
-                Text { text: root.dash-mem.shared ? "应用及共享" : "应用"; font-size: 13px; color: Theme.s.on-surface-variant; horizontal-stretch: 1; }
-                Text { text: root.dash-mem.app; font-size: 13px; color: Theme.s.on-surface-variant; }
+                Text { text: root.dash-mem.shared ? "应用及共享" : "应用"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; horizontal-stretch: 1; }
+                Text { text: root.dash-mem.app; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
             }
             Rectangle {
                 background: Theme.s.card;
@@ -8059,7 +8441,7 @@ export component AppWindow inherits Window {
             if root.dash-profile.usage: VerticalLayout {
                 spacing: 8px;
                 Rectangle { height: 4px; }
-                Text { text: "订阅信息"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                Text { text: "订阅信息"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
                 Rectangle {
                     background: Theme.s.card;
                     border-radius: 16px;
@@ -8069,8 +8451,8 @@ export component AppWindow inherits Window {
                         spacing: 8px;
                         HorizontalLayout {
                             spacing: 8px;
-                            Text { text: root.dash-profile.used; font-size: 15px; color: Theme.s.on-surface; horizontal-stretch: 1; overflow: elide; }
-                            Text { text: root.dash-profile.end; font-size: 13px; color: root.dash-profile.warn ? Theme.warning : Theme.s.on-surface-variant; }
+                            Text { text: root.dash-profile.used; font-size: 15px * Type.scale; color: Theme.s.on-surface; horizontal-stretch: 1; overflow: elide; }
+                            Text { text: root.dash-profile.end; font-size: 13px * Type.scale; color: root.dash-profile.warn ? Theme.warning : Theme.s.on-surface-variant; }
                         }
                         Rectangle {
                             height: 6px;
@@ -8082,7 +8464,7 @@ export component AppWindow inherits Window {
                 }
             }
             Rectangle { height: 4px; }
-            Text { text: "配置"; font-size: 13px; color: Theme.s.on-surface-variant; }
+            Text { text: "配置"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
             Rectangle {
                 background: Theme.s.card;
                 border-radius: 16px;
@@ -8098,7 +8480,7 @@ export component AppWindow inherits Window {
             if root.profile-providers.length > 0: VerticalLayout {
                 spacing: 8px;
                 Rectangle { height: 4px; }
-                Text { text: "外部资源"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                Text { text: "外部资源"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
                 Rectangle {
                     background: Theme.s.card;
                     border-radius: 16px;
@@ -8112,8 +8494,8 @@ export component AppWindow inherits Window {
                                 padding-top: 10px;
                                 padding-bottom: 10px;
                                 spacing: 2px;
-                                Text { text: pr.name; font-size: 15px; color: Theme.s.on-surface; overflow: elide; }
-                                Text { text: pr.subtitle; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                                Text { text: pr.name; font-size: 15px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
+                                Text { text: pr.subtitle; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
                             }
                         }
                     }
@@ -8145,8 +8527,8 @@ export component AppWindow inherits Window {
                                 alignment: center;
                                 horizontal-stretch: 1;
                                 spacing: 2px;
-                                Text { text: pp.name; font-size: 15px; font-weight: pp.active ? 600 : 400; color: Theme.s.on-surface; overflow: elide; }
-                                Text { text: pp.subtitle; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                                Text { text: pp.name; font-size: 15px * Type.scale; font-weight: pp.active ? 600 : 400; color: Theme.s.on-surface; overflow: elide; }
+                                Text { text: pp.subtitle; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
                             }
                             if pp.active: VerticalLayout { alignment: center; Icon { glyph: Icons.check; size: 20px; tint: Theme.s.primary; } }
                         }
@@ -8184,7 +8566,7 @@ export component AppWindow inherits Window {
                         height: 44px;
                         padding-left: 20px;
                         padding-right: 8px;
-                        Text { text: "出站 IP详情"; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                        Text { text: "出站 IP详情"; font-size: 17px * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                         VerticalLayout { alignment: center; IconButton { glyph: Icons.close; clicked => { root.ip-sheet-open = false; } } }
                     }
                     Flickable {
@@ -8196,9 +8578,9 @@ export component AppWindow inherits Window {
                             padding-top: 4px;
                             padding-bottom: 20px + root.bottom-inset;
                             spacing: 8px;
-                            Text { text: "依赖第三方api，仅供参考"; font-size: 14px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                            Text { text: "依赖第三方api，仅供参考"; font-size: 14px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
                             Rectangle { height: 4px; }
-                            Text { text: "基础信息"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Text { text: "基础信息"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
                             Rectangle {
                                 background: Theme.s.card;
                                 border-radius: 16px;
@@ -8209,27 +8591,27 @@ export component AppWindow inherits Window {
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
-                                        Text { text: "IP 地址"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.dash-hide-ip ? "*****" : root.ipq.ip; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: "IP 地址"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.dash-hide-ip ? "*****" : root.ipq.ip; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                     Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
-                                        Text { text: "类型"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.ipq.kind == "" ? "—" : root.ipq.kind; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: "类型"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.ipq.kind == "" ? "—" : root.ipq.kind; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                     Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
-                                        Text { text: "等级"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.ipq.quality == 1 ? "优" : root.ipq.quality == 2 ? "普通" : root.ipq.quality == 3 ? "风险" : "—"; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: "等级"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.ipq.quality == 1 ? "优" : root.ipq.quality == 2 ? "普通" : root.ipq.quality == 3 ? "风险" : "—"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                 }
                             }
                             Rectangle { height: 4px; }
-                            Text { text: "网络"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Text { text: "网络"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
                             Rectangle {
                                 background: Theme.s.card;
                                 border-radius: 16px;
@@ -8240,20 +8622,20 @@ export component AppWindow inherits Window {
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
-                                        Text { text: "区域"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.ipq.country == "" ? "—" : root.ipq.country; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: "区域"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.ipq.country == "" ? "—" : root.ipq.country; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                     Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
-                                        Text { text: "组织"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.ipq.org == "" ? "—" : root.ipq.org; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: "组织"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.ipq.org == "" ? "—" : root.ipq.org; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                 }
                             }
                             Rectangle { height: 4px; }
-                            Text { text: "其他"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Text { text: "其他"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
                             Rectangle {
                                 background: Theme.s.card;
                                 border-radius: 16px;
@@ -8264,7 +8646,7 @@ export component AppWindow inherits Window {
                                     HorizontalLayout {
                                         height: 52px;
                                         spacing: 12px;
-                                        Text { text: "隐藏 IP"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                                        Text { text: "隐藏 IP"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
                                         VerticalLayout { alignment: center; Switch { checked: root.dash-hide-ip; toggled(v) => { root.dash-set-hide-ip(v); } } }
                                     }
                                 }
@@ -8298,7 +8680,7 @@ export component AppWindow inherits Window {
                         height: 44px;
                         padding-left: 20px;
                         padding-right: 8px;
-                        Text { text: "日志详情"; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                        Text { text: "日志详情"; font-size: 17px * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                         VerticalLayout { alignment: center; IconButton { glyph: Icons.copy; clicked => { root.logs-copy(root.log-detail.id); } } }
                         VerticalLayout { alignment: center; IconButton { glyph: Icons.close; clicked => { root.log-detail-open = false; } } }
                     }
@@ -8311,7 +8693,7 @@ export component AppWindow inherits Window {
                             padding-top: 8px;
                             padding-bottom: 20px + root.bottom-inset;
                             spacing: 8px;
-                            Text { text: "基础信息"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Text { text: "基础信息"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
                             Rectangle {
                                 background: Theme.s.card;
                                 border-radius: 16px;
@@ -8322,27 +8704,27 @@ export component AppWindow inherits Window {
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
-                                        Text { text: "时间"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.log-detail.time; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: "时间"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.log-detail.time; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                     Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
-                                        Text { text: "日志等级"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.log-detail.level; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Text { text: "日志等级"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.log-detail.level; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
                                 }
                             }
                             Rectangle { height: 8px; }
-                            Text { text: "内容"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Text { text: "内容"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
                             Rectangle {
                                 background: Theme.s.card;
                                 border-radius: 16px;
                                 height: ld-body.preferred-height;
                                 ld-body := VerticalLayout {
                                     padding: 16px;
-                                    Text { text: root.log-detail.text; font-size: 15px; color: Theme.s.on-surface; wrap: word-wrap; }
+                                    Text { text: root.log-detail.text; font-size: 15px * Type.scale; color: Theme.s.on-surface; wrap: word-wrap; }
                                 }
                             }
                         }
@@ -8372,7 +8754,7 @@ export component AppWindow inherits Window {
                         height: 44px;
                         padding-left: 20px;
                         padding-right: 8px;
-                        Text { text: root.req-detail.sheet-title; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                        Text { text: root.req-detail.sheet-title; font-size: 17px * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                         if root.req-detail.menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; clicked => { root.req-detail-menu(); } } }
                         VerticalLayout { alignment: center; IconButton { glyph: Icons.close; clicked => { root.req-sheet-open = false; root.req-sheet-closed(); } } }
                     }
@@ -8409,7 +8791,7 @@ export component AppWindow inherits Window {
             dismiss => { root.cond-open = false; }
             VerticalLayout {
                 spacing: 6px;
-                HorizontalLayout { padding-left: 14px; Text { text: "字段"; font-size: 13px; color: Theme.s.on-surface-variant; } }
+                HorizontalLayout { padding-left: 14px; Text { text: "字段"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; } }
                 ChoiceGrid {
                     choices: root.cond-fields;
                     value: root.cond-field;
@@ -8418,7 +8800,7 @@ export component AppWindow inherits Window {
             }
             VerticalLayout {
                 spacing: 6px;
-                HorizontalLayout { padding-left: 14px; Text { text: "条件"; font-size: 13px; color: Theme.s.on-surface-variant; } }
+                HorizontalLayout { padding-left: 14px; Text { text: "条件"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; } }
                 ChoiceGrid {
                     choices: ["包含", "不包含", "等于", "不等于"];
                     value: root.cond-op;
@@ -8433,7 +8815,7 @@ export component AppWindow inherits Window {
             }
             if root.cond-suggestions.length > 0: VerticalLayout {
                 spacing: 6px;
-                HorizontalLayout { padding-left: 14px; Text { text: root.cond-values-in; font-size: 13px; color: Theme.s.on-surface-variant; } }
+                HorizontalLayout { padding-left: 14px; Text { text: root.cond-values-in; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; } }
                 Flickable {
                     height: 32px;
                     content-width: sugg.preferred-width;
@@ -8449,8 +8831,8 @@ export component AppWindow inherits Window {
                                 padding-left: 12px;
                                 padding-right: 12px;
                                 spacing: 6px;
-                                Text { text: g.value; font-size: 13px; color: Theme.s.on-surface; vertical-alignment: center; }
-                                Text { text: g.count; font-size: 12px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                                Text { text: g.value; font-size: 13px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                Text { text: g.count; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
                             }
                             sta := TouchArea { clicked => { root.cond-value = g.value; } }
                         }
@@ -8460,8 +8842,8 @@ export component AppWindow inherits Window {
             VerticalLayout {
                 padding-left: 14px;
                 spacing: 4px;
-                Text { text: root.cond-shows; font-size: 13px; font-weight: 600; color: Theme.s.on-surface; }
-                Text { text: root.cond-tip; font-size: 13px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                Text { text: root.cond-shows; font-size: 13px * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
+                Text { text: root.cond-tip; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
             }
             HorizontalLayout {
                 alignment: end;
@@ -8484,9 +8866,9 @@ export component AppWindow inherits Window {
                     input-type: root.res-dialog == "interval" ? InputType.number : InputType.text;
                     init => { self.focus-input(); }
                 }
-                if root.res-dialog == "interval": Text { text: "小时"; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                if root.res-dialog == "interval": Text { text: "小时"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
             }
-            if root.res-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.res-error; font-size: 13px; color: Theme.s.error; } }
+            if root.res-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.res-error; font-size: 13px * Type.scale; color: Theme.s.error; } }
             HorizontalLayout {
                 spacing: 8px;
                 if root.res-dialog-default != "": TextButton { text: "重置"; clicked => { root.res-dialog-value = root.res-dialog-default; } }
@@ -8507,7 +8889,7 @@ export component AppWindow inherits Window {
             title: root.confirm-title;
             top: root.top-inset;
             dismissable: false;
-            Text { text: root.confirm-text; wrap: word-wrap; color: Theme.s.on-surface-variant; font-size: 15px; }
+            Text { text: root.confirm-text; wrap: word-wrap; color: Theme.s.on-surface-variant; font-size: 15px * Type.scale; }
             HorizontalLayout {
                 alignment: end;
                 spacing: 8px;
@@ -8563,7 +8945,7 @@ export component AppWindow inherits Window {
                 init => { self.focus-input(); }
             }
             if root.input-label2 != "": Field { label: root.input-label2; text <=> root.input-value2; }
-            if root.input-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.input-error; font-size: 13px; color: Theme.s.error; wrap: word-wrap; } }
+            if root.input-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.input-error; font-size: 13px * Type.scale; color: Theme.s.error; wrap: word-wrap; } }
             HorizontalLayout {
                 spacing: 8px;
                 if root.input-removable: TextButton { text: "删除"; danger: true; clicked => { root.input-open = false; root.input-remove(root.input-key); } }
@@ -8588,7 +8970,7 @@ export component AppWindow inherits Window {
             Field { label: "混合端口"; text <=> root.port-mixed; input-type: InputType.number; init => { self.focus-input(); } }
             Field { label: "端口"; text <=> root.port-http; input-type: InputType.number; }
             Field { label: "Socks端口"; text <=> root.port-socks; input-type: InputType.number; }
-            if root.ports-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.ports-error; font-size: 13px; color: Theme.s.error; wrap: word-wrap; } }
+            if root.ports-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.ports-error; font-size: 13px * Type.scale; color: Theme.s.error; wrap: word-wrap; } }
             HorizontalLayout {
                 spacing: 8px;
                 TextButton { text: "重置"; clicked => { root.port-mixed = "7890"; root.port-http = "0"; root.port-socks = "0"; } }
@@ -8613,7 +8995,7 @@ export component AppWindow inherits Window {
             Field { label: "地址"; text <=> root.dav-uri; init => { self.focus-input(); } }
             Field { label: "账号"; text <=> root.dav-user; }
             Field { label: "密码"; text <=> root.dav-pass; input-type: InputType.password; }
-            if root.dav-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.dav-error; font-size: 13px; color: Theme.s.error; wrap: word-wrap; } }
+            if root.dav-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.dav-error; font-size: 13px * Type.scale; color: Theme.s.error; wrap: word-wrap; } }
             HorizontalLayout {
                 spacing: 8px;
                 if root.dav-bound: TextButton { text: "删除"; danger: true; clicked => { root.dav-open = false; root.dav-delete(); } }
@@ -8649,7 +9031,7 @@ export component AppWindow inherits Window {
             title: root.alert-title;
             top: root.top-inset;
             dismiss => { root.alert-open = false; }
-            Text { text: root.alert-text; wrap: word-wrap; color: Theme.s.on-surface-variant; font-size: 15px; }
+            Text { text: root.alert-text; wrap: word-wrap; color: Theme.s.on-surface-variant; font-size: 15px * Type.scale; }
             HorizontalLayout {
                 alignment: end;
                 TextButton { text: "确定"; clicked => { root.alert-open = false; } }

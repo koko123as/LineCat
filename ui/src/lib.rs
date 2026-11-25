@@ -15,6 +15,7 @@ pub mod dashboard;
 pub mod dns_queries;
 pub mod drag;
 pub mod edges;
+pub mod fonts;
 pub mod http_capture;
 pub mod items;
 mod items_app;
@@ -497,7 +498,12 @@ impl App {
                 }
                 Some("insets") => app.set_edges(event),
                 Some("network") => app.on_network(event["wifi"].as_bool() == Some(true)),
-                Some("resume") => app.on_resume(),
+                Some("resume") => {
+                    if let Some(scale) = event.get("fontScale").and_then(Value::as_f64) {
+                        app.set_system_font_scale(scale as f32);
+                    }
+                    app.on_resume();
+                }
                 _ => {}
             }
         }));
@@ -517,6 +523,9 @@ impl App {
             Some((get(0)?, get(1)?))
         });
         self.set_system_seeds(seeds);
+        if let Some(scale) = hello.get("fontScale").and_then(Value::as_f64) {
+            self.set_system_font_scale(scale as f32);
+        }
         let greeting = bridge.call(
             "core.hello",
             json!({"protocol": {"min": 1, "max": 1}, "client": {"name": "seasoncat-ui", "version": VERSION}}),

@@ -257,11 +257,40 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
         s.color_style = 1;
         s.pure_black = true;
     }
+    if let Some(scale) = overlay.strip_prefix("scale:") {
+        s.text_scale = store::TextScale {
+            enable: true,
+            scale: scale.parse().unwrap_or(1.0),
+        };
+    }
+    if overlay == "font-picked" {
+        s.font_family = Some("Noto Sans SC".into());
+    }
     if overlay == "docked" {
         s.floating_navigation_bar = false;
         s.tab_animation = 0;
     }
     apply_theme(ui, &s);
+    if page == "font" {
+        let families: Vec<slint::SharedString> = [
+            "casual",
+            "cursive",
+            "monospace",
+            "Noto Sans SC",
+            "sans-serif",
+            "sans-serif-condensed",
+            "sans-serif-medium",
+            "sans-serif-smallcaps",
+            "serif",
+            "serif-monospace",
+            "source-sans-pro",
+        ]
+        .map(Into::into)
+        .to_vec();
+        ui.set_font_families(ModelRc::new(VecModel::from(families)));
+        ui.set_font_searchable(true);
+        ui.set_font_loading(false);
+    }
     if page == "theme-color" {
         show_color_page(ui, &s, 0x5856D6);
         ui.set_color_mode(match overlay {
@@ -1141,11 +1170,23 @@ fn main() {
         ("set-theme-dark", 3, "", "theme", 2, ""),
         ("set-theme-custom", 3, "", "theme", 1, "custom"),
         ("set-theme-docked", 3, "", "theme", 1, "docked"),
+        ("set-theme-scale-412x2300", 3, "", "theme", 1, "scale:1.25"),
+        ("set-font", 3, "", "font", 1, "font-picked"),
+        ("set-font-small", 3, "", "font", 2, ""),
+        ("set-font-wide", 3, "", "font", 1, "font-picked"),
+        ("set-font-tablet", 3, "", "font", 1, ""),
+        ("scale14-dash", 0, "", "", 1, "scale:1.4"),
+        ("scale14-dash-small", 0, "", "", 1, "scale:1.4"),
+        ("scale14-tools", 3, "", "", 1, "scale:1.4"),
+        ("scale14-general-small", 3, "", "general", 1, "scale:1.4"),
+        ("scale14-profiles", 2, "", "", 1, "scale:1.4"),
+        ("scale14-proxies", 1, "", "", 1, "scale:1.4"),
+        ("scale08-dash", 0, "", "", 1, "scale:0.8"),
         ("set-theme-docked-small", 3, "", "theme", 2, "docked"),
         ("set-theme-docked-wide", 3, "", "theme", 1, "docked"),
         ("set-theme-docked-tablet", 3, "", "theme", 1, "docked"),
-        ("set-theme-full-412x1800", 3, "", "theme", 1, ""),
-        ("set-theme-docked-412x1800", 3, "", "theme", 2, "docked"),
+        ("set-theme-full-412x2300", 3, "", "theme", 1, ""),
+        ("set-theme-docked-412x2300", 3, "", "theme", 2, "docked"),
         ("set-tools-docked", 3, "", "", 1, "docked"),
         ("set-tools-docked-small", 3, "", "", 2, "docked"),
         ("set-theme-custom-dark", 3, "", "theme", 2, "custom"),

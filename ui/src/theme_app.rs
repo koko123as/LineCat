@@ -3,7 +3,7 @@
 
 use crate::colors::{self, STYLES};
 use crate::theme::Palette;
-use crate::{store, ActionItem, App, AppWindow, Scheme, Swatch, Theme};
+use crate::{fonts, store, ActionItem, App, AppWindow, Scheme, Swatch, Theme, Type};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -24,6 +24,10 @@ struct ThemeState {
     system: Option<(u32, u32)>,
     draft: Draft,
     grid: Vec<u32>,
+    /// The system's font scale (`Configuration.fontScale`), once the shell has said.
+    font_scale: f32,
+    /// The font page's families, read once.
+    families: Option<Vec<String>>,
 }
 
 fn state() -> &'static Mutex<ThemeState> {
@@ -33,6 +37,8 @@ fn state() -> &'static Mutex<ThemeState> {
             system: None,
             draft: Draft::default(),
             grid: colors::grid(),
+            font_scale: 1.0,
+            families: None,
         })
     })
 }
@@ -60,7 +66,17 @@ fn scheme(p: &Palette) -> Scheme {
 
 /// Sets the app's schemes and what the theme page shows from the settings.
 pub fn apply(ui: &AppWindow, settings: &store::Settings) {
-    let system = state().lock().unwrap().system;
+    let (system, font_scale) = {
+        let st = state().lock().unwrap();
+        (st.system, st.font_scale)
+    };
+    let text = settings.text_scale;
+    let scale = fonts::effective_scale(text.enable, text.scale, font_scale);
+    let typ = ui.global::<Type>();
+    typ.set_scale(scale);
+    typ.set_family(settings.font_family.clone().unwrap_or_default().into());
+    ui.set_text_scale_enable(text.enable);
+    ui.set_text_scale(scale);
     let seeds = colors::seeds(settings.primary_color, system);
     let style = settings.color_style;
     let (light, dark) = colors::schemes(seeds, style, settings.pure_black);
@@ -166,6 +182,51 @@ impl App {
         self.ui(move |ui| apply(&ui, &settings));
     }
 
+    /// The system's font scale, for text that follows it.
+    pub(crate) fn set_system_font_scale(self: &Arc<Self>, scale: f32) {
+        let changed = {
+            let mut st = state().lock().unwrap();
+            let changed = (st.font_scale - scale).abs() > f32::EPSILON;
+            st.font_scale = scale;
+            changed
+        };
+        if changed {
+            self.publish_theme();
+        }
+    }
+
+    fn open_fonts(self: &Arc<Self>) {
+        let cached = state().lock().unwrap().families.clone();
+        let loading = cached.is_none();
+        self.ui(move |ui| {
+            ui.set_font_searching(false);
+            ui.set_font_query("".into());
+            ui.set_font_loading(loading);
+            ui.set_tools_page("font".into());
+        });
+        match cached {
+            Some(families) => self.show_fonts(families, ""),
+            None => self.spawn(|app| {
+                let families = fonts::system_families();
+                state().lock().unwrap().families = Some(families.clone());
+                app.show_fonts(families, "");
+            }),
+        }
+    }
+
+    fn show_fonts(self: &Arc<Self>, families: Vec<String>, query: &str) {
+        let searchable = families.len() + 1 >= 10;
+        let shown: Vec<SharedString> = fonts::matching(&families, query)
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        self.ui(move |ui| {
+            ui.set_font_searchable(searchable);
+            ui.set_font_families(ModelRc::new(VecModel::from(shown)));
+            ui.set_font_loading(false);
+        });
+    }
+
     /// The shell's hello: the system's seeds, for a theme that follows the system.
     pub(crate) fn set_system_seeds(self: &Arc<Self>, seeds: Option<(u32, u32)>) {
         state().lock().unwrap().system = seeds;
@@ -190,6 +251,24 @@ impl App {
         ui.on_set_floating_bar(move |on| a.update_theme(|s| s.floating_navigation_bar = on));
         let a = self.clone();
         ui.on_set_tab_animation(move |i| a.update_theme(|s| s.tab_animation = i));
+        let a = self.clone();
+        ui.on_set_text_scale_enable(move |on| a.update_theme(|s| s.text_scale.enable = on));
+        let a = self.clone();
+        ui.on_set_text_scale(move |v| a.update_theme(|s| s.text_scale.scale = fonts::snap(v)));
+        let a = self.clone();
+        ui.on_open_font_page(move || a.open_fonts());
+        let a = self.clone();
+        ui.on_font_search(move |q| {
+            let families = state().lock().unwrap().families.clone();
+            if let Some(families) = families {
+                a.show_fonts(families, &q);
+            }
+        });
+        let a = self.clone();
+        ui.on_font_pick(move |f| {
+            let family = (!f.is_empty()).then(|| f.to_string());
+            a.update_theme(|s| s.font_family = family);
+        });
         let a = self.clone();
         ui.on_swatch_picked(move |i| {
             a.update_theme(|s| {
