@@ -510,6 +510,10 @@ global Icons {
     out property <string> wifi: "M2.5 9a14 14 0 0 1 19 0 M5.5 12.5a9.5 9.5 0 0 1 13 0 M8.5 16a5 5 0 0 1 7 0 M12 19.5v0.01";
     out property <string> deselect: "M4 4h16v16H4z M9 9l6 6 M15 9l-6 6";
     out property <string> key: "M8 15a4 4 0 1 1 3.5-6H21v3h-2v3h-3v-3h-4.5A4 4 0 0 1 8 15z M7 11h.01";
+    out property <string> layers: "M12 3l9 5-9 5-9-5z M3 12.5l9 5 9-5 M3 17l9 5 9-5";
+    out property <string> motion: "M14 5a7 7 0 1 1 0 14 7 7 0 0 1 0-14z M3 8h5 M2 12h4 M3 16h5";
+    out property <string> font: "M4 20l6-16h1l6 16 M6.5 14h8 M17 20h4";
+    out property <string> text-size: "M3 7V5h10v2 M8 5v14 M6 19h4 M13 12v-1h8v1 M17 11v8 M15.5 19h3";
     out property <string> memory: "M6 6h12v12H6z M9 9h6v6H9z M9 3v3 M15 3v3 M9 18v3 M15 18v3 M3 9h3 M3 15h3 M18 9h3 M18 15h3";
 }
 
@@ -4832,6 +4836,55 @@ component ResetButton inherits Rectangle {
     rb-ta := TouchArea { clicked => { root.clicked(); } }
 }
 
+// `ThemeLivePreview`: the home page as the settings draw it, in a phone 168 wide at 9:17;
+// its destinations can be tapped to try the tab animation.
+component ThemeLivePreview inherits Rectangle {
+    in property <bool> floating;
+    in property <bool> fade;
+    property <int> selected;
+    property <int> previous: -1;
+    property <duration> started;
+    property <duration> span: root.fade ? 220ms : 300ms;
+    property <float> t: root.previous >= 0 ? clamp((animation-tick() - root.started) / root.span, 0, 1) : 1;
+    // Curves.easeInOut for a fade, Curves.easeOut for a slide.
+    property <float> eased: root.fade ? root.t * root.t * (3 - 2 * root.t) : 1 - (1 - root.t) * (1 - root.t);
+    changed fade => { root.select(mod(root.selected + 1, 4)); }
+    function select(i: int) {
+        if (i == root.selected) { return; }
+        root.previous = root.selected;
+        root.selected = i;
+        root.started = animation-tick();
+        done.restart();
+    }
+    height: phone.height + 48px;
+    background: Theme.s.card;
+    border-radius: 28px;
+    done := Timer {
+        interval: root.span;
+        running: false;
+        triggered => {
+            root.previous = -1;
+            self.stop();
+        }
+    }
+    phone := Rectangle {
+        width: 168px;
+        height: self.width * 17 / 9;
+        border-radius: 28px;
+        clip: true;
+        MiniScreen {
+            s: Theme.s;
+            dark: Theme.is-dark;
+            floating: root.floating;
+            selected: root.selected;
+            previous: root.previous;
+            progress: root.eased;
+            fade: root.fade;
+            select(i) => { root.select(i); }
+        }
+    }
+}
+
 // lib/views/theme.dart: theme mode and pure black with sketches of the app, then the colours.
 component ThemePage inherits Rectangle {
     in property <int> theme-mode;
@@ -4844,7 +4897,11 @@ component ThemePage inherits Rectangle {
     in property <Scheme> dark;
     in property <Scheme> dark-standard;
     in property <Scheme> dark-black;
+    in property <bool> floating;
+    in property <bool> tab-fade;
     in property <length> bottom-gap: 32px;
+    callback set-floating(bool);
+    callback set-tab-animation(int);
     callback set-theme-mode(int);
     callback set-pure-black(bool);
     callback swatch-picked(int);
@@ -4861,6 +4918,12 @@ component ThemePage inherits Rectangle {
                 alignment: start;
                 padding-bottom: root.bottom-gap;
                 spacing: 16px;
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 8px;
+                    ThemeLivePreview { floating: root.floating; fade: root.tab-fade; }
+                }
                 VerticalLayout {
                     InfoHeader { title: "主题模式"; glyph: Icons.sun; }
                     HorizontalLayout {
@@ -4873,20 +4936,20 @@ component ThemePage inherits Rectangle {
                                 checked: root.theme-mode == 0;
                                 divider: true;
                                 clicked => { root.set-theme-mode(0); }
-                                MiniThumb { s: root.light; s2: root.dark; split: true; }
+                                MiniThumb { s: root.light; s2: root.dark; split: true; floating: root.floating; }
                             }
                             PreviewRow {
                                 text: "浅色";
                                 checked: root.theme-mode == 1;
                                 divider: true;
                                 clicked => { root.set-theme-mode(1); }
-                                MiniThumb { s: root.light; }
+                                MiniThumb { s: root.light; floating: root.floating; }
                             }
                             PreviewRow {
                                 text: "深色";
                                 checked: root.theme-mode == 2;
                                 clicked => { root.set-theme-mode(2); }
-                                MiniThumb { s: root.dark; dark: true; }
+                                MiniThumb { s: root.dark; dark: true; floating: root.floating; }
                             }
                         }
                     }
@@ -4903,13 +4966,13 @@ component ThemePage inherits Rectangle {
                                 checked: !root.pure-black;
                                 divider: true;
                                 clicked => { root.set-pure-black(false); }
-                                MiniThumb { s: root.dark-standard; dark: true; }
+                                MiniThumb { s: root.dark-standard; dark: true; floating: root.floating; }
                             }
                             PreviewRow {
                                 text: "纯黑";
                                 checked: root.pure-black;
                                 clicked => { root.set-pure-black(true); }
-                                MiniThumb { s: root.dark-black; dark: true; }
+                                MiniThumb { s: root.dark-black; dark: true; floating: root.floating; }
                             }
                         }
                     }
@@ -4933,6 +4996,52 @@ component ThemePage inherits Rectangle {
                         }
                         Group {
                             OptionsRow { title: "配色风格"; value: root.style-label; clicked => { root.pick-style(); } }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    InfoHeader { title: "底栏"; glyph: Icons.layers; }
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 8px;
+                        Group {
+                            PreviewRow {
+                                text: "悬浮";
+                                checked: root.floating;
+                                divider: true;
+                                clicked => { root.set-floating(true); }
+                                MiniThumb { s: Theme.s; dark: Theme.is-dark; floating: true; }
+                            }
+                            PreviewRow {
+                                text: "固定";
+                                checked: !root.floating;
+                                clicked => { root.set-floating(false); }
+                                MiniThumb { s: Theme.s; dark: Theme.is-dark; floating: false; }
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    InfoHeader { title: "选项卡动画"; glyph: Icons.motion; }
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 8px;
+                        Group {
+                            PreviewRow {
+                                text: "滑动";
+                                checked: !root.tab-fade;
+                                divider: true;
+                                clicked => { root.set-tab-animation(0); }
+                                MiniThumb { s: Theme.s; dark: Theme.is-dark; floating: root.floating; selected: 1; previous: 0; progress: 0.55; }
+                            }
+                            PreviewRow {
+                                text: "淡入";
+                                checked: root.tab-fade;
+                                clicked => { root.set-tab-animation(1); }
+                                MiniThumb { s: Theme.s; dark: Theme.is-dark; floating: root.floating; selected: 1; previous: 0; progress: 0.55; fade: true; }
+                            }
                         }
                     }
                 }
@@ -6433,6 +6542,41 @@ component NavItem inherits Rectangle {
     TouchArea { clicked => { root.clicked(); } }
 }
 
+// `NavigationBar`'s `_Destination`: a 64 by 32 pill one level up behind the chosen icon.
+component BarItem inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    in property <string> glyph;
+    callback clicked();
+    VerticalLayout {
+        alignment: center;
+        spacing: 4px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 64px;
+                height: 32px;
+                Rectangle {
+                    border-radius: 16px;
+                    background: Theme.is-dark ? Theme.s.inset : Theme.s.block;
+                    opacity: root.active ? 1 : 0;
+                    animate opacity { duration: 250ms; easing: ease-in-out; }
+                }
+                Icon { glyph: root.glyph; tint: root.active ? Theme.s.primary : Theme.s.on-surface-variant; }
+            }
+        }
+        Text {
+            text: root.label;
+            font-size: 12px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            overflow: elide;
+            color: root.active ? Theme.s.on-surface : Theme.s.on-surface-variant;
+        }
+    }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
 // A destination on the side: a rail item (icon over label) or a side bar row.
 component SideItem inherits Rectangle {
     in property <string> label;
@@ -6697,6 +6841,11 @@ export component AppWindow inherits Window {
     // Settings
     in property <int> theme-mode;
     callback set-theme-mode(int);
+    // `floatingNavigationBar` and `tabAnimation` (fade, else slide).
+    in property <bool> floating-bar: true;
+    in property <bool> tab-fade: true;
+    callback set-floating-bar(bool);
+    callback set-tab-animation(int);
     // Theme colours (lib/views/theme.dart) and the custom colour page.
     in property <[Swatch]> swatches;
     in property <bool> colors-can-reset;
@@ -6913,6 +7062,43 @@ export component AppWindow inherits Window {
         root.link-batch = false;
     }
 
+    // home.dart's `_toPage` on a phone: the page slides in from the side it lies on, or
+    // cross-fades in place, with the page it leaves drawn until the switch ends.
+    property <int> tab-prev: -1;
+    property <duration> tab-started;
+    property <duration> tab-span: root.tab-fade ? 220ms : 300ms;
+    property <float> tab-t: root.tab-prev >= 0 ? clamp((animation-tick() - root.tab-started) / root.tab-span, 0, 1) : 1;
+    property <float> tab-eased: root.tab-fade ? root.tab-t * root.tab-t * (3 - 2 * root.tab-t) : 1 - (1 - root.tab-t) * (1 - root.tab-t);
+    property <float> tab-dir: root.tab-prev > root.tab ? -1 : 1;
+    pure function tab-x(t: int) -> length {
+        if (root.tab-prev < 0 || root.tab-fade) { return 0px; }
+        if (t == root.tab) { return root.tab-dir * root.width * (1 - root.tab-eased); }
+        if (t == root.tab-prev) { return -root.tab-dir * root.width * root.tab-eased; }
+        return 0px;
+    }
+    pure function tab-opacity(t: int) -> float {
+        if (root.tab-prev < 0 || !root.tab-fade) { return 1; }
+        if (t == root.tab) { return root.tab-eased; }
+        if (t == root.tab-prev) { return 1 - root.tab-eased; }
+        return 1;
+    }
+    tab-done := Timer {
+        interval: root.tab-span;
+        running: false;
+        triggered => {
+            root.tab-prev = -1;
+            self.stop();
+        }
+    }
+    function nav(t: int) {
+        if (!root.wide && t != root.tab && root.tab <= 3) {
+            root.tab-prev = root.tab;
+            root.tab-started = animation-tick();
+            tab-done.restart();
+        }
+        root.go(t);
+    }
+
     function go(t: int) {
         root.tab = t;
         root.tools-page = "";
@@ -6921,7 +7107,7 @@ export component AppWindow inherits Window {
     }
 
     property <bool> wide: root.width > 600px;
-    property <length> dock-pad: !root.wide && root.keyboard == 0 ? 88px + root.bottom-inset : 0px;
+    property <length> dock-pad: !root.wide && root.keyboard == 0 && root.floating-bar ? 88px + root.bottom-inset : 0px;
     changed dock-pad => { Dock.pad = self.dock-pad; }
     init => { Dock.pad = self.dock-pad; }
     // `navigationItemsState`: 代理 shows once the Core has groups, or before the first
@@ -7046,7 +7232,10 @@ export component AppWindow inherits Window {
         VerticalLayout {
             Rectangle {
                 vertical-stretch: 1;
-                if root.tab == 0: Dashboard {
+                clip: root.tab-prev >= 0;
+                if root.tab == 0 || root.tab-prev == 0: Dashboard {
+                    x: root.tab-x(0);
+                    opacity: root.tab-opacity(0);
                     width: parent.width;
                     height: parent.height;
                     run-state: root.run-state;
@@ -7124,7 +7313,9 @@ export component AppWindow inherits Window {
                 }
                 // Kept in the tree so its measures stay readable and its scroll stays put.
                 proxies-page := Proxies {
-                    visible: root.tab == 1;
+                    visible: root.tab == 1 || root.tab-prev == 1;
+                    x: root.tab-x(1);
+                    opacity: root.tab-opacity(1);
                     width: parent.width;
                     height: parent.height;
                     groups: root.proxy-groups;
@@ -7166,7 +7357,9 @@ export component AppWindow inherits Window {
                         root.ctx-h = h;
                     }
                 }
-                if root.tab == 2 && (root.profiles-page == "" || root.profiles-page == "sort"): Profiles {
+                if (root.tab == 2 && (root.profiles-page == "" || root.profiles-page == "sort")) || root.tab-prev == 2: Profiles {
+                    x: root.tab-x(2);
+                    opacity: root.tab-opacity(2);
                     width: parent.width;
                     height: parent.height;
                     profiles: root.profiles;
@@ -7220,7 +7413,9 @@ export component AppWindow inherits Window {
                         root.profiles-page = root.profiles-page == "editor" ? "edit" : "";
                     }
                 }
-                if root.tab == 3 && root.tools-page == "": Tools {
+                if (root.tab == 3 && root.tools-page == "") || root.tab-prev == 3: Tools {
+                    x: root.tab-x(3);
+                    opacity: root.tab-opacity(3);
                     width: parent.width;
                     height: parent.height;
                     sections: root.tools-sections;
@@ -7396,6 +7591,10 @@ export component AppWindow inherits Window {
                     dark: Theme.dark;
                     dark-standard: root.scheme-dark-standard;
                     dark-black: root.scheme-dark-black;
+                    floating: root.floating-bar;
+                    tab-fade: root.tab-fade;
+                    set-floating(on) => { root.set-floating-bar(on); }
+                    set-tab-animation(i) => { root.set-tab-animation(i); }
                     set-theme-mode(m) => { root.set-theme-mode(m); }
                     set-pure-black(on) => { root.set-pure-black(on); }
                     swatch-picked(i) => { root.swatch-picked(i); }
@@ -7456,7 +7655,7 @@ export component AppWindow inherits Window {
             }
             // The floating dock (an approved departure from FlClash's bar): a rounded bar
             // clear of the screen's sides and bottom, with the pages scrolling under it.
-            if !root.wide && root.keyboard == 0: Rectangle {
+            if !root.wide && root.keyboard == 0 && root.floating-bar: Rectangle {
                 height: 0px;
                 Rectangle {
                     x: 12px;
@@ -7472,11 +7671,26 @@ export component AppWindow inherits Window {
                     padding-left: 4px;
                     padding-right: 4px;
                     height: 64px;
-                    NavItem { label: "仪表盘"; glyph: Icons.dashboard; active: root.tab == 0; clicked => { root.go(0); } }
-                    if root.has-proxies: NavItem { label: "代理"; glyph: Icons.proxies; active: root.tab == 1; clicked => { root.go(1); } }
-                    NavItem { label: "配置"; glyph: Icons.profiles; active: root.tab == 2; clicked => { root.go(2); } }
-                    NavItem { label: "工具"; glyph: Icons.tools; active: root.tab == 3; clicked => { root.go(3); } }
+                    NavItem { label: "仪表盘"; glyph: Icons.dashboard; active: root.tab == 0; clicked => { root.nav(0); } }
+                    if root.has-proxies: NavItem { label: "代理"; glyph: Icons.proxies; active: root.tab == 1; clicked => { root.nav(1); } }
+                    NavItem { label: "配置"; glyph: Icons.profiles; active: root.tab == 2; clicked => { root.nav(2); } }
+                    NavItem { label: "工具"; glyph: Icons.tools; active: root.tab == 3; clicked => { root.nav(3); } }
                 }
+                }
+            }
+            // prism_ui's `NavigationBar`, where the dock is turned off: a bar of the floating
+            // level, 80 high above the bottom inset, its pages ending at its top.
+            if !root.wide && root.keyboard == 0 && !root.floating-bar: Rectangle {
+                height: 80px + root.bottom-inset;
+                background: Theme.is-dark ? Theme.s.block : Theme.s.card;
+                TouchArea { }
+                HorizontalLayout {
+                    y: 0;
+                    height: 80px;
+                    BarItem { label: "仪表盘"; glyph: Icons.dashboard; active: root.tab == 0; clicked => { root.nav(0); } }
+                    if root.has-proxies: BarItem { label: "代理"; glyph: Icons.proxies; active: root.tab == 1; clicked => { root.nav(1); } }
+                    BarItem { label: "配置"; glyph: Icons.profiles; active: root.tab == 2; clicked => { root.nav(2); } }
+                    BarItem { label: "工具"; glyph: Icons.tools; active: root.tab == 3; clicked => { root.nav(3); } }
                 }
             }
         }

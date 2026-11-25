@@ -257,6 +257,10 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
         s.color_style = 1;
         s.pure_black = true;
     }
+    if overlay == "docked" {
+        s.floating_navigation_bar = false;
+        s.tab_animation = 0;
+    }
     apply_theme(ui, &s);
     if page == "theme-color" {
         show_color_page(ui, &s, 0x5856D6);
@@ -1136,6 +1140,14 @@ fn main() {
         ("set-theme-tablet", 3, "", "theme", 1, ""),
         ("set-theme-dark", 3, "", "theme", 2, ""),
         ("set-theme-custom", 3, "", "theme", 1, "custom"),
+        ("set-theme-docked", 3, "", "theme", 1, "docked"),
+        ("set-theme-docked-small", 3, "", "theme", 2, "docked"),
+        ("set-theme-docked-wide", 3, "", "theme", 1, "docked"),
+        ("set-theme-docked-tablet", 3, "", "theme", 1, "docked"),
+        ("set-theme-full-412x1800", 3, "", "theme", 1, ""),
+        ("set-theme-docked-412x1800", 3, "", "theme", 2, "docked"),
+        ("set-tools-docked", 3, "", "", 1, "docked"),
+        ("set-tools-docked-small", 3, "", "", 2, "docked"),
         ("set-theme-custom-dark", 3, "", "theme", 2, "custom"),
         ("set-theme-custom-small", 3, "", "theme", 1, "custom"),
         ("set-color", 3, "", "theme-color", 1, "grid"),

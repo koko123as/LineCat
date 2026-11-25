@@ -63,6 +63,10 @@ pub struct Settings {
     pub table_column_widths: BTreeMap<String, BTreeMap<String, f32>>,
     /// `Config.excludeSSIDs`: Wi-Fi networks a run is suspended on.
     pub exclude_ssids: Vec<String>,
+    /// `AppSettingProps.floatingNavigationBar`: the phone's dock floats, else a docked bar.
+    pub floating_navigation_bar: bool,
+    /// `AppSettingProps.tabAnimation`: 0 slide, 1 fade.
+    pub tab_animation: i32,
 }
 
 /// The network page's settings: `VpnProps`, `NetworkProps` and the TUN part of
@@ -234,6 +238,8 @@ impl Default for Settings {
             disabled_services: Vec::new(),
             table_column_widths: BTreeMap::new(),
             exclude_ssids: Vec::new(),
+            floating_navigation_bar: true,
+            tab_animation: 1,
         }
     }
 }
@@ -527,6 +533,13 @@ mod tests {
     fn older_settings_take_the_geo_defaults() {
         let s: Settings = serde_json::from_str(r#"{"accent":2}"#).unwrap();
         assert!(s.geo_auto_update && s.geox_url.len() == 3 && !s.mitm.capture);
+    }
+
+    #[test]
+    fn older_settings_float_the_dock_and_fade_tabs() {
+        let s: Settings = serde_json::from_str(r#"{"accent":2}"#).unwrap();
+        assert!(s.floating_navigation_bar);
+        assert_eq!(s.tab_animation, 1);
     }
 
     #[test]
