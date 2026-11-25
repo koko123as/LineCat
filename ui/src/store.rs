@@ -55,6 +55,10 @@ pub struct Settings {
     pub scripts: Vec<crate::items::Script>,
     /// `AppSettingProps.hideIp`: the outbound IP shown masked.
     pub hide_ip: bool,
+    /// `AppSettingProps.serviceOrder`: service ids the user moved, the rest after them.
+    pub service_order: Vec<String>,
+    /// `AppSettingProps.disabledServices`.
+    pub disabled_services: Vec<String>,
 }
 
 /// The network page's settings: `VpnProps`, `NetworkProps` and the TUN part of
@@ -222,6 +226,8 @@ impl Default for Settings {
             filters: Vec::new(),
             scripts: Vec::new(),
             hide_ip: false,
+            service_order: Vec::new(),
+            disabled_services: Vec::new(),
         }
     }
 }

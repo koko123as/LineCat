@@ -81,6 +81,56 @@ pub const SERVICES: &[(&str, &str)] = &[
     ("bilibili", "Bilibili"),
 ];
 
+/// `orderServiceTargets`: the ids in `order` that name a service, then every other one in
+/// the default order.
+pub fn ordered_services(order: &[String]) -> Vec<(&'static str, &'static str)> {
+    let mut out: Vec<(&'static str, &'static str)> = Vec::new();
+    for id in order {
+        if let Some(t) = SERVICES.iter().find(|(s, _)| s == id) {
+            if !out.contains(t) {
+                out.push(*t);
+            }
+        }
+    }
+    for t in SERVICES {
+        if !out.contains(t) {
+            out.push(*t);
+        }
+    }
+    out
+}
+
+/// `enabledServiceTargets`: the ordered services less the disabled ones, all of them when
+/// none would be left.
+pub fn enabled_services(
+    order: &[String],
+    disabled: &[String],
+) -> Vec<(&'static str, &'static str)> {
+    let all = ordered_services(order);
+    let enabled: Vec<_> = all
+        .iter()
+        .filter(|(id, _)| !disabled.iter().any(|d| d == id))
+        .copied()
+        .collect();
+    if enabled.is_empty() {
+        all
+    } else {
+        enabled
+    }
+}
+
+/// The line under a service in the sheet (`_OutboundIpLine`): the region and the address
+/// the service saw, the node it left through when there is no address, else "—".
+pub fn service_where(region: &str, ip: &str, node: &str) -> String {
+    match (region.is_empty(), ip.is_empty()) {
+        (false, false) => format!("{region} · {ip}"),
+        (true, false) => ip.to_string(),
+        _ if !node.is_empty() => node.to_string(),
+        (false, true) => region.to_string(),
+        _ => "—".into(),
+    }
+}
+
 /// `shownCount`: a row of the service card's columns on a phone, two rows on a wide
 /// dashboard (at most four, what the Core checks at once).
 pub fn service_shown(wide: bool, columns: i32) -> usize {
@@ -765,6 +815,24 @@ mod tests {
         assert_eq!(widget_label("stats"), "连接统计");
         assert_eq!(widget_description("status"), "含启动键，不可移除");
         assert_eq!(widget_description("speed"), "");
+    }
+
+    #[test]
+    fn services_follow_the_saved_order_and_switches() {
+        let ids = |v: Vec<(&str, &str)>| v.iter().map(|(i, _)| i.to_string()).collect::<Vec<_>>();
+        let order = vec!["netflix".to_string(), "nope".into(), "google".into()];
+        let o = ids(ordered_services(&order));
+        assert_eq!(o.len(), SERVICES.len());
+        assert_eq!(&o[..3], ["netflix", "google", "github"]);
+        let disabled = vec!["netflix".to_string(), "github".into()];
+        let e = ids(enabled_services(&order, &disabled));
+        assert_eq!(&e[..2], ["google", "youtube"]);
+        assert_eq!(e.len(), SERVICES.len() - 2);
+        let all: Vec<String> = SERVICES.iter().map(|(i, _)| i.to_string()).collect();
+        assert_eq!(enabled_services(&[], &all).len(), SERVICES.len());
+        assert_eq!(service_where("JP", "1.2.3.4", "n"), "JP · 1.2.3.4");
+        assert_eq!(service_where("", "", "日本 03"), "日本 03");
+        assert_eq!(service_where("", "", ""), "—");
     }
 
     #[test]

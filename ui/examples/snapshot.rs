@@ -432,6 +432,43 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
     }
 }
 
+/// The service card's cells, or the sheet's rows (one still checking).
+fn service_cells(n: usize, sheet: bool) -> Vec<DashService> {
+    let services = [
+        ("available", 132, "US", "104.28.1.9", ""),
+        ("available", 88, "", "", "日本 03"),
+        ("blocked", 0, "HK", "203.0.113.20", ""),
+        ("timeout", 0, "", "", ""),
+        ("available", 0, "SG", "198.51.100.7", ""),
+        ("unavailable", 0, "", "", "香港 01"),
+        ("available", 410, "US", "104.28.1.9", ""),
+        ("available", 95, "JP", "192.0.2.55", ""),
+    ];
+    dashboard::SERVICES
+        .iter()
+        .zip(services)
+        .take(n)
+        .enumerate()
+        .map(|(i, ((id, label), (st, delay, region, ip, node)))| {
+            let loading = sheet && i == 3;
+            let (text, tone) = if loading {
+                ("加载中…".into(), 0)
+            } else {
+                dashboard::service_status(Some(st), delay, false, false)
+            };
+            DashService {
+                id: (*id).into(),
+                label: (*label).into(),
+                status: text.into(),
+                tone,
+                dot: dashboard::service_dot(Some(st), false),
+                place: dashboard::service_where(region, ip, node).into(),
+                loading,
+            }
+        })
+        .collect()
+}
+
 fn main() {
     let out = std::env::args().nth(1).unwrap_or_else(|| ".".into());
     let (w, h) = (412u32, 892u32);
@@ -505,29 +542,18 @@ fn main() {
             })
             .collect::<Vec<_>>(),
     )));
-    let services = [
-        ("available", 132),
-        ("available", 88),
-        ("blocked", 0),
-        ("timeout", 0),
-        ("available", 0),
-        ("unavailable", 0),
-        ("available", 410),
-        ("available", 95),
-    ];
-    ui.set_dash_services(ModelRc::new(VecModel::from(
+    ui.set_dash_services(ModelRc::new(VecModel::from(service_cells(2, false))));
+    ui.set_dash_service_rows(ModelRc::new(VecModel::from(service_cells(8, true))));
+    ui.set_dash_service_manage(ModelRc::new(VecModel::from(
         dashboard::SERVICES
             .iter()
-            .zip(services)
-            .take(2)
-            .map(|((_, label), (st, delay))| {
-                let (text, tone) = dashboard::service_status(Some(st), delay, false, false);
-                DashService {
-                    label: (*label).into(),
-                    status: text.into(),
-                    tone,
-                    dot: dashboard::service_dot(Some(st), false),
-                }
+            .enumerate()
+            .map(|(i, (id, label))| ServiceManageRow {
+                id: (*id).into(),
+                label: (*label).into(),
+                enabled: i != 3 && i != 9,
+                shown: i < 2,
+                locked: false,
             })
             .collect::<Vec<_>>(),
     )));
@@ -816,6 +842,14 @@ fn main() {
         ("nav-noproxies-small", 0, "", "", 1, "noproxies"),
         ("nav-noproxies-wide", 0, "", "", 1, "noproxies"),
         ("nav-noproxies-tablet", 0, "", "", 1, "noproxies"),
+        ("dash-svcsheet", 0, "", "", 1, "svcsheet"),
+        ("dash-svcsheet-small", 0, "", "", 1, "svcsheet"),
+        ("dash-svcsheet-wide", 0, "", "", 1, "svcsheet"),
+        ("dash-svcsheet-tablet", 0, "", "", 1, "svcsheet"),
+        ("dash-svcmanage", 0, "", "", 1, "svcsheet-manage"),
+        ("dash-svcmanage-small", 0, "", "", 1, "svcsheet-manage"),
+        ("dash-svcmanage-wide", 0, "", "", 1, "svcsheet-manage"),
+        ("dash-svcmanage-tablet", 0, "", "", 1, "svcsheet-manage"),
         ("dash-memsheet", 0, "", "", 1, "memsheet"),
         ("dash-memsheet-small", 0, "", "", 1, "memsheet"),
         ("dash-memsheet-wide", 0, "", "", 1, "memsheet"),
@@ -1084,6 +1118,13 @@ fn main() {
         ui.set_dash_editing(*overlay == "edit");
         ui.set_ip_sheet_open(*overlay == "ipsheet");
         ui.set_mem_sheet_open(*overlay == "memsheet");
+        ui.set_svc_sheet_open(overlay.starts_with("svcsheet"));
+        ui.set_svc_sheet_page(if *overlay == "svcsheet-manage" {
+            "manage".into()
+        } else {
+            "".into()
+        });
+        ui.set_dash_services(ModelRc::new(VecModel::from(service_cells(2, false))));
         // "noproxies": the Core answered with no groups, so 代理 leaves the bar.
         ui.set_groups_loaded(*overlay == "noproxies");
         if *overlay == "noproxies" {

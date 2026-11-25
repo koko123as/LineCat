@@ -3,25 +3,33 @@
 
 use crate::dashboard;
 use crate::settings_app::Effect;
-use crate::{App, AppWindow, DashAdd, DashProfileDetail, DashService, DashStats, ProviderRow};
+use crate::{
+    App, AppWindow, DashAdd, DashProfileDetail, DashService, DashStats, ProviderRow,
+    ServiceManageRow,
+};
 use serde_json::{json, Value};
 use slint::{ModelRc, VecModel};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// One service's last answer: the Core's status and delay; `failed` when the call failed.
+/// One service's last answer: the Core's status, delay, where it saw the request from and
+/// the node it left through; `failed` when the call failed.
 #[derive(Clone, Default)]
 pub(crate) struct ServiceState {
     pub status: Option<String>,
     pub delay: i64,
+    pub region: String,
+    pub ip: String,
+    pub node: String,
     pub failed: bool,
 }
 
 #[derive(Default)]
 pub(crate) struct Services {
     pub checks: std::collections::HashMap<String, ServiceState>,
-    pub probing: bool,
+    /// The services a check is out for.
+    pub probing: std::collections::HashSet<String>,
 }
 
 use dashboard::service_shown as shown_count;
@@ -32,6 +40,45 @@ impl App {
         ui.on_dash_move(move |from, to| a.move_dashboard(from as usize, to as usize));
         let a = self.clone();
         ui.on_dash_probe_services(move || a.probe_services());
+        let a = self.clone();
+        ui.on_dash_check_service(move |id| {
+            let names: Vec<String> = if id.is_empty() {
+                a.enabled_services()
+                    .iter()
+                    .map(|(i, _)| i.to_string())
+                    .collect()
+            } else {
+                vec![id.to_string()]
+            };
+            a.check_services(names);
+        });
+        let a = self.clone();
+        ui.on_dash_service_move(move |from, to| {
+            let order: Vec<String> = a
+                .ordered_services()
+                .iter()
+                .map(|(i, _)| i.to_string())
+                .collect();
+            a.update_settings(Effect::None, move |s| {
+                let mut order = order;
+                crate::reorder::move_item(&mut order, from as usize, to as usize);
+                s.service_order = order;
+            });
+            a.publish_services();
+            a.probe_services();
+        });
+        let a = self.clone();
+        ui.on_dash_service_toggle(move |id, on| {
+            let id = id.to_string();
+            a.update_settings(Effect::None, move |s| {
+                s.disabled_services.retain(|d| *d != id);
+                if !on {
+                    s.disabled_services.push(id);
+                }
+            });
+            a.publish_services();
+            a.probe_services();
+        });
         let a = self.clone();
         ui.on_dash_set_lan(move |on| {
             a.update_general(Effect::Reapply, |g| g.allow_lan = on);
@@ -230,27 +277,51 @@ impl App {
         });
     }
 
-    /// `ServiceStatus.probe`: the shown services checked through the rules while running,
-    /// directly otherwise.
+    fn ordered_services(&self) -> Vec<(&'static str, &'static str)> {
+        let st = self.store.lock().unwrap();
+        dashboard::ordered_services(&st.state.settings.service_order)
+    }
+
+    fn enabled_services(&self) -> Vec<(&'static str, &'static str)> {
+        let st = self.store.lock().unwrap();
+        let s = &st.state.settings;
+        dashboard::enabled_services(&s.service_order, &s.disabled_services)
+    }
+
+    fn shown_services(&self) -> Vec<(&'static str, &'static str)> {
+        let (wide, columns, _) = *self.dash_layout.lock().unwrap();
+        let mut v = self.enabled_services();
+        v.truncate(shown_count(wide, columns));
+        v
+    }
+
+    /// `ServiceStatus.probe`: the services the card shows, checked through the rules while
+    /// running, directly otherwise.
     pub(crate) fn probe_services(self: &Arc<Self>) {
-        let (wide, columns, shown) = {
-            let ui_state = self.dash_layout.lock().unwrap();
-            (ui_state.0, ui_state.1, ui_state.2)
-        };
-        if !shown {
+        if !self.dash_layout.lock().unwrap().2 {
             return;
         }
-        let names: Vec<&str> = dashboard::SERVICES
+        let names = self
+            .shown_services()
             .iter()
-            .take(shown_count(wide, columns))
-            .map(|(id, _)| *id)
+            .map(|(i, _)| i.to_string())
             .collect();
-        {
+        self.check_services(names);
+    }
+
+    /// Checks the named services, leaving out any a check is already out for.
+    pub(crate) fn check_services(self: &Arc<Self>, names: Vec<String>) {
+        let names: Vec<String> = {
             let mut s = self.services.lock().unwrap();
-            if s.probing {
-                return;
-            }
-            s.probing = true;
+            let fresh: Vec<String> = names
+                .into_iter()
+                .filter(|n| !s.probing.contains(n))
+                .collect();
+            s.probing.extend(fresh.iter().cloned());
+            fresh
+        };
+        if names.is_empty() {
+            return;
         }
         self.publish_services();
         let proxy = if self.run_state.lock().unwrap().as_str() == "STARTED" {
@@ -268,7 +339,9 @@ impl App {
             });
             {
                 let mut s = app.services.lock().unwrap();
-                s.probing = false;
+                for n in &names {
+                    s.probing.remove(n);
+                }
                 match result {
                     Ok(r) => {
                         for item in r
@@ -277,15 +350,30 @@ impl App {
                             .into_iter()
                             .flatten()
                         {
-                            let name = item.get("name").and_then(Value::as_str).unwrap_or("");
+                            let text = |k: &str| {
+                                item.get(k)
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("")
+                                    .to_string()
+                            };
+                            let node = item
+                                .get("chains")
+                                .and_then(Value::as_array)
+                                .and_then(|c| c.first())
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
                             s.checks.insert(
-                                name.into(),
+                                text("name"),
                                 ServiceState {
                                     status: item
                                         .get("status")
                                         .and_then(Value::as_str)
                                         .map(Into::into),
                                     delay: item.get("delay").and_then(Value::as_i64).unwrap_or(0),
+                                    region: text("region"),
+                                    ip: text("ip"),
+                                    node,
                                     failed: false,
                                 },
                             );
@@ -293,7 +381,7 @@ impl App {
                     }
                     Err(_) => {
                         for n in &names {
-                            let e = s.checks.entry((*n).into()).or_default();
+                            let e = s.checks.entry(n.clone()).or_default();
                             e.failed = true;
                             e.status = None;
                         }
@@ -306,34 +394,72 @@ impl App {
 
     pub(crate) fn publish_services(self: &Arc<Self>) {
         let (wide, columns, _) = *self.dash_layout.lock().unwrap();
-        let (cells, verdict) = {
+        let shown = shown_count(wide, columns);
+        let ordered = self.ordered_services();
+        let enabled = self.enabled_services();
+        let (cells, rows, verdict, checking) = {
             let s = self.services.lock().unwrap();
-            let mut answers = Vec::new();
-            let cells: Vec<DashService> = dashboard::SERVICES
+            let cell = |id: &str, label: &str| {
+                let c = s.checks.get(id).cloned().unwrap_or_default();
+                let probing = s.probing.contains(id);
+                let (text, tone) =
+                    dashboard::service_status(c.status.as_deref(), c.delay, probing, c.failed);
+                DashService {
+                    id: id.into(),
+                    label: label.into(),
+                    status: text.into(),
+                    tone,
+                    dot: dashboard::service_dot(c.status.as_deref(), c.failed),
+                    place: dashboard::service_where(&c.region, &c.ip, &c.node).into(),
+                    loading: probing,
+                }
+            };
+            let cells: Vec<DashService> = enabled
                 .iter()
-                .take(shown_count(wide, columns))
-                .map(|(id, label)| {
-                    let c = s.checks.get(*id).cloned().unwrap_or_default();
-                    answers.push((c.status.clone(), c.failed));
-                    let (text, tone) = dashboard::service_status(
-                        c.status.as_deref(),
-                        c.delay,
-                        s.probing,
-                        c.failed,
-                    );
-                    DashService {
-                        label: (*label).into(),
-                        status: text.into(),
-                        tone,
-                        dot: dashboard::service_dot(c.status.as_deref(), c.failed),
-                    }
+                .take(shown)
+                .map(|(i, l)| cell(i, l))
+                .collect();
+            let answers: Vec<(Option<String>, bool)> = enabled
+                .iter()
+                .take(shown)
+                .map(|(i, _)| {
+                    let c = s.checks.get(*i).cloned().unwrap_or_default();
+                    (c.status, c.failed)
                 })
                 .collect();
-            (cells, dashboard::service_verdict(&answers))
+            let rows: Vec<DashService> = enabled
+                .iter()
+                .map(|(i, l)| {
+                    let mut r = cell(i, l);
+                    if r.loading {
+                        r.status = "加载中…".into();
+                        r.tone = 0;
+                    }
+                    r
+                })
+                .collect();
+            let checking = enabled.iter().any(|(i, _)| s.probing.contains(*i));
+            (cells, rows, dashboard::service_verdict(&answers), checking)
         };
+        let manage: Vec<ServiceManageRow> = ordered
+            .iter()
+            .map(|(id, label)| {
+                let pos = enabled.iter().position(|(e, _)| e == id);
+                ServiceManageRow {
+                    id: (*id).into(),
+                    label: (*label).into(),
+                    enabled: pos.is_some(),
+                    shown: pos.is_some_and(|p| p < shown),
+                    locked: pos.is_some() && enabled.len() == 1,
+                }
+            })
+            .collect();
         let problems = verdict.ends_with("项异常");
         self.ui(move |ui| {
             ui.set_dash_services(ModelRc::new(VecModel::from(cells)));
+            ui.set_dash_service_rows(ModelRc::new(VecModel::from(rows)));
+            ui.set_dash_service_manage(ModelRc::new(VecModel::from(manage)));
+            ui.set_dash_services_checking(checking);
             ui.set_dash_service_verdict(verdict.into());
             ui.set_dash_service_warn(problems);
         });
