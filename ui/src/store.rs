@@ -43,6 +43,10 @@ pub struct Settings {
     pub dns_override: crate::overrides::OverrideState,
     /// The added rules (`globalRulesProvider`), put before every profile's rules.
     pub added_rules: Vec<crate::rules::Rule>,
+    /// `AppSettingProps.filters`.
+    pub filters: Vec<crate::items::Filter>,
+    /// The scripts (`scriptsProvider`); each one's content is `scripts/<id>.js`.
+    pub scripts: Vec<crate::items::Script>,
 }
 
 /// The network page's settings: `VpnProps`, `NetworkProps` and the TUN part of
@@ -191,6 +195,8 @@ impl Default for Settings {
             network: Network::default(),
             dns_override: Default::default(),
             added_rules: Vec::new(),
+            filters: Vec::new(),
+            scripts: Vec::new(),
         }
     }
 }

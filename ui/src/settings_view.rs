@@ -230,15 +230,19 @@ pub fn map(entries: &std::collections::BTreeMap<String, String>, desc: &str) -> 
 
 /// `AdvancedConfigView`: the pages built so far.
 pub fn advanced(_settings: &Settings) -> Vec<SetSection> {
-    vec![section(
-        "",
-        "",
-        vec![
-            open("network", "key", "网络"),
-            open("dns", "dns", "DNS"),
-            open("rules", "rules", "附加规则"),
-        ],
-    )]
+    vec![
+        section(
+            "",
+            "",
+            vec![
+                open("network", "key", "网络"),
+                open("dns", "dns", "DNS"),
+                open("rules", "rules", "附加规则"),
+                open("scripts", "code", "脚本"),
+            ],
+        ),
+        section("自定义", "", vec![open("filters", "filter", "筛选")]),
+    ]
 }
 
 fn count(items: &[String]) -> String {

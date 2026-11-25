@@ -12,6 +12,9 @@ pub mod dashboard;
 pub mod dns_queries;
 pub mod edges;
 pub mod http_capture;
+pub mod items;
+mod items_app;
+pub use items_app::sections as items_sections;
 pub mod overrides;
 pub mod profile;
 pub mod proxies;
@@ -1929,6 +1932,7 @@ impl App {
             ("close-active", true) => self.close_active(),
             ("clear-data", true) => self.clear_data(),
             ("rules-delete", true) => self.delete_selected_rules(),
+            ("script-delete", true) => self.delete_script(&arg),
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings", true) => self.open_app_settings(),
             ("edit-save", _) => self.save_edit(form, yes),
@@ -2342,6 +2346,8 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     ui.on_upload_file(move || a.upload_file());
     let a = app.clone();
     ui.on_editor_save(move |text| a.save_editor(text.into()));
+    let a = app.clone();
+    ui.on_tools_editor_save(move |text| a.tools_editor_save(text.into()));
     let a = app.clone();
     ui.on_preview_profile(move |id| a.preview(id.into()));
     let a = app.clone();

@@ -3991,6 +3991,11 @@ export component AppWindow inherits Window {
     // sections, a picker sheet and a one or two field input dialog.
     in property <[SetSection]> tools-sections;
     in property <[SetSection]> page-sections;
+    // The tools tab's text editor (a script's content), and the page it returns to.
+    in property <string> tools-editor-title;
+    in-out property <string> tools-editor-text;
+    in property <string> tools-editor-parent;
+    callback tools-editor-save(string);
     // The settings pages Rust builds (`page-meta` names them).
     pure callback page-meta(string, int) -> PageMeta;
     // Bumped when the open page's bar changes without the page changing.
@@ -4144,6 +4149,7 @@ export component AppWindow inherits Window {
                 if (root.tab == 3 && root.tools-page == "access" && root.acc-searching) { root.acc-query = ""; root.acc-searching = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "access") { root.acc-back(); return accept; }
                 if (root.tab == 3 && root.meta.known) { root.tools-page = root.meta.parent; return accept; }
+                if (root.tab == 3 && root.tools-page == "editor") { root.tools-page = root.tools-editor-parent; return accept; }
                 if (root.tab == 3 && root.tools-page != "") {
                     root.tools-page = "";
                     return accept;
@@ -4302,6 +4308,14 @@ export component AppWindow inherits Window {
                     back => { root.tools-page = root.meta.parent; }
                     clicked(id) => { root.set-clicked(root.tools-page, id); }
                     toggled(id, on) => { root.set-toggled(root.tools-page, id, on); }
+                }
+                if root.tab == 3 && root.tools-page == "editor": EditorPage {
+                    width: parent.width;
+                    height: parent.height;
+                    title: root.tools-editor-title;
+                    text <=> root.tools-editor-text;
+                    save(t) => { root.tools-editor-save(t); }
+                    back => { root.tools-page = root.tools-editor-parent; }
                 }
                 if root.tab == 3 && root.meta.known && root.meta.fab: Fab {
                     x: parent.width - self.width - 16px;

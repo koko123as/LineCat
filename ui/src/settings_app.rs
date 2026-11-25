@@ -158,6 +158,9 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
     if let Some(meta) = crate::rules_app::page_meta(settings, page) {
         return meta;
     }
+    if let Some(meta) = crate::items_app::page_meta(page) {
+        return meta;
+    }
     let t = targets().lock().unwrap();
     match page {
         "general" => meta("常规", ""),
@@ -230,7 +233,11 @@ impl App {
             let settings = a.store.lock().unwrap().state.settings.clone();
             page_meta(&settings, &page)
         });
-        ui.on_input_check(|key, v1, v2| {
+        let a = self.clone();
+        ui.on_input_check(move |key, v1, v2| {
+            if let Some(e) = a.items_check(&key, &v1, &v2) {
+                return e.into();
+            }
             if key.starts_with("map:") {
                 return if v1.trim().is_empty() {
                     "键不能为空".into()
@@ -265,6 +272,9 @@ impl App {
         ui.on_input_submit(move |key, v1, v2| a.input_submit(&key, &v1, &v2));
         let a = self.clone();
         ui.on_input_remove(move |key| {
+            if a.items_removed(&key) {
+                return;
+            }
             if key.starts_with("list:") {
                 a.list_set(&key, None);
             }
@@ -325,7 +335,9 @@ impl App {
                 }
                 id => match (overrides::spec(id), override_state(&settings, id)) {
                     (Some(spec), Some(state)) => spec.sections(state),
-                    _ => match crate::rules_app::sections(&settings, id) {
+                    _ => match crate::rules_app::sections(&settings, id)
+                        .or_else(|| crate::items_app::sections(&settings, id))
+                    {
                         Some(s) => s,
                         None => return,
                     },
@@ -388,7 +400,7 @@ impl App {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn open_input_with(
+    pub(crate) fn open_input_with(
         self: &Arc<Self>,
         key: &str,
         title: &str,
@@ -443,7 +455,7 @@ impl App {
     }
 
     fn set_clicked(self: &Arc<Self>, page: &str, id: &str) {
-        if self.rules_clicked(page, id) {
+        if self.rules_clicked(page, id) || self.items_clicked(page, id) {
             return;
         }
         let g = self.store.lock().unwrap().state.settings.general.clone();
@@ -550,7 +562,10 @@ impl App {
                     );
                 }
             }
-            ("advanced", id) if overrides::spec(id).is_some() || id == "rules" => {
+            ("advanced", id)
+                if overrides::spec(id).is_some()
+                    || matches!(id, "rules" | "scripts" | "filters") =>
+            {
                 self.open_page(id)
             }
             (page, id) if overrides::spec(page).is_some() => self.override_clicked(page, id),
@@ -655,7 +670,7 @@ impl App {
     fn choice_picked(self: &Arc<Self>, id: &str) {
         let (key, value) = id.split_once(':').unwrap_or((id, ""));
         let value = value.to_string();
-        if self.rules_picked(key, &value) {
+        if self.rules_picked(key, &value) || self.items_picked(key, &value) {
             return;
         }
         match key {
@@ -701,6 +716,9 @@ impl App {
     }
 
     fn input_submit(self: &Arc<Self>, key: &str, v1: &str, v2: &str) {
+        if self.items_input(key, v1, v2) {
+            return;
+        }
         let Ok(value) = settings_view::check_input(key, v1) else {
             return;
         };

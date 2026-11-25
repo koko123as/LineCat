@@ -1,0 +1,112 @@
+//! The filters (lib/views/config/filters.dart) and scripts (lib/views/config/scripts.dart)
+//! as the settings keep them, and the checks their forms make.
+
+use serde::{Deserialize, Serialize};
+
+/// `Filter`: a label and the regex it stands for.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Filter {
+    pub label: String,
+    pub regex: String,
+}
+
+/// `Script`: its content lives in `scripts/<id>.js` beside the settings.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Script {
+    pub id: String,
+    pub label: String,
+    pub url: Option<String>,
+    /// Milliseconds since the epoch.
+    pub updated: u64,
+}
+
+/// `_FilterFormState._issue` before the core checks the regex; `at` is the filter being
+/// edited, None for a new one.
+pub fn filter_issue(
+    filters: &[Filter],
+    at: Option<usize>,
+    label: &str,
+    regex: &str,
+) -> Option<String> {
+    let label = label.trim();
+    if label.is_empty() {
+        return Some("标签不能为空".into());
+    }
+    let taken = filters
+        .iter()
+        .enumerate()
+        .any(|(i, f)| Some(i) != at && f.label == label);
+    if taken {
+        return Some("标签当前已存在".into());
+    }
+    if regex.trim().is_empty() {
+        return Some("正则不能为空".into());
+    }
+    None
+}
+
+/// The name a script is saved under: unique among the others (`existsTip` otherwise).
+pub fn script_name_issue(scripts: &[Script], id: Option<&str>, name: &str) -> Option<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Some("名称不能为空".into());
+    }
+    if scripts
+        .iter()
+        .any(|s| Some(s.id.as_str()) != id && s.label == name)
+    {
+        return Some("名称当前已存在".into());
+    }
+    None
+}
+
+/// A name for an imported script: the file name without its extension, made unique.
+pub fn import_name(scripts: &[Script], file: &str) -> String {
+    let base = file
+        .rsplit('/')
+        .next()
+        .unwrap_or(file)
+        .split('?')
+        .next()
+        .unwrap_or("");
+    let base = base.strip_suffix(".js").unwrap_or(base).trim();
+    let base = if base.is_empty() { "脚本" } else { base };
+    let mut name = base.to_string();
+    let mut n = 1;
+    while scripts.iter().any(|s| s.label == name) {
+        n += 1;
+        name = format!("{base} ({n})");
+    }
+    name
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_and_script_checks() {
+        let f = vec![Filter {
+            label: "香港".into(),
+            regex: "HK|香港".into(),
+        }];
+        assert_eq!(filter_issue(&f, None, " ", "x").unwrap(), "标签不能为空");
+        assert_eq!(
+            filter_issue(&f, None, "香港", "x").unwrap(),
+            "标签当前已存在"
+        );
+        assert!(filter_issue(&f, Some(0), "香港", "x").is_none());
+        assert_eq!(filter_issue(&f, None, "日本", "").unwrap(), "正则不能为空");
+        let s = vec![Script {
+            id: "1".into(),
+            label: "main".into(),
+            ..Default::default()
+        }];
+        assert!(script_name_issue(&s, None, "main").is_some());
+        assert!(script_name_issue(&s, Some("1"), "main").is_none());
+        assert_eq!(import_name(&s, "https://x.com/a/main.js?v=1"), "main (2)");
+        assert_eq!(import_name(&s, ""), "脚本");
+    }
+}

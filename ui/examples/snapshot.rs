@@ -256,6 +256,29 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             settings_view::user_agents(&s)
         }
         "list" => settings_view::list(&s.network.bypass_domain, ""),
+        "filters" | "scripts" => {
+            if overlay != "empty" {
+                for (l, r) in [
+                    ("香港", "(?i)港|hk|hong ?kong"),
+                    ("日本", "(?i)日本|jp|japan"),
+                    ("美国", "(?i)美|us|united states"),
+                ] {
+                    s.filters.push(seasoncat_ui::items::Filter {
+                        label: l.into(),
+                        regex: r.into(),
+                    });
+                }
+                for (i, (l, u)) in [("main", true), ("rename-nodes", false)].iter().enumerate() {
+                    s.scripts.push(seasoncat_ui::items::Script {
+                        id: i.to_string(),
+                        label: (*l).into(),
+                        url: u.then(|| "https://example.com/main.js".into()),
+                        updated: 0,
+                    });
+                }
+            }
+            seasoncat_ui::items_sections(&s, page).unwrap_or_default()
+        }
         "rules" | "rule-form" | "rule-presets" => {
             if overlay != "empty" {
                 for (i, line) in [
@@ -742,6 +765,13 @@ fn main() {
         ("set-hosts-small", 3, "", "map", 1, ""),
         ("set-hosts-wide", 3, "", "map", 1, ""),
         ("set-hosts-tablet", 3, "", "map", 1, ""),
+        ("set-filters", 3, "", "filters", 1, ""),
+        ("set-filters-small", 3, "", "filters", 1, ""),
+        ("set-filters-wide", 3, "", "filters", 1, ""),
+        ("set-filters-tablet", 3, "", "filters", 1, ""),
+        ("set-scripts", 3, "", "scripts", 1, ""),
+        ("set-scripts-small", 3, "", "scripts", 1, ""),
+        ("set-scripts-empty", 3, "", "scripts", 1, "empty"),
         ("set-rules", 3, "", "rules", 1, ""),
         ("set-rules-small", 3, "", "rules", 1, ""),
         ("set-rules-wide", 3, "", "rules", 1, ""),
