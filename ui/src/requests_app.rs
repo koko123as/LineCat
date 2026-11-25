@@ -490,7 +490,7 @@ impl App {
     }
 
     /// `config.patch` while the Core runs a config; a later apply carries it otherwise.
-    fn patch(self: &Arc<Self>, params: Value) {
+    pub(crate) fn patch(self: &Arc<Self>, params: Value) {
         if !self.configured.load(Ordering::SeqCst) {
             return;
         }

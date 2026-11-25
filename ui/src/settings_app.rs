@@ -165,6 +165,9 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
     if let Some(meta) = crate::items_app::page_meta(page) {
         return meta;
     }
+    if let Some(meta) = crate::mitm_app::page_meta(settings, page) {
+        return meta;
+    }
     if let Some(meta) = crate::rule_sets_app::page_meta(&settings.rule_sets, page) {
         return meta;
     }
@@ -243,6 +246,7 @@ impl App {
                 let page = ui.get_tools_page();
                 a.rules_page_shown(&page);
                 a.custom_proxies_page_shown(&page);
+                a.mitm_page_shown(&page);
             }
             a.publish_settings();
         });
@@ -269,6 +273,9 @@ impl App {
                 return e.into();
             }
             if let Some(e) = a.custom_proxies_check(&key, &v1) {
+                return e.into();
+            }
+            if let Some(e) = a.mitm_check(&key, &v1) {
                 return e.into();
             }
             if let Some(e) = a.on_demand_check(&key, &v1) {
@@ -308,7 +315,7 @@ impl App {
         ui.on_input_submit(move |key, v1, v2| a.input_submit(&key, &v1, &v2));
         let a = self.clone();
         ui.on_input_remove(move |key| {
-            if a.items_removed(&key) {
+            if a.items_removed(&key) || a.mitm_removed(&key) {
                 return;
             }
             if key.starts_with("list:") {
@@ -338,6 +345,7 @@ impl App {
                 ("rs", id) => a.rule_set_menu_picked(i, id),
                 ("is", id) => a.icon_set_menu_picked(i, id),
                 ("cp", id) => a.custom_proxy_menu_picked(i, id),
+                (k @ ("mh" | "mm" | "ml"), id) => a.mitm_menu_picked(k, i, id),
                 ("ua", "edit") => a.set_clicked("user-agents", &format!("edit:ua:{i}")),
                 ("ua", "delete") => a.confirm(
                     "提示",
@@ -355,6 +363,7 @@ impl App {
         let a = self.clone();
         ui.on_about_logo_tapped(move || a.logo_tapped());
         self.publish_settings();
+        self.publish_mitm_consent();
     }
 
     /// The tools list and the open settings page, from the settings as they are.
@@ -400,6 +409,7 @@ impl App {
                                 id,
                             )
                         })
+                        .or_else(|| app.mitm_sections(&settings, id))
                         .or_else(|| crate::icon_sets_app::sections(&settings.icon_sets, id))
                         .or_else(|| {
                             crate::custom_proxies_app::sections(&settings.custom_proxies, id)
@@ -545,7 +555,8 @@ impl App {
     }
 
     fn set_clicked(self: &Arc<Self>, page: &str, id: &str) {
-        if self.rules_clicked(page, id)
+        if self.mitm_clicked(page, id)
+            || self.rules_clicked(page, id)
             || self.items_clicked(page, id)
             || self.rule_sets_clicked(page, id)
             || self.icon_sets_clicked(page, id)
@@ -757,7 +768,10 @@ impl App {
     }
 
     fn set_toggled(self: &Arc<Self>, page: &str, id: &str, on: bool) {
-        if self.rules_toggled(page, id, on) || self.custom_proxies_toggled(page, id, on) {
+        if self.mitm_toggled(page, id, on)
+            || self.rules_toggled(page, id, on)
+            || self.custom_proxies_toggled(page, id, on)
+        {
             return;
         }
         match (page, id) {
@@ -833,6 +847,7 @@ impl App {
         let value = value.to_string();
         if self.rules_picked(key, &value)
             || self.items_picked(key, &value)
+            || self.mitm_picked(key, &value)
             || self.rule_sets_picked(key, &value)
             || self.icon_sets_picked(key, &value)
             || self.custom_proxies_picked(key, &value)
@@ -888,6 +903,7 @@ impl App {
             || self.rule_sets_input(key, v1, v2)
             || self.icon_sets_input(key, v1, v2)
             || self.custom_proxies_input(key, v1)
+            || self.mitm_input(key, v1)
             || self.on_demand_input(key, v1)
         {
             return;

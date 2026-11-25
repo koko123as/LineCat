@@ -228,6 +228,7 @@ fn requests_shot(
 
 /// The tools list, a settings page's sections and the picker or input over them.
 fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
+    ui.set_mitm_loading("".into());
     let mut s = store::Settings {
         developer_mode: true,
         ..Default::default()
@@ -421,6 +422,55 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             )
             .unwrap_or_default()
         }
+        "mitm" => {
+            s.mitm.hostname = sample_hosts();
+            s.mitm.enable = true;
+            s.mitm_modules = sample_modules();
+            let cert = if overlay == "nocert" {
+                Some(Ok(None))
+            } else {
+                Some(Ok(Some(seasoncat_ui::mitm::Certificate {
+                    subject: "SeasonCat MITM CA 2026-11-26".into(),
+                    ..Default::default()
+                })))
+            };
+            ui.set_mitm_loading(
+                if overlay == "loading" {
+                    "生成证书"
+                } else {
+                    ""
+                }
+                .into(),
+            );
+            seasoncat_ui::mitm_sections(&s, &cert, 1)
+        }
+        "mitm-capture" => {
+            s.mitm.enable = true;
+            s.mitm.capture = true;
+            seasoncat_ui::mitm_capture_sections(&s.mitm, &[])
+        }
+        "mitm-hosts" => {
+            if overlay != "empty" {
+                s.mitm.hostname = sample_hosts();
+            }
+            let issues = std::collections::BTreeMap::from([(
+                "[api.bad-host.example".to_string(),
+                "invalid hostname: unexpected character '['".to_string(),
+            )]);
+            seasoncat_ui::mitm_hosts_sections(&s.mitm.hostname, &issues)
+        }
+        "mitm-modules" => {
+            if overlay != "empty" {
+                s.mitm_modules = sample_modules();
+            }
+            let busy = std::collections::BTreeSet::from(["3".to_string()]);
+            seasoncat_ui::mitm_modules_sections(&s.mitm_modules, &busy)
+        }
+        "mitm-module" => {
+            let m = &sample_modules()[0];
+            seasoncat_ui::mitm_module_sections(m, Some(&sample_read()), false, "3 小时前")
+        }
+        "mitm-lines" => seasoncat_ui::mitm_lines_sections(&sample_read(), "url-rewrite"),
         "custom-proxies" => {
             if overlay != "empty" {
                 s.custom_proxies = sample_custom_proxies();
@@ -542,6 +592,12 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
     if page == "custom-proxy" && overlay != "new" {
         meta.title = "编辑代理".into();
     }
+    if page == "mitm-module" {
+        meta.title = "去广告合集".into();
+    }
+    if page == "mitm-lines" {
+        meta.title = "URL 重写".into();
+    }
     if page == "custom-proxies" && overlay == "search" {
         meta.action2 = "".into();
     }
@@ -620,6 +676,66 @@ fn service_cells(n: usize, sheet: bool) -> Vec<DashService> {
             }
         })
         .collect()
+}
+
+fn sample_hosts() -> Vec<String> {
+    [
+        "*.googlevideo.com",
+        "-*.apple.com",
+        "api.example.com:8443",
+        "[api.bad-host.example",
+        "very-long-subdomain-for-testing-the-elided-row.cdn.example-provider.com",
+    ]
+    .map(String::from)
+    .to_vec()
+}
+
+fn sample_modules() -> Vec<seasoncat_ui::mitm::MitmModule> {
+    use seasoncat_ui::mitm::MitmModule;
+    [
+        (
+            "1",
+            "去广告合集",
+            "https://example.com/AdBlock.sgmodule",
+            true,
+        ),
+        ("2", "本地重写", "", false),
+        (
+            "3",
+            "B站增强模块（超长名称用于测试省略显示效果）",
+            "https://example.com/bili.plugin",
+            true,
+        ),
+    ]
+    .into_iter()
+    .map(|(id, name, url, enabled)| MitmModule {
+        id: id.into(),
+        name: name.into(),
+        url: url.into(),
+        enabled,
+        description: "移除开屏广告与信息流广告。".into(),
+        system: "iOS".into(),
+        ..Default::default()
+    })
+    .collect()
+}
+
+fn sample_read() -> seasoncat_ui::mitm::ModuleRead {
+    let source = "#!name=去广告合集\n[URL Rewrite]\n^https?://ad\\.example\\.com/ - reject\n^https?://api\\.example\\.com/v1/splash(\n^https?://img\\.example\\.com/ad/.+ - reject-img\n[Script]\nsign = type=cron,cronexp=0 9 * * *,script-path=sign.js\n[Rule]\nDOMAIN-SUFFIX,ads.example.com,REJECT\n[Panel]\n";
+    let read = serde_json::json!({
+        "arguments": [
+            {"name": "splash", "kind": {"type": "switch"}, "default": "true", "label": "去开屏广告", "desc": "关闭后保留开屏页"},
+            {"name": "mode", "kind": {"type": "select", "options": ["严格", "宽松"]}, "default": "严格", "label": "过滤模式"}
+        ],
+        "views": {
+            "url-rewrite": [{"index": 3, "view": {}}, {"index": 5, "view": {}}],
+            "script": [{"index": 7, "view": {"type": "script", "name": "sign", "kind": "cron"}}]
+        },
+        "issues": {"url-rewrite": [{"index": 4, "message": "regex parse error: unclosed group"}]},
+        "rules": [{"line": 9, "rule": "DOMAIN-SUFFIX,ads.example.com", "policy": {"builtin": "REJECT"}}],
+        "ignored": [{"line": 10, "text": "[Panel]", "reason": "section", "detail": "Panel"}]
+    });
+    seasoncat_ui::mitm::read_module(source, &read)
 }
 
 fn sample_custom_proxies() -> Vec<seasoncat_ui::custom_proxies::CustomProxy> {
@@ -1375,6 +1491,31 @@ fn main() {
         ("set-rulesets-wide", 3, "", "rule-sets", 1, ""),
         ("set-rulesets-tablet", 3, "", "rule-sets", 1, ""),
         ("set-rulesets-empty", 3, "", "rule-sets", 1, "empty"),
+        ("set-mitm", 3, "", "mitm", 1, ""),
+        ("set-mitm-small", 3, "", "mitm", 1, ""),
+        ("set-mitm-wide", 3, "", "mitm", 1, ""),
+        ("set-mitm-tablet", 3, "", "mitm", 1, ""),
+        ("set-mitm-nocert", 3, "", "mitm", 1, "nocert"),
+        ("set-mitm-loading", 3, "", "mitm", 1, "loading"),
+        ("set-mitm-capture", 3, "", "mitm-capture", 1, ""),
+        ("set-mitm-hosts", 3, "", "mitm-hosts", 1, ""),
+        ("set-mitm-hosts-small", 3, "", "mitm-hosts", 1, ""),
+        ("set-mitm-hosts-wide", 3, "", "mitm-hosts", 1, ""),
+        ("set-mitm-hosts-tablet", 3, "", "mitm-hosts", 1, ""),
+        ("set-mitm-hosts-empty", 3, "", "mitm-hosts", 1, "empty"),
+        ("set-mitm-modules", 3, "", "mitm-modules", 1, ""),
+        ("set-mitm-modules-small", 3, "", "mitm-modules", 1, ""),
+        ("set-mitm-modules-wide", 3, "", "mitm-modules", 1, ""),
+        ("set-mitm-modules-tablet", 3, "", "mitm-modules", 1, ""),
+        ("set-mitm-modules-empty", 3, "", "mitm-modules", 1, "empty"),
+        ("set-mitm-module", 3, "", "mitm-module", 1, ""),
+        ("set-mitm-module-small", 3, "", "mitm-module", 1, ""),
+        ("set-mitm-module-wide", 3, "", "mitm-module", 1, ""),
+        ("set-mitm-module-tablet", 3, "", "mitm-module", 1, ""),
+        ("set-mitm-lines", 3, "", "mitm-lines", 1, ""),
+        ("set-mitm-lines-small", 3, "", "mitm-lines", 1, ""),
+        ("set-mitm-lines-wide", 3, "", "mitm-lines", 1, ""),
+        ("set-mitm-lines-tablet", 3, "", "mitm-lines", 1, ""),
         ("set-cproxies", 3, "", "custom-proxies", 1, ""),
         ("set-cproxies-small", 3, "", "custom-proxies", 1, ""),
         ("set-cproxies-wide", 3, "", "custom-proxies", 1, ""),

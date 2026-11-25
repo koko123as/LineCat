@@ -244,6 +244,7 @@ pub fn advanced(_settings: &Settings) -> Vec<SetSection> {
                 open("dns", "dns", "DNS"),
                 open("rules", "rules", "附加规则"),
                 open("scripts", "code", "脚本"),
+                open("mitm", "lock-open", "MITM"),
             ],
         ),
         section(

@@ -529,6 +529,8 @@ global Icons {
     out property <string> motion: "M14 5a7 7 0 1 1 0 14 7 7 0 0 1 0-14z M3 8h5 M2 12h4 M3 16h5";
     out property <string> font: "M4 20l6-16h1l6 16 M6.5 14h8 M17 20h4";
     out property <string> text-size: "M3 7V5h10v2 M8 5v14 M6 19h4 M13 12v-1h8v1 M17 11v8 M15.5 19h3";
+    out property <string> lock-open: "M5 11h14v10H5z M8 11V7a4 4 0 0 1 7.7-1.5 M12 15v2";
+    out property <string> link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1";
     out property <string> memory: "M6 6h12v12H6z M9 9h6v6H9z M9 3v3 M15 3v3 M9 18v3 M15 18v3 M3 9h3 M3 15h3 M18 9h3 M18 15h3";
 }
 
@@ -547,7 +549,8 @@ global Glyphs {
             : k == "pin" ? Icons.pin : k == "check-circle" ? Icons.check-circle : k == "edit" ? Icons.edit
             : k == "copy" ? Icons.copy : k == "sync" ? Icons.sync : k == "export" ? Icons.export : k == "eye" ? Icons.eye
             : k == "qr" ? Icons.qr : k == "sort" ? Icons.sort : k == "file" ? Icons.file
-            : k == "import-file" ? Icons.import-file : k == "cloud" ? Icons.cloud : k == "more-circle" ? Icons.more-circle : "";
+            : k == "import-file" ? Icons.import-file : k == "cloud" ? Icons.cloud : k == "more-circle" ? Icons.more-circle
+            : k == "lock-open" ? Icons.lock-open : k == "link" ? Icons.link : k == "play" ? Icons.play : k == "puzzle" ? Icons.puzzle : "";
     }
 }
 
@@ -3705,7 +3708,7 @@ component SetRowView inherits Rectangle {
                     }
                 }
             }
-            if root.item.subtitle != "": Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
+            if root.item.subtitle != "": Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: root.item.invalid && root.item.kind == "line" ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
         }
         if root.item.trailing != "": Text { text: root.item.trailing; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
         if root.item.invalid: VerticalLayout {
@@ -3719,6 +3722,15 @@ component SetRowView inherits Rectangle {
         if root.item.kind == "open" || root.item.kind == "value-icon": VerticalLayout {
             alignment: center;
             Icon { glyph: Icons.chevron; size: 20px; tint: Theme.s.on-surface-variant; }
+        }
+        // A row that opens its page beside a switch of its own (`_MitmModuleRow`), or its spinner.
+        if root.item.kind == "switch": VerticalLayout {
+            alignment: center;
+            Switch { checked: root.item.on; toggled(on) => { root.toggled(root.item.id, on); } }
+        }
+        if root.item.kind == "busy": VerticalLayout {
+            alignment: center;
+            Spinner { width: 24px; height: 24px; indeterminate: true; }
         }
         if root.item.kind == "link": VerticalLayout {
             alignment: center;
@@ -3748,7 +3760,7 @@ component SetRowView inherits Rectangle {
         clicked => { root.clicked("edit:" + root.item.id); }
     }
     ta := TouchArea {
-        width: (root.item.kind == "check" && root.item.glyph == "edit") || root.eye ? parent.width - 56px : parent.width - self.x;
+        width: (root.item.kind == "check" && root.item.glyph == "edit") || root.eye ? parent.width - 56px : root.item.kind == "switch" ? parent.width - 84px : parent.width - self.x;
         x: root.item.lead == "remove" ? 48px : 0;
         enabled: root.item.enabled && root.item.kind != "person";
         pointer-event(e) => {
@@ -7354,6 +7366,8 @@ export component AppWindow inherits Window {
     in-out property <string> set-query;
     // `SliverCustomIssuesBanner` over the custom proxy form.
     in property <string> cp-issue;
+    // `LoadingTag.mitm`: what a MITM page is waiting on.
+    in property <string> mitm-loading;
     in-out property <string> proxy-sub;
     in-out property <bool> proxy-searching;
     callback test-node(string, string);
@@ -8018,6 +8032,21 @@ export component AppWindow inherits Window {
                     back => { root.tools-page = root.meta.parent; }
                     clicked(id) => { root.set-clicked(root.tools-page, id); }
                     toggled(id, on) => { root.set-toggled(root.tools-page, id, on); }
+                    if root.mitm-loading != "" && (root.tools-page == "mitm" || root.tools-page == "mitm-modules" || root.tools-page == "mitm-module" || root.tools-page == "mitm-lines"): HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 8px;
+                        Rectangle {
+                            border-radius: 16px;
+                            background: Theme.s.card;
+                            HorizontalLayout {
+                                padding: 14px;
+                                spacing: 12px;
+                                Spinner { width: 20px; height: 20px; indeterminate: true; }
+                                Text { text: root.mitm-loading; font-size: 14px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                            }
+                        }
+                    }
                     if root.tools-page == "custom-proxy" && root.cp-issue != "": HorizontalLayout {
                         padding-left: 16px;
                         padding-right: 16px;

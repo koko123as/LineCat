@@ -54,6 +54,13 @@ mod theme_app;
 pub use theme_app::{apply as apply_theme, show_color_page};
 pub mod colors;
 pub mod custom_proxies;
+pub mod mitm;
+mod mitm_app;
+pub use mitm_app::{
+    capture_sections as mitm_capture_sections, hosts_sections as mitm_hosts_sections,
+    lines_sections as mitm_lines_sections, main_sections as mitm_sections,
+    module_sections as mitm_module_sections, modules_sections as mitm_modules_sections,
+};
 mod custom_proxies_app;
 pub use custom_proxies_app::{
     editor_issue as custom_proxy_issue, editor_sections as custom_proxy_sections,
@@ -2013,6 +2020,7 @@ impl App {
             ("rs-delete", true) => self.delete_rule_set(&arg),
             ("is-delete", true) => self.delete_icon_set(&arg),
             ("cp-delete", true) => self.delete_custom_proxy(&arg),
+            (a, _) if a.starts_with("mitm-") => self.mitm_confirmed(a, &arg, yes),
             ("ua-delete", true) => self.delete_user_agent(&arg),
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings" | "location-settings", true) => self.open_app_settings(),

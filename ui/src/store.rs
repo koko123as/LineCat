@@ -75,6 +75,7 @@ pub struct Settings {
     pub icon_sets: Vec<crate::icon_sets::IconSet>,
     /// `CustomProxy`s, in the page's order.
     pub custom_proxies: Vec<crate::custom_proxies::CustomProxy>,
+    pub mitm_modules: Vec<crate::mitm::MitmModule>,
 }
 
 /// `TextScale`: off follows the system's font scale.
@@ -270,12 +271,13 @@ impl Default for Settings {
             rule_sets: Vec::new(),
             icon_sets: Vec::new(),
             custom_proxies: Vec::new(),
+            mitm_modules: Vec::new(),
         }
     }
 }
 
-/// The part of `Mitm` in lib/models/clash_config.dart the requests page reads and sets.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+/// `Mitm` in lib/models/clash_config.dart.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct MitmSettings {
     pub enable: bool,
@@ -283,6 +285,27 @@ pub struct MitmSettings {
     pub capture: bool,
     /// None keeps the platform's limit.
     pub capture_entries: Option<i64>,
+    pub skip_server_cert_verify: bool,
+    pub auto_quic_block: bool,
+    pub h2: bool,
+    pub decrypt_untrusted: bool,
+    pub trusted_fingerprint: Option<String>,
+}
+
+impl Default for MitmSettings {
+    fn default() -> Self {
+        MitmSettings {
+            enable: false,
+            hostname: Vec::new(),
+            capture: false,
+            capture_entries: None,
+            skip_server_cert_verify: false,
+            auto_quic_block: true,
+            h2: false,
+            decrypt_untrusted: false,
+            trusted_fingerprint: None,
+        }
+    }
 }
 
 /// `ProxiesStyleProps` in lib/models/config.dart.

@@ -373,23 +373,15 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
     profile.insert("store-selected".into(), false.into());
     set(&mut c, "profile", Value::Object(profile));
     set(&mut c, "geox-url", json!(settings.geox_url));
-    if settings.mitm.enable {
-        if let Some(entries) = settings.mitm.capture_entries {
-            let mut mitm = c
-                .get("mitm")
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_default();
-            let mut limits = mitm
-                .get("limits")
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_default();
-            limits.insert("capture-entries".into(), entries.into());
-            mitm.insert("limits".into(), Value::Object(limits));
-            set(&mut c, "mitm", Value::Object(mitm));
-        }
-    }
+    set(
+        &mut c,
+        "mitm",
+        crate::mitm::core_json(
+            &settings.mitm,
+            &settings.mitm_modules,
+            &crate::mitm::language(settings.locale.as_deref()),
+        ),
+    );
     set(
         &mut c,
         "global-ua",
