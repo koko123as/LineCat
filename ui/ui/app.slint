@@ -66,6 +66,18 @@ export struct CustomRow {
     tone: int,
 }
 
+// `_ProxyGroupItem`: the group's name, type name, icon url or monogram, issue mark and
+// whether it is selected.
+export struct GroupRow {
+    id: string,
+    name: string,
+    kind: string,
+    icon: string,
+    mark: string,
+    invalid: bool,
+    selected: bool,
+}
+
 export struct NodeItem {
     name: string,
     // The type, or for a group the type and the proxy it stands for.
@@ -528,6 +540,7 @@ global Icons {
     out property <string> warning: "M12 3.5l9.5 16.5h-19z M12 9.5v4.5 M12 17v.01";
     out property <string> customize: "M12 3.5l1.8 4.7 4.7 1.8-4.7 1.8L12 16.5l-1.8-4.7L5.5 10l4.7-1.8z M18.5 15.5l.8 2 2 .7-2 .8-.8 2-.7-2-2-.8 2-.7z";
     out property <string> text-short: "M4 9h16 M4 15h10";
+    out property <string> compose: "M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5 M17.5 3.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z";
     out property <string> puzzle: "M4 7h4a2.5 2.5 0 0 1 5 0h4v4a2.5 2.5 0 0 1 0 5v4H4v-4.5a2.5 2.5 0 0 0 0-4.5z";
     out property <string> language: "M4 5h9 M8.5 3v2 M11 5c-1 4-3.5 7-7 9 M6 9c1.5 2.5 3.5 4 6 5 M13 21l4-9 4 9 M14.5 18h5";
     out property <string> apps: "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z";
@@ -566,7 +579,7 @@ global Glyphs {
             : k == "qr" ? Icons.qr : k == "sort" ? Icons.sort : k == "file" ? Icons.file
             : k == "import-file" ? Icons.import-file : k == "cloud" ? Icons.cloud : k == "more-circle" ? Icons.more-circle
             : k == "lock-open" ? Icons.lock-open : k == "clock" ? Icons.clock : k == "link" ? Icons.link : k == "play" ? Icons.play : k == "puzzle" ? Icons.puzzle
-            : k == "customize" ? Icons.customize : k == "text-short" ? Icons.text-short : "";
+            : k == "customize" ? Icons.customize : k == "text-short" ? Icons.text-short : k == "compose" ? Icons.compose : "";
     }
 }
 
@@ -3322,16 +3335,198 @@ component CustomRowView inherits Rectangle {
     crv-ta := TouchArea { clicked => { root.clicked(); } }
 }
 
+// A reorderable grouped list (`PrismReorderableListView` with a `SortHandle` per row): a
+// long press lifts a row, it follows the finger while the rows it passes make way, and the
+// move lands on release. Nothing changes in the model until then.
+component ReorderList inherits Rectangle {
+    in property <[string]> titles;
+    in property <[string]> subtitles;
+    out property <bool> dragging: root.drag-from >= 0;
+    callback moved(int, int);
+    property <length> row-h: root.subtitles.length > 0 ? 64px : 52px;
+    property <int> drag-from: -1;
+    property <length> press-y;
+    property <length> shift;
+    property <int> drag-to: root.drag-from < 0 ? -1 : max(0, min(root.titles.length - 1, root.drag-from + round(root.shift / root.row-h)));
+    height: root.titles.length * root.row-h;
+    Rectangle {
+        background: Theme.s.card;
+        border-radius: 16px;
+    }
+    for t[i] in root.titles: Rectangle {
+        property <bool> lifted: i == root.drag-from;
+        y: root.drag-from < 0 || self.lifted ? i * root.row-h
+            : i > root.drag-from && i <= root.drag-to ? (i - 1) * root.row-h
+            : i < root.drag-from && i >= root.drag-to ? (i + 1) * root.row-h
+            : i * root.row-h;
+        z: self.lifted ? 1 : 0;
+        height: root.row-h;
+        animate y { duration: 150ms; easing: ease-out; }
+        Rectangle {
+            y: parent.lifted ? root.shift : 0px;
+            background: parent.lifted ? Theme.s.card : transparent;
+            border-radius: parent.lifted ? 16px : 0px;
+            drop-shadow-offset-y: parent.lifted ? 6px : 0px;
+            drop-shadow-blur: parent.lifted ? 16px : 0px;
+            drop-shadow-color: parent.lifted ? #00000033 : transparent;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 12px;
+                spacing: 8px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    horizontal-stretch: 1;
+                    Text { text: t; font-size: 16px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
+                    if i < root.subtitles.length && root.subtitles[i] != "": Text { text: root.subtitles[i]; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
+                }
+                VerticalLayout { alignment: center; Icon { glyph: "M5 9h14 M5 15h14"; size: 20px; tint: Theme.s.on-surface-variant; } }
+            }
+            if !parent.lifted && i < root.titles.length - 1: Rectangle {
+                x: 16px;
+                y: parent.height - 1px;
+                width: parent.width - 16px;
+                height: 1px;
+                background: Theme.s.outline-variant.with-alpha(0.6);
+            }
+        }
+        rl-ta := TouchArea {
+            changed pressed => {
+                if (!self.pressed && root.drag-from == i) {
+                    let from = root.drag-from;
+                    let to = root.drag-to;
+                    root.drag-from = -1;
+                    root.shift = 0px;
+                    if (from != to) { root.moved(from, to); }
+                }
+            }
+            moved => {
+                if (root.drag-from == i) { root.shift = self.mouse-y - root.press-y; }
+            }
+        }
+        Timer {
+            interval: 400ms;
+            running: rl-ta.pressed && root.drag-from < 0;
+            triggered => {
+                root.press-y = rl-ta.mouse-y;
+                root.shift = 0px;
+                root.drag-from = i;
+            }
+        }
+    }
+}
+
+// `_ProxyGroupItem`: the icon or monogram, name and type, the issue mark and the circle
+// checkbox. A tap edits, or selects while selecting; a long press opens the menu.
+component GroupRowView inherits Rectangle {
+    in property <GroupRow> item;
+    in property <bool> divider;
+    in property <bool> selecting;
+    callback clicked(string);
+    property <bool> long-fired;
+    property <bool> pictured: root.item.icon != "" && NetImages.has(root.item.icon, NetImages.rev);
+    height: 64px;
+    background: gr-ta.pressed ? Theme.s.inset : root.item.selected ? Theme.s.primary.with-alpha(0.08) : transparent;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 50px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                if root.pictured: Image {
+                    width: 32px;
+                    height: 32px;
+                    image-fit: contain;
+                    source: NetImages.image(root.item.icon, NetImages.rev);
+                }
+                if !root.pictured: Text {
+                    text: root.item.mark;
+                    font-size: 20px * Type.scale;
+                    font-weight: 600;
+                    color: Theme.s.on-surface-variant;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text { text: root.item.name; font-size: 16px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
+            Text { text: root.item.kind; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
+        }
+        if root.item.invalid: VerticalLayout {
+            alignment: center;
+            Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; }
+        }
+    }
+    if root.divider: Rectangle {
+        x: 62px;
+        y: parent.height - 1px;
+        width: parent.width - self.x;
+        height: 1px;
+        background: Theme.s.outline-variant.with-alpha(0.6);
+    }
+    gr-ta := TouchArea {
+        x: 0;
+        width: parent.width - 50px;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { root.long-fired = false; }
+        }
+        clicked => {
+            if (root.long-fired) { return; }
+            root.clicked((root.selecting ? "select:" : "open:") + root.item.id);
+        }
+    }
+    Timer {
+        interval: 500ms;
+        running: !root.selecting && gr-ta.pressed && !root.long-fired;
+        triggered => {
+            root.long-fired = true;
+            Anchor.x = root.absolute-position.x;
+            Anchor.y = root.absolute-position.y;
+            Anchor.w = root.width;
+            Anchor.h = root.height;
+            root.clicked("long:" + root.item.id);
+        }
+    }
+    Rectangle {
+        x: parent.width - 50px;
+        width: 50px;
+        Rectangle {
+            width: 22px;
+            height: 22px;
+            border-radius: 11px;
+            border-width: root.item.selected ? 0px : 2px;
+            border-color: Theme.s.on-surface-variant;
+            background: root.item.selected ? Theme.s.primary : transparent;
+            if root.item.selected: Icon { glyph: Icons.check; size: 16px; tint: Theme.s.on-primary; }
+        }
+        TouchArea { clicked => { root.clicked("select:" + root.item.id); } }
+    }
+}
+
 // CustomProfileView: the title opens 重命名 / 运行时配置, 导入 stays off until importing
-// lands, then the issue banner, the overview rows and the groups section.
+// lands, then the issue banner, the overview rows and `CustomProxyGroupsSection`, whose
+// header carries the groups' own actions.
 component CustomProfilePage inherits Rectangle {
     in property <string> title;
     in property <[CustomRow]> rows;
     in property <int> issues;
     in property <int> group-count;
+    in property <[GroupRow]> groups;
+    in property <[string]> group-titles;
+    in property <[string]> group-kinds;
+    in property <bool> selecting;
+    in property <bool> sorting;
     callback back();
     callback title-menu(length, length, length, length);
     callback open-row(CustomRow);
+    callback group(string);
     background: Theme.s.page;
     VerticalLayout {
         HorizontalLayout {
@@ -3374,6 +3569,7 @@ component CustomProfilePage inherits Rectangle {
             }
         }
         Flickable {
+            interactive: !cpp-sort.dragging;
             content-height: cpp-body.preferred-height + Dock.pad;
             cpp-body := VerticalLayout {
                 alignment: start;
@@ -3416,7 +3612,35 @@ component CustomProfilePage inherits Rectangle {
                 HorizontalLayout {
                     padding-left: 14px;
                     padding-top: 12px;
-                    Text { text: "策略组"; height: 36px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                    height: 52px;
+                    Text { text: "策略组"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
+                    if root.selecting: IconButton { glyph: Icons.delete; tint: Theme.s.on-surface; clicked => { root.group("delete"); } }
+                    if root.selecting: IconButton { glyph: Icons.select-all; tint: Theme.s.on-surface; clicked => { root.group("select-all"); } }
+                    if !root.selecting && (root.sorting || root.group-count > 1): IconButton {
+                        glyph: root.sorting ? Icons.check : Icons.sort;
+                        tint: Theme.s.on-surface;
+                        clicked => { root.group(root.sorting ? "sort-done" : "sort"); }
+                    }
+                    if !root.selecting && !root.sorting: IconButton { glyph: Icons.add-circle; tint: Theme.s.on-surface; clicked => { root.group("add"); } }
+                }
+                if root.group-count > 0 && !root.sorting: Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 16px;
+                    clip: true;
+                    VerticalLayout {
+                        for g[i] in root.groups: GroupRowView {
+                            item: g;
+                            selecting: root.selecting;
+                            divider: i < root.groups.length - 1;
+                            clicked(id) => { root.group(id); }
+                        }
+                    }
+                }
+                cpp-sort := ReorderList {
+                    visible: root.sorting;
+                    titles: root.sorting ? root.group-titles : [];
+                    subtitles: root.group-kinds;
+                    moved(f, t) => { root.group("move:" + f + ":" + t); }
                 }
                 if root.group-count == 0: Text {
                     height: 120px;
@@ -3598,87 +3822,6 @@ component EditorPage inherits Rectangle {
                     color: Theme.s.on-surface;
                     selection-background-color: Theme.s.primary-container;
                 }
-            }
-        }
-    }
-}
-
-// A reorderable grouped list (`PrismReorderableListView` with a `SortHandle` per row): a
-// long press lifts a row, it follows the finger while the rows it passes make way, and the
-// move lands on release. Nothing changes in the model until then.
-component ReorderList inherits Rectangle {
-    in property <[string]> titles;
-    in property <[string]> subtitles;
-    out property <bool> dragging: root.drag-from >= 0;
-    callback moved(int, int);
-    property <length> row-h: root.subtitles.length > 0 ? 64px : 52px;
-    property <int> drag-from: -1;
-    property <length> press-y;
-    property <length> shift;
-    property <int> drag-to: root.drag-from < 0 ? -1 : max(0, min(root.titles.length - 1, root.drag-from + round(root.shift / root.row-h)));
-    height: root.titles.length * root.row-h;
-    Rectangle {
-        background: Theme.s.card;
-        border-radius: 16px;
-    }
-    for t[i] in root.titles: Rectangle {
-        property <bool> lifted: i == root.drag-from;
-        y: root.drag-from < 0 || self.lifted ? i * root.row-h
-            : i > root.drag-from && i <= root.drag-to ? (i - 1) * root.row-h
-            : i < root.drag-from && i >= root.drag-to ? (i + 1) * root.row-h
-            : i * root.row-h;
-        z: self.lifted ? 1 : 0;
-        height: root.row-h;
-        animate y { duration: 150ms; easing: ease-out; }
-        Rectangle {
-            y: parent.lifted ? root.shift : 0px;
-            background: parent.lifted ? Theme.s.card : transparent;
-            border-radius: parent.lifted ? 16px : 0px;
-            drop-shadow-offset-y: parent.lifted ? 6px : 0px;
-            drop-shadow-blur: parent.lifted ? 16px : 0px;
-            drop-shadow-color: parent.lifted ? #00000033 : transparent;
-            HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 12px;
-                spacing: 8px;
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 2px;
-                    horizontal-stretch: 1;
-                    Text { text: t; font-size: 16px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
-                    if i < root.subtitles.length && root.subtitles[i] != "": Text { text: root.subtitles[i]; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
-                }
-                VerticalLayout { alignment: center; Icon { glyph: "M5 9h14 M5 15h14"; size: 20px; tint: Theme.s.on-surface-variant; } }
-            }
-            if !parent.lifted && i < root.titles.length - 1: Rectangle {
-                x: 16px;
-                y: parent.height - 1px;
-                width: parent.width - 16px;
-                height: 1px;
-                background: Theme.s.outline-variant.with-alpha(0.6);
-            }
-        }
-        rl-ta := TouchArea {
-            changed pressed => {
-                if (!self.pressed && root.drag-from == i) {
-                    let from = root.drag-from;
-                    let to = root.drag-to;
-                    root.drag-from = -1;
-                    root.shift = 0px;
-                    if (from != to) { root.moved(from, to); }
-                }
-            }
-            moved => {
-                if (root.drag-from == i) { root.shift = self.mouse-y - root.press-y; }
-            }
-        }
-        Timer {
-            interval: 400ms;
-            running: rl-ta.pressed && root.drag-from < 0;
-            triggered => {
-                root.press-y = rl-ta.mouse-y;
-                root.shift = 0px;
-                root.drag-from = i;
             }
         }
     }
@@ -3895,7 +4038,7 @@ component SetRowView inherits Rectangle {
             horizontal-stretch: 1;
             HorizontalLayout {
                 spacing: 6px;
-                Text { text: root.item.title; font-size: 16px * Type.scale; color: root.item.lead == "add" ? Theme.s.primary : Theme.s.on-surface; overflow: elide; horizontal-stretch: root.item.chip == "" ? 1 : 0; }
+                Text { text: root.item.title; font-size: 16px * Type.scale; color: root.item.kind == "danger" ? Theme.s.error : root.item.lead == "add" ? Theme.s.primary : Theme.s.on-surface; overflow: elide; horizontal-stretch: root.item.chip == "" ? 1 : 0; }
                 if root.item.chip != "": VerticalLayout {
                     alignment: center;
                     horizontal-stretch: 1;
@@ -7490,7 +7633,25 @@ export component AppWindow inherits Window {
     in property <int> custom-group-count;
     in-out property <bool> custom-open;
     in-out property <bool> custom-menu-open;
+    in property <[GroupRow]> custom-groups;
+    in property <[string]> custom-group-titles;
+    in property <[string]> custom-group-kinds;
+    in property <bool> custom-group-selecting;
+    in property <bool> custom-group-sorting;
+    callback custom-group(string);
+    // `EditProxyGroupView` as "group" over the custom profile page, its quick edit in the
+    // editor with `editor-parent` "group".
+    in property <string> pg-title;
+    in property <[SetSection]> pg-sections;
+    in property <string> pg-issue;
+    callback pg-clicked(string);
+    callback pg-toggled(string, bool);
+    callback pg-back();
+    callback group-yaml-closed();
+    in-out property <string> editor-parent;
     in-out property <string> placeholder-title;
+    // Where the placeholder page goes back to, when not the custom profile page.
+    in-out property <string> placeholder-parent;
     callback add-custom();
     callback custom-back();
     callback custom-action(string);
@@ -7966,7 +8127,7 @@ export component AppWindow inherits Window {
                 if (root.proxy-sub != "") { root.proxy-sub = ""; return accept; }
                 if (root.proxy-options-open) { root.proxy-options-open = false; return accept; }
                 if (root.tab == 1 && root.proxy-searching) { root.proxy-searching = false; root.search-proxies(""); return accept; }
-                if (root.confirm-open && root.confirm-action == "access-save") { root.confirm-open = false; return accept; }
+                if (root.confirm-open && (root.confirm-action == "access-save" || root.confirm-action == "pg-save")) { root.confirm-open = false; return accept; }
                 if (root.confirm-open) {
                     root.confirm-open = false;
                     root.confirm-answer(root.confirm-action, root.confirm-arg, false);
@@ -7978,7 +8139,11 @@ export component AppWindow inherits Window {
                 if (root.custom-menu-open) { root.custom-menu-open = false; return accept; }
                 if (root.add-menu-open) { root.add-menu-open = false; return accept; }
                 if (root.link-open) { root.link-open = false; return accept; }
+                if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "group") { root.group-yaml-closed(); root.editor-parent = ""; root.profiles-page = "group"; return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
+                if (root.tab == 2 && root.profiles-page == "group") { root.pg-back(); return accept; }
+                if (root.tab == 2 && root.profiles-page == "placeholder" && root.placeholder-parent != "") { root.profiles-page = root.placeholder-parent; root.placeholder-parent = ""; return accept; }
+                if (root.tab == 2 && root.profiles-page == "custom" && (root.custom-group-selecting || root.custom-group-sorting)) { root.custom-group("clear"); return accept; }
                 if (root.tab == 0 && root.profiles-page == "preview") { root.profiles-page = ""; root.profile-sheet-open = true; return accept; }
                 if (root.tab == 2 && root.custom-open && (root.profiles-page == "preview" || root.profiles-page == "placeholder")) { root.profiles-page = "custom"; return accept; }
                 if (root.tab == 2 && root.profiles-page == "custom") { root.custom-back(); return accept; }
@@ -8215,6 +8380,12 @@ export component AppWindow inherits Window {
                     save(t) => { root.editor-save(t); }
                     back => {
                         if (root.tab == 0) { root.profile-sheet-open = true; }
+                        if (root.profiles-page == "editor" && root.editor-parent == "group") {
+                            root.group-yaml-closed();
+                            root.editor-parent = "";
+                            root.profiles-page = "group";
+                            return;
+                        }
                         root.profiles-page = root.profiles-page == "editor" ? "edit" : root.custom-open ? "custom" : "";
                     }
                 }
@@ -8225,6 +8396,12 @@ export component AppWindow inherits Window {
                     rows: root.custom-rows;
                     issues: root.custom-issues;
                     group-count: root.custom-group-count;
+                    groups: root.custom-groups;
+                    group-titles: root.custom-group-titles;
+                    group-kinds: root.custom-group-kinds;
+                    selecting: root.custom-group-selecting;
+                    sorting: root.custom-group-sorting;
+                    group(a) => { root.custom-group(a); }
                     back => { root.custom-back(); }
                     title-menu(x, y, w, h) => {
                         root.ctx-x = x;
@@ -8242,7 +8419,38 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
                     title: root.placeholder-title;
-                    back => { root.profiles-page = root.custom-open ? "custom" : ""; }
+                    back => {
+                        root.profiles-page = root.placeholder-parent != "" ? root.placeholder-parent : root.custom-open ? "custom" : "";
+                        root.placeholder-parent = "";
+                    }
+                }
+                if root.tab == 2 && root.profiles-page == "group": SettingsPage {
+                    width: parent.width;
+                    height: parent.height;
+                    title: root.pg-title;
+                    sections: root.pg-sections;
+                    action-glyph: Icons.check;
+                    action2-glyph: Icons.compose;
+                    back => { root.pg-back(); }
+                    action => { root.pg-clicked("action"); }
+                    action2 => { root.pg-clicked("action2"); }
+                    clicked(id) => { root.pg-clicked(id); }
+                    toggled(id, on) => { root.pg-toggled(id, on); }
+                    if root.pg-issue != "": HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 8px;
+                        Rectangle {
+                            border-radius: 16px;
+                            background: Theme.s.error.with-alpha(0.12);
+                            HorizontalLayout {
+                                padding: 14px;
+                                spacing: 12px;
+                                VerticalLayout { alignment: start; Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; } }
+                                Text { text: root.pg-issue; font-size: 14px * Type.scale; color: Theme.s.error; wrap: word-wrap; horizontal-stretch: 1; }
+                            }
+                        }
+                    }
                 }
                 if (root.tab == 3 && root.tools-page == "") || root.tab-leaving == 3: Tools {
                     x: root.tab-x(3);
@@ -9443,10 +9651,10 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 alignment: end;
                 spacing: 8px;
-                TextButton { text: root.confirm-action == "access-save" ? "不保存" : "取消"; clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, false); } }
+                TextButton { text: root.confirm-action == "access-save" || root.confirm-action == "pg-save" ? "不保存" : "取消"; clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, false); } }
                 TextButton {
-                    text: root.confirm-action == "access-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" || root.confirm-action == "color-delete" || root.confirm-action == "ua-delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : root.confirm-action == "color-reset" ? "重置" : "确定";
-                    danger: root.confirm-action == "delete" || root.confirm-action == "ua-delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset";
+                    text: root.confirm-action == "access-save" || root.confirm-action == "pg-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" || root.confirm-action == "color-delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : root.confirm-action == "color-reset" ? "重置" : "确定";
+                    danger: root.confirm-action == "delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset";
                     clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, true); }
                 }
             }

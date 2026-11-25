@@ -250,7 +250,7 @@ pub fn sections(proxies: &[CustomProxy], page: &str) -> Option<Vec<SetSection>> 
 }
 
 /// `validate.proxies`: one verdict per definition, None when it parses.
-fn parse_verdicts(r: &Value, n: usize) -> Vec<Option<String>> {
+pub(crate) fn parse_verdicts(r: &Value, n: usize) -> Vec<Option<String>> {
     let mut out = vec![None; n];
     let mut put = |i: usize, m: &Value| {
         if let (Some(slot), Some(m)) = (out.get_mut(i), m.as_str()) {

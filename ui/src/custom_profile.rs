@@ -219,7 +219,7 @@ pub fn own(state: &State, profile: &Profile) -> Own {
         rules: rules(state, &profile.id).iter().map(|r| r.raw()).collect(),
         groups: groups(state, &profile.id)
             .iter()
-            .map(|g| g.definition.clone())
+            .map(|g| crate::proxy_groups::config_definition(&g.definition))
             .collect(),
         overrides: Some(profile.overrides.clone()),
     }

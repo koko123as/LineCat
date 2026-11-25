@@ -57,6 +57,9 @@ pub use theme_app::{apply as apply_theme, show_color_page};
 pub mod colors;
 pub mod custom_profile;
 mod custom_profile_app;
+pub mod proxy_groups;
+mod proxy_groups_app;
+pub use proxy_groups_app::{form_sections as group_form_sections, group_rows, Draft as GroupDraft};
 pub mod custom_proxies;
 pub mod mitm;
 mod mitm_app;
@@ -2055,6 +2058,8 @@ impl App {
             ("rs-delete", true) => self.delete_rule_set(&arg),
             ("is-delete", true) => self.delete_icon_set(&arg),
             ("cp-delete", true) => self.delete_custom_proxy(&arg),
+            ("pg-delete", true) => self.delete_groups(&arg),
+            ("pg-save", _) => self.pg_save_answer(yes),
             (a, _) if a.starts_with("mitm-") => self.mitm_confirmed(a, &arg, yes),
             ("ua-delete", true) => self.delete_user_agent(&arg),
             ("access-save", _) => self.access_save_answer(yes),
@@ -2472,7 +2477,11 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     let a = app.clone();
     ui.on_upload_file(move || a.upload_file());
     let a = app.clone();
-    ui.on_editor_save(move |text| a.save_editor(text.into()));
+    ui.on_editor_save(move |text| {
+        if !a.group_yaml_save(&text) {
+            a.save_editor(text.into());
+        }
+    });
     let a = app.clone();
     ui.on_tools_editor_save(move |text| a.tools_editor_save(text.into()));
     let a = app.clone();

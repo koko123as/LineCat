@@ -19,6 +19,11 @@ static PAGE: Mutex<Option<Page>> = Mutex::new(None);
 
 const RENAME: &str = "profile-rename:";
 
+/// The profile the page shows, while it is open.
+pub(crate) fn page_id() -> Option<String> {
+    PAGE.lock().unwrap().as_ref().map(|p| p.id.clone())
+}
+
 impl App {
     pub(crate) fn bind_custom_profile(self: &Arc<Self>, ui: &AppWindow) {
         let a = self.clone();
@@ -38,6 +43,16 @@ impl App {
         });
         let a = self.clone();
         ui.on_rename_profile(move |id| a.ask_rename(&id));
+        let a = self.clone();
+        ui.on_custom_group(move |action| a.custom_group(&action));
+        let a = self.clone();
+        ui.on_pg_clicked(move |id| a.pg_clicked(&id));
+        let a = self.clone();
+        ui.on_pg_toggled(move |id, on| a.pg_toggled(&id, on));
+        let a = self.clone();
+        ui.on_pg_back(move || a.pg_back());
+        let a = self.clone();
+        ui.on_group_yaml_closed(move || a.group_yaml_closed());
     }
 
     /// `_toAddCustom`: an unnamed custom profile, opened as new.
@@ -61,6 +76,7 @@ impl App {
             }
         };
         *PAGE.lock().unwrap() = Some(page);
+        self.reset_groups_section();
         self.publish_custom();
         self.ui(|ui| {
             ui.set_custom_open(true);
@@ -68,10 +84,11 @@ impl App {
         });
     }
 
-    fn publish_custom(self: &Arc<Self>) {
+    pub(crate) fn publish_custom(self: &Arc<Self>) {
         let Some(id) = PAGE.lock().unwrap().as_ref().map(|p| p.id.clone()) else {
             return;
         };
+        let issues = self.publish_custom_groups(&id) as i32;
         let (title, rows, groups) = {
             let store = self.store.lock().unwrap();
             let Some(p) = store.state.profiles.iter().find(|p| p.id == id) else {
@@ -92,7 +109,7 @@ impl App {
         self.ui(move |ui| {
             ui.set_custom_title(title.into());
             ui.set_custom_rows(ModelRc::new(VecModel::from(rows)));
-            ui.set_custom_issues(0);
+            ui.set_custom_issues(issues);
             ui.set_custom_group_count(groups);
         });
     }
@@ -104,12 +121,18 @@ impl App {
         let Some(page) = PAGE.lock().unwrap().take() else {
             return;
         };
+        self.reset_groups_section();
         self.ui(|ui| {
             ui.set_custom_open(false);
             ui.set_custom_menu_open(false);
-            if ui.get_profiles_page() == "custom" {
+            let page = ui.get_profiles_page();
+            if matches!(page.as_str(), "custom" | "group" | "placeholder")
+                || (page == "editor" && ui.get_editor_parent() == "group")
+            {
                 ui.set_profiles_page("".into());
             }
+            ui.set_editor_parent("".into());
+            ui.set_placeholder_parent("".into());
         });
         let (untouched, label, edited) = {
             let store = self.store.lock().unwrap();

@@ -889,6 +889,146 @@ fn sample_icon_sets() -> Vec<seasoncat_ui::icon_sets::IconSet> {
     ]
 }
 
+/// The custom profile's groups section and the group form, by overlay.
+fn snapshot_groups(ui: &AppWindow, overlay: &str, w: u32) {
+    use serde_json::json;
+    let data = proxy_groups::Data {
+        groups: vec![
+            (
+                1,
+                json!({"name": "节点选择", "type": "select", "proxies": ["自动选择", "香港 01", "日本 01", "DIRECT"]}),
+            ),
+            (
+                2,
+                json!({"name": "自动选择", "type": "url-test", "proxies": ["香港 01", "日本 01"], "interval": 300}),
+            ),
+            (
+                3,
+                json!({"name": "故障转移", "type": "fallback", "proxies": ["香港 01", "失效节点"],
+                       "url": "https://www.gstatic.com/generate_204", "interval": 600, "lazy": false,
+                       "max-failed-times": 3, "hidden": true, "empty-fallback": "香港 01", "filter": "(?i)港|hk"}),
+            ),
+            (
+                4,
+                json!({"name": "负载均衡", "type": "load-balance", "use": ["机场订阅"], "strategy": "round-robin"}),
+            ),
+            (
+                5,
+                json!({"name": "一个名字很长很长很长很长的策略组名称用来检查省略", "type": "select", "proxies": ["节点选择"]}),
+            ),
+            (
+                6,
+                json!({"name": "循环A", "type": "select", "proxies": ["循环B"]}),
+            ),
+            (
+                7,
+                json!({"name": "循环B", "type": "smart", "proxies": ["循环A"]}),
+            ),
+        ],
+        proxies: ["香港 01".to_string(), "日本 01".to_string()].into(),
+        proxy_types: [
+            ("香港 01".to_string(), "ss".to_string()),
+            ("日本 01".to_string(), "vmess".to_string()),
+        ]
+        .into(),
+        proxy_providers: ["机场订阅".to_string()].into(),
+    };
+    let listed = matches!(
+        overlay,
+        "groups" | "gselect" | "gsort" | "gmenu" | "gdelete"
+    );
+    let selected: std::collections::BTreeSet<u64> = if overlay == "gselect" {
+        [2, 3].into()
+    } else {
+        Default::default()
+    };
+    let rows = if listed {
+        group_rows(&data, &selected)
+    } else {
+        Vec::new()
+    };
+    let titles: Vec<slint::SharedString> = rows.iter().map(|r| r.name.clone()).collect();
+    let kinds: Vec<slint::SharedString> = rows.iter().map(|r| r.kind.clone()).collect();
+    if listed {
+        ui.set_custom_group_count(rows.len() as i32);
+        ui.set_custom_issues(proxy_groups::profile_issues(&data).len() as i32);
+    }
+    ui.set_custom_groups(ModelRc::new(VecModel::from(rows)));
+    ui.set_custom_group_titles(ModelRc::new(VecModel::from(titles)));
+    ui.set_custom_group_kinds(ModelRc::new(VecModel::from(kinds)));
+    ui.set_custom_group_selecting(overlay == "gselect");
+    ui.set_custom_group_sorting(overlay == "gsort");
+    if overlay == "gmenu" {
+        ui.set_ctx_names(ModelRc::default());
+        ui.set_ctx_items(ModelRc::new(VecModel::from(vec![
+            ActionItem {
+                id: "copy".into(),
+                glyph: "copy".into(),
+                label: "复制".into(),
+                enabled: true,
+                ..Default::default()
+            },
+            ActionItem {
+                id: "delete".into(),
+                glyph: "delete".into(),
+                label: "删除".into(),
+                danger: true,
+                enabled: true,
+                ..Default::default()
+            },
+        ])));
+        ui.set_ctx_x(16.0);
+        ui.set_ctx_y(470.0);
+        ui.set_ctx_w(w as f32 - 32.0);
+        ui.set_ctx_h(64.0);
+        ui.set_ctx_kind("pg".into());
+    }
+    let mut draft = match overlay {
+        "gnew" => GroupDraft::open(0, json!({"name": "", "type": "select"}), true),
+        "glb" => GroupDraft::open(4, data.groups[3].1.clone(), false),
+        _ => GroupDraft::open(3, data.groups[2].1.clone(), false),
+    };
+    if overlay == "gnew" {
+        draft.submitted = true;
+    }
+    if overlay == "glb" {
+        draft.add_option(proxy_groups::Opt::Strategy, "");
+    }
+    if overlay == "gsave" {
+        draft.def["interval"] = json!(900);
+    }
+    let presets = vec![("(?i)港|hk".to_string(), "香港节点".to_string())];
+    ui.set_pg_title(
+        if overlay == "gnew" {
+            "添加策略组"
+        } else {
+            "编辑策略组"
+        }
+        .into(),
+    );
+    ui.set_pg_sections(ModelRc::new(VecModel::from(group_form_sections(
+        &draft, &data, &presets,
+    ))));
+    ui.set_pg_issue(proxy_groups::issues_message(&draft.issues(&data)).into());
+    if overlay == "gyaml" {
+        ui.set_editor_title("故障转移".into());
+        ui.set_editor_text(proxy_groups::to_yaml(&data.groups[2].1).into());
+        ui.set_editor_readonly(false);
+        ui.set_editor_parent("group".into());
+    }
+    if overlay == "gsave" || overlay == "gdelete" {
+        ui.set_confirm_title("提示".into());
+        if overlay == "gsave" {
+            ui.set_confirm_text("是否保存更改？".into());
+            ui.set_confirm_action("pg-save".into());
+        } else {
+            ui.set_confirm_text("节点选择, 自动选择 仍被当前配置的规则、策略组、拨号代理、DNS 或 NTP 引用，删除后这些引用会失效。确定删除吗？".into());
+            ui.set_confirm_action("pg-delete".into());
+        }
+        ui.set_confirm_open(true);
+    }
+}
+
 fn main() {
     let out = std::env::args().nth(1).unwrap_or_else(|| ".".into());
     let (w, h) = (412u32, 892u32);
@@ -1480,6 +1620,26 @@ fn main() {
         ("custom-small", 2, "", "custom", 1, "long"),
         ("custom-wide", 2, "", "custom", 1, ""),
         ("custom-tablet", 2, "", "custom", 1, ""),
+        ("custom-groups", 2, "", "custom", 1, "groups"),
+        ("custom-groups-small", 2, "", "custom", 1, "groups"),
+        ("custom-groups-wide", 2, "", "custom", 1, "groups"),
+        ("custom-groups-tablet", 2, "", "custom", 1, "groups"),
+        ("custom-groups-select", 2, "", "custom", 1, "gselect"),
+        ("custom-groups-select-small", 2, "", "custom", 1, "gselect"),
+        ("custom-groups-sort", 2, "", "custom", 1, "gsort"),
+        ("custom-groups-sort-small", 2, "", "custom", 1, "gsort"),
+        ("custom-groups-menu", 2, "", "custom", 1, "gmenu"),
+        ("custom-groups-delete", 2, "", "custom", 1, "gdelete"),
+        ("group-form", 2, "", "group", 1, "gform"),
+        ("group-form-small", 2, "", "group", 1, "gform"),
+        ("group-form-wide", 2, "", "group", 1, "gform"),
+        ("group-form-tablet", 2, "", "group", 1, "gform"),
+        ("group-form-new", 2, "", "group", 1, "gnew"),
+        ("group-form-new-small", 2, "", "group", 1, "gnew"),
+        ("group-form-lb", 2, "", "group", 1, "glb"),
+        ("group-form-save", 2, "", "group", 1, "gsave"),
+        ("group-yaml", 2, "", "editor", 1, "gyaml"),
+        ("group-yaml-small", 2, "", "editor", 1, "gyaml"),
         ("custom-issues", 2, "", "custom", 1, "issues"),
         ("custom-issues-small", 2, "", "custom", 1, "issues"),
         ("custom-menu", 2, "", "custom", 1, "cmenu"),
@@ -2137,6 +2297,7 @@ fn main() {
         if *overlay != "ua-menu" {
             ui.set_ctx_kind("".into());
         }
+        snapshot_groups(&ui, overlay, w);
         if matches!(*overlay, "groupmenu" | "tabs" | "tabs-list") {
             let mut many: Vec<ProxyGroup> = base_groups.iter().collect();
             for (i, name) in [
