@@ -71,7 +71,7 @@ const RESERVED_NAMES: &[&str] = &[
 ];
 
 /// `linkProxyName`: a link's own name, else its server, else its type.
-fn link_proxy_name(definition: &Value) -> String {
+pub(crate) fn link_proxy_name(definition: &Value) -> String {
     let name = definition
         .get("name")
         .map(|v| match v {
@@ -98,7 +98,7 @@ fn link_proxy_name(definition: &Value) -> String {
 }
 
 /// `freeProxyName`: `base`, else `base-01`, `base-02`, ...
-fn free_proxy_name(base: &str, taken: &mut std::collections::HashSet<String>) -> String {
+pub(crate) fn free_proxy_name(base: &str, taken: &mut std::collections::HashSet<String>) -> String {
     let mut name = base.to_string();
     let mut index = 1;
     while !taken.insert(name.clone()) {

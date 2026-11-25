@@ -73,6 +73,8 @@ pub struct Settings {
     pub rule_sets: Vec<crate::rule_sets::RuleSet>,
     /// `IconSet`s, in the page's order.
     pub icon_sets: Vec<crate::icon_sets::IconSet>,
+    /// `CustomProxy`s, in the page's order.
+    pub custom_proxies: Vec<crate::custom_proxies::CustomProxy>,
 }
 
 /// `TextScale`: off follows the system's font scale.
@@ -267,6 +269,7 @@ impl Default for Settings {
             text_scale: TextScale::default(),
             rule_sets: Vec::new(),
             icon_sets: Vec::new(),
+            custom_proxies: Vec::new(),
         }
     }
 }

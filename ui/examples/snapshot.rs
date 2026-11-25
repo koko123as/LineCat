@@ -421,6 +421,45 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             )
             .unwrap_or_default()
         }
+        "custom-proxies" => {
+            if overlay != "empty" {
+                s.custom_proxies = sample_custom_proxies();
+            }
+            let query = if overlay == "search" { "hk" } else { "" };
+            let mut errors = std::collections::HashMap::new();
+            if let Some(p) = s.custom_proxies.get(3) {
+                let key = serde_json::to_string(&p.definition).unwrap_or_default();
+                errors.insert(key, "invalid private key".to_string());
+            }
+            seasoncat_ui::custom_proxies_sections(&s.custom_proxies, query, &errors)
+        }
+        "custom-proxy" => {
+            let draft = sample_draft(overlay);
+            ui.set_cp_issue(
+                seasoncat_ui::custom_proxy_issue(&draft, &sample_custom_proxies()).into(),
+            );
+            if overlay == "add" {
+                let mut last = None;
+                let items: Vec<ActionItem> = draft
+                    .addable()
+                    .into_iter()
+                    .map(|(sec, f)| {
+                        let heading = if last != Some(sec) { sec.label() } else { "" };
+                        last = Some(sec);
+                        ActionItem {
+                            id: f.name.into(),
+                            heading: heading.into(),
+                            label: f.label.into(),
+                            enabled: true,
+                            ..Default::default()
+                        }
+                    })
+                    .collect();
+                ui.set_choice_title("添加设置项".into());
+                ui.set_choice_items(ModelRc::new(VecModel::from(items)));
+            }
+            seasoncat_ui::custom_proxy_sections(&draft)
+        }
         "icon-sets" => {
             if overlay != "empty" {
                 s.icon_sets = sample_icon_sets();
@@ -499,10 +538,27 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
         ui.set_acc_count("已选 4".into());
     }
     seasoncat_ui::set_targets(("bypass-domain", "network"), ("hosts", "general"));
-    let meta = seasoncat_ui::page_meta(&s, page);
+    let mut meta = seasoncat_ui::page_meta(&s, page);
+    if page == "custom-proxy" && overlay != "new" {
+        meta.title = "编辑代理".into();
+    }
+    if page == "custom-proxies" && overlay == "search" {
+        meta.action2 = "".into();
+    }
     ui.on_page_meta(move |_, _| meta.clone());
+    ui.set_set_searching(page == "custom-proxies" && overlay == "search");
+    ui.set_set_query(
+        if page == "custom-proxies" && overlay == "search" {
+            "hk"
+        } else {
+            ""
+        }
+        .into(),
+    );
     ui.set_page_sections(m(sections));
-    ui.set_choice_open(overlay.starts_with("choice:"));
+    ui.set_choice_open(
+        overlay.starts_with("choice:") || (page == "custom-proxy" && overlay == "add"),
+    );
     if let Some(key) = overlay.strip_prefix("choice:") {
         ui.set_choice_title("语言".into());
         let items: Vec<ActionItem> = settings_view::choices(&s, key)
@@ -564,6 +620,59 @@ fn service_cells(n: usize, sheet: bool) -> Vec<DashService> {
             }
         })
         .collect()
+}
+
+fn sample_custom_proxies() -> Vec<seasoncat_ui::custom_proxies::CustomProxy> {
+    use seasoncat_ui::custom_proxies::CustomProxy;
+    [
+        serde_json::json!({"name": "hk-01", "type": "ss", "server": "hk.example.com", "port": 443,
+            "cipher": "aes-128-gcm", "password": "secret"}),
+        serde_json::json!({"name": "日本东京 IPLC 专线超长名称用于测试省略显示", "type": "vmess",
+            "server": "jp.example.com", "port": 8443, "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811"}),
+        serde_json::json!({"name": "hk-01", "type": "trojan", "server": "hk2.example.com", "port": 443}),
+        serde_json::json!({"name": "us-wireguard", "type": "wireguard", "private-key": "k"}),
+        serde_json::json!({"name": "", "type": "hysteria2", "server": "sg.example.com"}),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, d)| CustomProxy {
+        id: i.to_string(),
+        definition: d,
+    })
+    .collect()
+}
+
+/// "new": an empty form after a save; otherwise a vless proxy with options listed.
+fn sample_draft(overlay: &str) -> seasoncat_ui::custom_proxies::Draft {
+    use seasoncat_ui::custom_proxies::{field, CustomProxy, Draft};
+    if overlay == "new" {
+        let mut d = Draft::open(
+            CustomProxy {
+                id: String::new(),
+                definition: serde_json::json!({"name": "", "type": "ss", "password": "p@ssw0rd"}),
+            },
+            true,
+        );
+        d.submitted = true;
+        d.core_error = Some("missing server".into());
+        return d;
+    }
+    let mut d = Draft::open(
+        CustomProxy {
+            id: "9".into(),
+            definition: serde_json::json!({"name": "hk-03", "type": "vless",
+                "server": "hk.example.com", "port": 443, "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                "udp": true, "tls": true, "servername": "cdn.example.com", "alpn": ["h2", "http/1.1"]}),
+        },
+        false,
+    );
+    d.add_option(field("network").unwrap());
+    d.set_option(field("network").unwrap(), Some("ws".into()));
+    d.set_option(field("wsPath").unwrap(), Some("/ray".into()));
+    if overlay == "dup" {
+        d.proxy = d.proxy.with_value("name", Some("hk-01".into()));
+    }
+    d
 }
 
 fn sample_icon_sets() -> Vec<seasoncat_ui::icon_sets::IconSet> {
@@ -1266,6 +1375,20 @@ fn main() {
         ("set-rulesets-wide", 3, "", "rule-sets", 1, ""),
         ("set-rulesets-tablet", 3, "", "rule-sets", 1, ""),
         ("set-rulesets-empty", 3, "", "rule-sets", 1, "empty"),
+        ("set-cproxies", 3, "", "custom-proxies", 1, ""),
+        ("set-cproxies-small", 3, "", "custom-proxies", 1, ""),
+        ("set-cproxies-wide", 3, "", "custom-proxies", 1, ""),
+        ("set-cproxies-tablet", 3, "", "custom-proxies", 1, ""),
+        ("set-cproxies-empty", 3, "", "custom-proxies", 1, "empty"),
+        ("set-cproxies-search", 3, "", "custom-proxies", 1, "search"),
+        ("set-cproxy", 3, "", "custom-proxy", 1, ""),
+        ("set-cproxy-small", 3, "", "custom-proxy", 1, ""),
+        ("set-cproxy-wide", 3, "", "custom-proxy", 1, ""),
+        ("set-cproxy-tablet", 3, "", "custom-proxy", 1, ""),
+        ("set-cproxy-new", 3, "", "custom-proxy", 1, "new"),
+        ("set-cproxy-new-small", 3, "", "custom-proxy", 1, "new"),
+        ("set-cproxy-add", 3, "", "custom-proxy", 1, "add"),
+        ("set-cproxy-dup", 3, "", "custom-proxy", 1, "dup"),
         ("set-iconsets", 3, "", "icon-sets", 1, ""),
         ("set-iconsets-small", 3, "", "icon-sets", 1, ""),
         ("set-iconsets-wide", 3, "", "icon-sets", 1, ""),

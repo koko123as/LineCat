@@ -171,6 +171,9 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
     if let Some(meta) = crate::icon_sets_app::page_meta(&settings.icon_sets, page) {
         return meta;
     }
+    if let Some(meta) = crate::custom_proxies_app::page_meta(&settings.custom_proxies, page) {
+        return meta;
+    }
     if let Some(meta) = crate::on_demand_app::page_meta(page) {
         return meta;
     }
@@ -237,7 +240,9 @@ impl App {
         let w = ui.as_weak();
         ui.on_tools_page_changed(move || {
             if let Some(ui) = w.upgrade() {
-                a.rules_page_shown(&ui.get_tools_page());
+                let page = ui.get_tools_page();
+                a.rules_page_shown(&page);
+                a.custom_proxies_page_shown(&page);
             }
             a.publish_settings();
         });
@@ -261,6 +266,9 @@ impl App {
                 return e.into();
             }
             if let Some(e) = a.icon_sets_check(&key, &v1, &v2) {
+                return e.into();
+            }
+            if let Some(e) = a.custom_proxies_check(&key, &v1) {
                 return e.into();
             }
             if let Some(e) = a.on_demand_check(&key, &v1) {
@@ -329,6 +337,7 @@ impl App {
             match (kind.as_str(), id.as_str()) {
                 ("rs", id) => a.rule_set_menu_picked(i, id),
                 ("is", id) => a.icon_set_menu_picked(i, id),
+                ("cp", id) => a.custom_proxy_menu_picked(i, id),
                 ("ua", "edit") => a.set_clicked("user-agents", &format!("edit:ua:{i}")),
                 ("ua", "delete") => a.confirm(
                     "提示",
@@ -392,7 +401,9 @@ impl App {
                             )
                         })
                         .or_else(|| crate::icon_sets_app::sections(&settings.icon_sets, id))
-                    {
+                        .or_else(|| {
+                            crate::custom_proxies_app::sections(&settings.custom_proxies, id)
+                        }) {
                         Some(s) => s,
                         None => return,
                     },
@@ -538,6 +549,7 @@ impl App {
             || self.items_clicked(page, id)
             || self.rule_sets_clicked(page, id)
             || self.icon_sets_clicked(page, id)
+            || self.custom_proxies_clicked(page, id)
         {
             return;
         }
@@ -745,7 +757,7 @@ impl App {
     }
 
     fn set_toggled(self: &Arc<Self>, page: &str, id: &str, on: bool) {
-        if self.rules_toggled(page, id, on) {
+        if self.rules_toggled(page, id, on) || self.custom_proxies_toggled(page, id, on) {
             return;
         }
         match (page, id) {
@@ -823,6 +835,7 @@ impl App {
             || self.items_picked(key, &value)
             || self.rule_sets_picked(key, &value)
             || self.icon_sets_picked(key, &value)
+            || self.custom_proxies_picked(key, &value)
             || self.theme_picked(key, &value)
             || self.logs_picked(key, &value)
         {
@@ -874,6 +887,7 @@ impl App {
         if self.items_input(key, v1, v2)
             || self.rule_sets_input(key, v1, v2)
             || self.icon_sets_input(key, v1, v2)
+            || self.custom_proxies_input(key, v1)
             || self.on_demand_input(key, v1)
         {
             return;

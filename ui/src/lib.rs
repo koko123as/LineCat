@@ -53,6 +53,12 @@ pub mod theme;
 mod theme_app;
 pub use theme_app::{apply as apply_theme, show_color_page};
 pub mod colors;
+pub mod custom_proxies;
+mod custom_proxies_app;
+pub use custom_proxies_app::{
+    editor_issue as custom_proxy_issue, editor_sections as custom_proxy_sections,
+    list_sections as custom_proxies_sections,
+};
 pub mod hct;
 
 slint::include_modules!();
@@ -2006,6 +2012,7 @@ impl App {
             ("script-delete", true) => self.delete_script(&arg),
             ("rs-delete", true) => self.delete_rule_set(&arg),
             ("is-delete", true) => self.delete_icon_set(&arg),
+            ("cp-delete", true) => self.delete_custom_proxy(&arg),
             ("ua-delete", true) => self.delete_user_agent(&arg),
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings" | "location-settings", true) => self.open_app_settings(),

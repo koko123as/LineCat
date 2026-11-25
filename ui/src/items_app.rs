@@ -336,7 +336,7 @@ impl App {
 
     /// The tools editor's save: a script's new content, or a new script to name.
     pub(crate) fn tools_editor_save(self: &Arc<Self>, text: String) {
-        if self.rule_set_editor_save(&text) {
+        if self.custom_proxy_editor_save(&text) || self.rule_set_editor_save(&text) {
             return;
         }
         let id = editing().lock().unwrap().script.clone();

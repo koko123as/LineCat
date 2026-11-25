@@ -615,6 +615,7 @@ impl Spec {
             chip: "".into(),
             trailing: "".into(),
             image: "".into(),
+            invalid: false,
         }
     }
 }
