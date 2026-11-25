@@ -421,13 +421,28 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
     }
     crate::overrides::DNS.apply(&settings.dns_override, &mut dns);
     set(&mut c, "dns", Value::Object(dns));
+    let mut general_patch = Map::new();
+    crate::overrides::GENERAL.apply(&settings.general_override, &mut general_patch);
+    general_patch.remove("test-url");
+    for (k, v) in general_patch {
+        set(&mut c, &k, v);
+    }
     set(&mut c, "rules", json!([]));
     Value::Object(c)
 }
 
+/// The test URL the general overrides give, else the default.
+pub fn test_url(settings: &crate::store::Settings) -> String {
+    crate::overrides::GENERAL
+        .picked_value(&settings.general_override, "test-url")
+        .and_then(|v| v.as_str().map(str::to_string))
+        .filter(|u| !u.is_empty())
+        .unwrap_or_else(|| DEFAULT_TEST_URL.to_string())
+}
+
 pub fn options(settings: &crate::store::Settings, mitm_capture: bool) -> Value {
     json!({
-        "testUrl": DEFAULT_TEST_URL,
+        "testUrl": test_url(settings),
         "skipCertVerify": !settings.general.check_certificate,
         "delayTestTimeout": settings.general.delay_test_timeout,
         "mitmCapture": mitm_capture,
@@ -689,5 +704,37 @@ mod tests {
         assert_eq!(o["external-controller"], "");
         let o = overlay(&json!({}), "rule", &crate::store::Settings::default());
         assert_eq!(o["dns"]["enhanced-mode"], "fake-ip");
+    }
+
+    #[test]
+    fn general_overrides_patch_the_config_and_the_test_url() {
+        use crate::overrides::GENERAL;
+        let base = json!({"unified-delay": false, "ipv6": true});
+        let mut s = crate::store::Settings::default();
+        let o = overlay(&base, "rule", &s);
+        assert_eq!(
+            (o["unified-delay"].clone(), o["ipv6"].clone()),
+            (json!(false), json!(true))
+        );
+        assert!(o.get("tcp-concurrent").is_none());
+        assert_eq!(test_url(&s), DEFAULT_TEST_URL);
+        for k in ["test-url", "unified-delay", "ipv6"] {
+            GENERAL.add(&mut s.general_override, k);
+        }
+        GENERAL.set(&mut s.general_override, "ipv6", true.into());
+        GENERAL.set(
+            &mut s.general_override,
+            "test-url",
+            "https://cp.example/204".into(),
+        );
+        let o = overlay(&base, "rule", &s);
+        assert_eq!(
+            (o["unified-delay"].clone(), o["ipv6"].clone()),
+            (json!(true), json!(true))
+        );
+        assert!(o.get("test-url").is_none());
+        assert_eq!(options(&s, false)["testUrl"], "https://cp.example/204");
+        GENERAL.remove(&mut s.general_override, "test-url");
+        assert_eq!(test_url(&s), DEFAULT_TEST_URL);
     }
 }

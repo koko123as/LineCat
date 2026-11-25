@@ -228,6 +228,9 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             username: "flclash".into(),
             password: "8e2f0a4c1b9d7e63".into(),
         };
+        for k in ["test-url", "ipv6"] {
+            seasoncat_ui::overrides::GENERAL.add(&mut s.general_override, k);
+        }
     }
     let m = |v: Vec<SetSection>| ModelRc::new(VecModel::from(v));
     ui.set_tools_sections(m(settings_view::tools(&s, width <= 600, &[])));
@@ -754,6 +757,9 @@ fn main() {
         ("set-general-open-small", 3, "", "general", 1, "more"),
         ("set-general-open-wide", 3, "", "general", 1, "more"),
         ("set-general-open-tablet", 3, "", "general", 1, "more"),
+        ("set-general-open-412x2000", 3, "", "general", 1, "more"),
+        ("set-general-open-360x2000", 3, "", "general", 1, "more"),
+        ("set-general-412x1900", 3, "", "general", 1, ""),
         ("set-developer", 3, "", "developer", 1, ""),
         ("set-developer-small", 3, "", "developer", 1, ""),
         ("set-developer-wide", 3, "", "developer", 1, ""),

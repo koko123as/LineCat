@@ -101,6 +101,7 @@ fn map_put(s: &mut store::Settings, key: &str, map: std::collections::BTreeMap<S
 fn override_state<'a>(s: &'a store::Settings, spec: &str) -> Option<&'a overrides::OverrideState> {
     match spec {
         "dns" => Some(&s.dns_override),
+        "general" => Some(&s.general_override),
         _ => None,
     }
 }
@@ -111,6 +112,7 @@ fn override_state_mut<'a>(
 ) -> Option<&'a mut overrides::OverrideState> {
     match spec {
         "dns" => Some(&mut s.dns_override),
+        "general" => Some(&mut s.general_override),
         _ => None,
     }
 }

@@ -239,7 +239,8 @@ export struct SetRow {
     subtitle: string,
     on: bool,
     enabled: bool,
-    // "remove": led by the button that takes the row off (`EntryButton.remove`).
+    // "remove": led by the button that takes the row off (`EntryButton.remove`); "add": the
+    // row that adds one, led by `EntryButton.add`.
     lead: string,
 }
 
@@ -2108,7 +2109,7 @@ component SetRowView inherits Rectangle {
     background: ta.pressed && root.item.kind != "person" ? Theme.s.inset : transparent;
     opacity: root.item.enabled ? 1 : 0.45;
     HorizontalLayout {
-        padding-left: root.item.lead == "remove" ? 52px : 16px;
+        padding-left: root.item.lead != "" ? 52px : 16px;
         padding-right: 16px;
         spacing: 14px;
         if root.item.kind == "check": VerticalLayout {
@@ -2144,7 +2145,7 @@ component SetRowView inherits Rectangle {
             alignment: center;
             spacing: 2px;
             horizontal-stretch: 1;
-            Text { text: root.item.title; font-size: 16px; color: Theme.s.on-surface; overflow: elide; }
+            Text { text: root.item.title; font-size: 16px; color: root.item.lead == "add" ? Theme.s.primary : Theme.s.on-surface; overflow: elide; }
             if root.item.subtitle != "": Text { text: root.item.subtitle; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
         }
         if root.item.kind == "toggle": VerticalLayout {
@@ -2162,7 +2163,7 @@ component SetRowView inherits Rectangle {
         if root.item.kind == "check" && root.item.glyph == "edit": Rectangle { width: 40px; }
     }
     if root.divider: Rectangle {
-        x: root.item.lead == "remove" ? 52px : root.leading ? 54px : 16px;
+        x: root.item.lead != "" ? 52px : root.leading ? 54px : 16px;
         y: parent.height - 1px;
         width: parent.width - self.x;
         height: 1px;
@@ -2214,6 +2215,16 @@ component SetRowView inherits Rectangle {
             Rectangle { width: 10px; height: 2px; border-radius: 1px; background: #ffffff; }
         }
         rta := TouchArea { clicked => { root.clicked("remove:" + root.item.id); } }
+    }
+    if root.item.lead == "add": Rectangle {
+        x: 18px;
+        y: (parent.height - self.height) / 2;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: Theme.s.primary;
+        Rectangle { width: 10px; height: 2px; border-radius: 1px; background: #ffffff; }
+        Rectangle { width: 2px; height: 10px; border-radius: 1px; background: #ffffff; }
     }
 }
 

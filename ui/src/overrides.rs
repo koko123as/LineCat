@@ -1,6 +1,7 @@
 //! The override pages (lib/views/config/override.dart): a spec lists the keys a page may
 //! write over a profile's config; the user picks some of them and gives each a value.
-//! The DNS page (lib/views/config/dns.dart) is the first spec built on it.
+//! The DNS page (lib/views/config/dns.dart) is built on it, and so is the core section of
+//! the general page (lib/views/config/general/overrides.dart).
 
 use crate::{SetRow, SetSection};
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,7 @@ pub enum Check {
     None,
     Cidr,
     Listen,
+    Url,
 }
 
 /// The kind of field a key is edited with (`OverrideField`).
@@ -343,10 +345,44 @@ pub static DNS: Spec = Spec {
     add: "添加覆写项",
 };
 
+/// `GeneralOverrideKey`, in its order.
+pub static GENERAL_KEYS: [Key; 4] = [
+    key("test-url", "测速链接", "", Kind::Text(Check::Url)),
+    key("unified-delay", "统一延迟", "", Kind::Toggle),
+    key("tcp-concurrent", "TCP并发", "", Kind::Toggle),
+    Key {
+        desc: "开启 IPv6 后才会接收 IPv6 流量。",
+        ..key("ipv6", "IPv6", "", Kind::Toggle)
+    },
+];
+
+fn general_defaults() -> Value {
+    json!({
+        "test-url": crate::profile::DEFAULT_TEST_URL,
+        "unified-delay": true,
+        "tcp-concurrent": true,
+        "ipv6": false,
+    })
+}
+
+/// `_GeneralOverrideSpec`: the core section of the general page, written over every
+/// profile. Its test URL goes to the Core's options instead of the config.
+pub static GENERAL: Spec = Spec {
+    id: "general",
+    title: "内核",
+    keys: &GENERAL_KEYS,
+    allowed: &[],
+    defaults: general_defaults,
+    description: "添加的项覆写所有配置的对应设置。",
+    entries: "覆写项",
+    add: "添加覆写项",
+};
+
 /// The spec a page id names.
 pub fn spec(id: &str) -> Option<&'static Spec> {
     match id {
         "dns" => Some(&DNS),
+        "general" => Some(&GENERAL),
         _ => None,
     }
 }
@@ -403,6 +439,36 @@ impl Spec {
     ) -> impl Iterator<Item = &'static Key> + 'a {
         self.values()
             .filter(|k| state.keys.iter().any(|p| p == k.path))
+    }
+
+    /// A picked key's value; None while the key is not picked.
+    pub fn picked_value(&self, state: &OverrideState, path: &str) -> Option<Value> {
+        self.picked(state)
+            .any(|k| k.path == path)
+            .then(|| self.value(state, path))
+    }
+
+    /// `OverrideSection`: the picked keys' rows after the section's own, the add row while
+    /// a key is left, and the footer.
+    pub fn inline(&self, state: &OverrideState, mut rows: Vec<SetRow>) -> (Vec<SetRow>, String) {
+        let mut footer = vec![self.description];
+        for k in self.picked(state) {
+            rows.push(self.row(state, k));
+            if !k.desc.is_empty() {
+                footer.push(k.desc);
+            }
+        }
+        if self.can_add(state) {
+            rows.push(SetRow {
+                id: "action".into(),
+                kind: "action".into(),
+                title: self.add.into(),
+                enabled: true,
+                lead: "add".into(),
+                ..Default::default()
+            });
+        }
+        (rows, footer.join("\n"))
     }
 
     /// Whether a key is left to add (`canAdd`).
@@ -477,7 +543,7 @@ impl Spec {
                 if matches!(k.kind, Kind::List(..)) && input.is_empty() {
                     return Err("值不能为空".into());
                 }
-                check_text(check, input)?;
+                check_text(check, k.label, input)?;
                 Ok(input.into())
             }
             _ => Ok(input.into()),
@@ -559,7 +625,7 @@ pub fn count(n: usize) -> String {
     }
 }
 
-fn check_text(check: Check, input: &str) -> Result<(), String> {
+fn check_text(check: Check, label: &str, input: &str) -> Result<(), String> {
     match check {
         Check::Cidr if !input.is_empty() && !crate::settings_view::valid_cidr(input) => {
             Err("请输入有效的 CIDR".into())
@@ -567,6 +633,7 @@ fn check_text(check: Check, input: &str) -> Result<(), String> {
         Check::Listen if !input.is_empty() && !valid_listen(input) => {
             Err("请输入地址和端口，如 0.0.0.0:1053".into())
         }
+        Check::Url if !crate::profile::is_url(input) => Err(format!("{label}必须为URL")),
         _ => Ok(()),
     }
 }
@@ -612,6 +679,33 @@ pub fn pairs(v: &Value) -> BTreeMap<String, String> {
 mod tests {
     use super::*;
     use slint::Model;
+
+    #[test]
+    fn general_keys_sit_inline_with_an_add_row() {
+        let mut s = OverrideState::default();
+        let base = |n: usize| vec![SetRow::default(); n];
+        let (rows, footer) = GENERAL.inline(&s, base(2));
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            (rows[2].id.as_str(), rows[2].lead.as_str()),
+            ("action", "add")
+        );
+        assert_eq!(footer, GENERAL.description);
+        for k in GENERAL_KEYS.iter().rev() {
+            GENERAL.add(&mut s, k.path);
+        }
+        let (rows, footer) = GENERAL.inline(&s, base(2));
+        let ids: Vec<&str> = rows[2..].iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["test-url", "unified-delay", "tcp-concurrent", "ipv6"]);
+        assert!(rows[2..].iter().all(|r| r.lead == "remove"));
+        assert_eq!(rows[2].subtitle, crate::profile::DEFAULT_TEST_URL);
+        assert!(footer.ends_with("开启 IPv6 后才会接收 IPv6 流量。"));
+        assert_eq!(
+            GENERAL.check("test-url", "not a url"),
+            Err("测速链接必须为URL".to_string())
+        );
+        assert!(GENERAL.check("test-url", "http://cp.example/204").is_ok());
+    }
 
     #[test]
     fn picks_apply_over_the_profile() {

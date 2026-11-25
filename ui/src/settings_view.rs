@@ -139,6 +139,13 @@ pub fn general(settings: &Settings) -> Vec<SetSection> {
     } else {
         format!("{} 项", g.hosts.len())
     };
+    let (core, core_footer) = crate::overrides::GENERAL.inline(
+        &settings.general_override,
+        vec![
+            row("hosts", "open", "", "Hosts", &hosts),
+            toggle("append-system-dns", "追加系统DNS", g.append_system_dns),
+        ],
+    );
     vec![
         section(
             "启动与后台",
@@ -183,14 +190,7 @@ pub fn general(settings: &Settings) -> Vec<SetSection> {
                 toggle("only-proxy", "仅统计代理流量", g.only_statistics_proxy),
             ],
         ),
-        section(
-            "内核",
-            "",
-            vec![
-                row("hosts", "open", "", "Hosts", &hosts),
-                toggle("append-system-dns", "追加系统DNS", g.append_system_dns),
-            ],
-        ),
+        section("内核", &core_footer, core),
         section(
             "日志与诊断",
             "关闭日志捕获会隐藏日志入口。",
