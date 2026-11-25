@@ -600,6 +600,41 @@ export global NetImages {
 export struct IconTile {
     url: string,
     label: string,
+    // `_IconTile.isSelected`: the badge on the plate.
+    selected: bool,
+}
+
+// A titled run of tiles (the picker's source, or one source's search results).
+export struct IconSection {
+    label: string,
+    tiles: [IconTile],
+}
+
+// A row of the group form's members (`_MemberRow`): `tone` picks the chip's colour, 0 a
+// proxy, provider or include-all, 1 a filter, 2 an exclude filter.
+export struct MemberItem {
+    title: string,
+    chip: string,
+    tone: int,
+    invalid: bool,
+}
+
+// An entry of the member picker (`_buildEntry`); `mono` shows the subtitle as a regex.
+export struct MemberPick {
+    id: string,
+    title: string,
+    subtitle: string,
+    mono: bool,
+    selected: bool,
+}
+
+// `SliverCollapsibleSection`: folded until its header is tapped, open while searching.
+export struct MemberPickSection {
+    label: string,
+    count: string,
+    expanded: bool,
+    collapsible: bool,
+    rows: [MemberPick],
 }
 
 export global AppIcons {
@@ -4628,6 +4663,509 @@ component IconSetPage inherits Rectangle {
     }
 }
 
+// `ProxyGroupMembersSliver`: each member with its remove button, kind chip, issue mark and
+// handle, then the add row. A 400ms hold lifts a row; it follows the finger, the others
+// slide aside, and the order changes on release.
+component MemberList inherits VerticalLayout {
+    in property <string> title;
+    in property <string> add-label;
+    in property <[MemberItem]> items;
+    out property <bool> dragging: root.drag-from >= 0;
+    callback clicked(string);
+    property <length> row-h: 60px;
+    property <length> add-h: 52px;
+    property <int> drag-from: -1;
+    property <length> press-y;
+    property <length> shift;
+    property <int> drag-to: root.drag-from < 0 ? -1 : max(0, min(root.items.length - 1, root.drag-from + round(root.shift / root.row-h)));
+    HorizontalLayout {
+        padding-left: 14px;
+        Text { text: root.title; height: 36px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+    }
+    Rectangle {
+        height: root.items.length * root.row-h + root.add-h;
+        background: Theme.s.card;
+        border-radius: 16px;
+        for it[i] in root.items: Rectangle {
+            property <bool> lifted: i == root.drag-from;
+            y: root.drag-from < 0 || self.lifted ? i * root.row-h
+                : i > root.drag-from && i <= root.drag-to ? (i - 1) * root.row-h
+                : i < root.drag-from && i >= root.drag-to ? (i + 1) * root.row-h
+                : i * root.row-h;
+            z: self.lifted ? 1 : 0;
+            height: root.row-h;
+            animate y { duration: 150ms; easing: ease-out; }
+            Rectangle {
+                y: parent.lifted ? root.shift : 0px;
+                background: parent.lifted ? Theme.s.card : ml-ta.pressed ? Theme.s.inset : transparent;
+                border-radius: parent.lifted ? 16px : 0px;
+                drop-shadow-offset-y: parent.lifted ? 6px : 0px;
+                drop-shadow-blur: parent.lifted ? 16px : 0px;
+                drop-shadow-color: parent.lifted ? #00000033 : transparent;
+                HorizontalLayout {
+                    padding-left: 52px;
+                    padding-right: 12px;
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        Text { text: it.title; font-size: 16px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
+                        if it.chip != "": HorizontalLayout {
+                            alignment: start;
+                            Rectangle {
+                                property <color> fg: it.tone == 2 ? Theme.s.error : it.tone == 1 ? Theme.s.primary : Theme.s.on-surface-variant;
+                                width: min(mc-text.preferred-width + 16px, root.width - 140px);
+                                height: mc-text.preferred-height + 4px;
+                                border-radius: self.height / 2;
+                                background: it.tone == 0 ? Theme.s.block : self.fg.with-alpha(0.14);
+                                mc-text := Text { x: 8px; width: parent.width - 16px; text: it.chip; font-size: 11px * Type.scale; color: parent.fg; overflow: elide; }
+                            }
+                        }
+                    }
+                    if it.invalid: Rectangle { width: 32px; }
+                    VerticalLayout { alignment: center; Icon { glyph: "M5 9h14 M5 15h14"; size: 20px; tint: Theme.s.on-surface-variant; } }
+                }
+                if !parent.lifted: Rectangle {
+                    x: 52px;
+                    y: parent.height - 1px;
+                    width: parent.width - 52px;
+                    height: 1px;
+                    background: Theme.s.outline-variant.with-alpha(0.6);
+                }
+                ml-ta := TouchArea {
+                    x: 48px;
+                    width: parent.width - 48px;
+                    changed pressed => {
+                        if (!self.pressed && root.drag-from == i) {
+                            let from = root.drag-from;
+                            let to = root.drag-to;
+                            root.drag-from = -1;
+                            root.shift = 0px;
+                            if (from != to) { root.clicked("move:" + from + ":" + to); }
+                        }
+                    }
+                    moved => {
+                        if (root.drag-from == i) { root.shift = self.mouse-y - root.press-y; }
+                    }
+                }
+                Timer {
+                    interval: 400ms;
+                    running: ml-ta.pressed && root.drag-from < 0;
+                    triggered => {
+                        root.press-y = ml-ta.mouse-y;
+                        root.shift = 0px;
+                        root.drag-from = i;
+                    }
+                }
+                Rectangle {
+                    x: 12px;
+                    y: (parent.height - self.height) / 2;
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: mr-ta.pressed ? Theme.s.error.with-alpha(0.12) : transparent;
+                    Rectangle {
+                        width: 20px;
+                        height: 20px;
+                        border-radius: 10px;
+                        background: Theme.s.error;
+                        Rectangle { width: 10px; height: 2px; border-radius: 1px; background: #ffffff; }
+                    }
+                    mr-ta := TouchArea { enabled: root.drag-from < 0; clicked => { root.clicked("remove:" + i); } }
+                }
+                if it.invalid: IconButton {
+                    x: parent.width - 44px - self.width;
+                    y: (parent.height - self.height) / 2;
+                    glyph: Icons.error;
+                    tint: Theme.s.error;
+                    clicked => { root.clicked("info:" + i); }
+                }
+            }
+        }
+        Rectangle {
+            y: root.items.length * root.row-h;
+            height: root.add-h;
+            background: ma-ta.pressed ? Theme.s.inset : transparent;
+            border-radius: root.items.length == 0 ? 16px : 0px;
+            Rectangle {
+                x: 18px;
+                width: 20px;
+                height: 20px;
+                border-radius: 10px;
+                background: Theme.s.primary;
+                Rectangle { width: 10px; height: 2px; border-radius: 1px; background: #ffffff; }
+                Rectangle { width: 2px; height: 10px; border-radius: 1px; background: #ffffff; }
+            }
+            Text { x: 52px; width: parent.width - 68px; height: parent.height; text: root.add-label; font-size: 16px * Type.scale; color: Theme.s.primary; vertical-alignment: center; overflow: elide; }
+            ma-ta := TouchArea { enabled: root.drag-from < 0; clicked => { root.clicked("add"); } }
+        }
+    }
+}
+
+// `EditProxyGroupView`: 常规, the members, then 选项 and 操作, under the issue banner.
+component EditProxyGroupPage inherits Rectangle {
+    in property <string> title;
+    in property <string> issue;
+    in property <[SetSection]> head;
+    in property <[MemberItem]> members;
+    in property <[SetSection]> tail;
+    callback back();
+    callback clicked(string);
+    callback toggled(string, bool);
+    callback member(string);
+    VerticalLayout {
+        AppBar {
+            title: root.title;
+            can-back: true;
+            back => { root.back(); }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.compose; tint: Theme.s.on-surface; clicked => { root.clicked("action2"); } } }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.check; tint: Theme.s.on-surface; clicked => { root.clicked("action"); } } }
+        }
+        Flickable {
+            vertical-stretch: 1;
+            interactive: !members.dragging;
+            content-height: pg-col.preferred-height + Dock.pad;
+            pg-col := VerticalLayout {
+                alignment: start;
+                padding-bottom: 24px;
+                spacing: 4px;
+                if root.issue != "": HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 8px;
+                    Rectangle {
+                        border-radius: 16px;
+                        background: Theme.s.error.with-alpha(0.12);
+                        HorizontalLayout {
+                            padding: 14px;
+                            spacing: 12px;
+                            VerticalLayout { alignment: start; Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; } }
+                            Text { text: root.issue; font-size: 14px * Type.scale; color: Theme.s.error; wrap: word-wrap; horizontal-stretch: 1; }
+                        }
+                    }
+                }
+                Sections {
+                    sections: root.head;
+                    clicked(id) => { root.clicked(id); }
+                    toggled(id, on) => { root.toggled(id, on); }
+                }
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    members := MemberList {
+                        title: "节点";
+                        add-label: "添加节点";
+                        items: root.members;
+                        clicked(a) => {
+                            if (a == "add") { root.clicked("pg-members-add"); } else { root.member(a); }
+                        }
+                    }
+                }
+                Sections {
+                    sections: root.tail;
+                    clicked(id) => { root.clicked(id); }
+                    toggled(id, on) => { root.toggled(id, on); }
+                }
+            }
+        }
+    }
+}
+
+// `_MemberPicker`: the categories folded, a tap picks or unpicks an entry (the form takes
+// it at once), a search once there are ten entries.
+component MemberPickerPage inherits Rectangle {
+    in property <[MemberPickSection]> sections;
+    in property <bool> searchable;
+    in property <string> empty;
+    in-out property <bool> searching;
+    in-out property <string> query;
+    callback back();
+    callback pick(string);
+    changed query => { root.pick("search:" + root.query); }
+    VerticalLayout {
+        if !root.searching: AppBar {
+            title: "添加节点";
+            can-back: true;
+            back => { root.back(); }
+            if root.searchable: VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
+        }
+        if root.searching: SearchBar {
+            query <=> root.query;
+            close => { root.query = ""; root.searching = false; }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            if root.sections.length == 0: NullStatus { label: root.empty; }
+            Flickable {
+                visible: root.sections.length > 0;
+                content-height: mp-col.preferred-height + Dock.pad;
+                mp-col := VerticalLayout {
+                    alignment: start;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 8px;
+                    padding-bottom: 16px;
+                    spacing: 4px;
+                    for sec in root.sections: VerticalLayout {
+                        Rectangle {
+                            height: 44px;
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 8px;
+                                spacing: 8px;
+                                Text { text: sec.label; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                                if sec.collapsible: Text { text: sec.count; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                                if sec.collapsible: VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 20px;
+                                        height: 20px;
+                                        Icon { glyph: sec.expanded ? "M6 9l6 6 6-6" : Icons.chevron; size: 20px; tint: Theme.s.on-surface-variant; }
+                                    }
+                                }
+                            }
+                            TouchArea { enabled: sec.collapsible; clicked => { root.pick("expand:" + sec.label); } }
+                        }
+                        if sec.expanded: Rectangle {
+                            background: Theme.s.card;
+                            border-radius: 16px;
+                            clip: true;
+                            VerticalLayout {
+                                for r[i] in sec.rows: Rectangle {
+                                    height: r.subtitle != "" ? 64px : 52px;
+                                    background: pr-ta.pressed ? Theme.s.inset : r.selected ? Theme.s.primary.with-alpha(0.08) : transparent;
+                                    HorizontalLayout {
+                                        padding-left: 16px;
+                                        padding-right: 16px;
+                                        spacing: 12px;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            spacing: 2px;
+                                            horizontal-stretch: 1;
+                                            Text { text: r.title; font-size: 16px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
+                                            if r.subtitle != "": Text { text: r.subtitle; font-size: 13px * Type.scale; font-family: r.mono ? "monospace" : Type.family; color: r.mono ? Theme.s.primary : Theme.s.on-surface-variant; overflow: elide; }
+                                        }
+                                        if r.selected: VerticalLayout { alignment: center; Icon { glyph: Icons.check; size: 20px; tint: Theme.s.primary; } }
+                                    }
+                                    if i < sec.rows.length - 1: Rectangle {
+                                        x: 16px;
+                                        y: parent.height - 1px;
+                                        width: parent.width - 16px;
+                                        height: 1px;
+                                        background: Theme.s.outline-variant.with-alpha(0.6);
+                                    }
+                                    pr-ta := TouchArea { clicked => { root.pick("toggle:" + r.id); } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// `SliverIconGrid` inside a scrolling page: 88 wide at most, 8 apart, the 56px plate over
+// its label, the badge on the chosen one. Only tiles within a screen of `view-top` (the
+// visible top, in the grid's coordinates) ask for their pictures.
+component IconGrid inherits Rectangle {
+    in property <[IconTile]> tiles;
+    in property <length> view-top;
+    in property <length> view-h;
+    callback picked(int);
+    callback long(int);
+    property <length> gap: 8px;
+    property <int> columns: max(1, ceil((root.width - 32px + root.gap) / (88px + root.gap)));
+    property <length> cell-w: (root.width - 32px - (root.columns - 1) * root.gap) / root.columns;
+    property <length> label-h: 16px * Type.scale;
+    property <length> cell-h: 56px + 6px + root.label-h;
+    height: max(0px, ceil(root.tiles.length / root.columns) * (root.cell-h + root.gap) - root.gap);
+    for t[i] in root.tiles: tile := Rectangle {
+        property <bool> near: self.y + self.height >= root.view-top - root.view-h && self.y <= root.view-top + 2 * root.view-h;
+        property <bool> long-fired;
+        x: 16px + mod(i, root.columns) * (root.cell-w + root.gap);
+        y: floor(i / root.columns) * (root.cell-h + root.gap);
+        width: root.cell-w;
+        height: root.cell-h;
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: 0;
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            background: ig-ta.pressed ? Theme.s.inset : Theme.s.card;
+            clip: true;
+            if tile.near && NetImages.has(t.url, NetImages.rev): Image {
+                width: 40px;
+                height: 40px;
+                image-fit: contain;
+                source: NetImages.image(t.url, NetImages.rev);
+            }
+            if tile.near && !NetImages.has(t.url, NetImages.rev): Icon { glyph: Icons.photos; size: 28px; tint: Theme.s.on-surface-variant.with-alpha(0.5); }
+            ig-ta := TouchArea {
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down) { tile.long-fired = false; }
+                }
+                clicked => { if (!tile.long-fired) { root.picked(i); } }
+            }
+            Timer {
+                interval: 500ms;
+                running: ig-ta.pressed && !tile.long-fired;
+                triggered => { tile.long-fired = true; root.long(i); }
+            }
+        }
+        if t.selected: Rectangle {
+            x: (parent.width + 56px) / 2 - 16px;
+            y: -4px;
+            width: 20px;
+            height: 20px;
+            border-radius: 10px;
+            background: Theme.s.primary;
+            Icon { glyph: Icons.check; size: 14px; tint: Theme.s.on-primary; }
+        }
+        Text {
+            y: 62px;
+            width: parent.width;
+            height: root.label-h;
+            text: t.label;
+            font-size: 12px * Type.scale;
+            color: Theme.s.on-surface-variant;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+// `IconPickerView`: the current icon with its remove button, then the sources as chips
+// over the chosen one's grid (推荐 first), or the search across them; 🔗 sets an icon by url.
+component IconPickerPage inherits Rectangle {
+    in property <string> value;
+    in property <string> value-title;
+    in property <string> value-subtitle;
+    in property <[string]> chips;
+    in property <int> chip;
+    in property <[IconSection]> sections;
+    in property <string> empty;
+    in-out property <bool> searching;
+    in-out property <string> query;
+    callback back();
+    callback pick(string);
+    changed query => { root.pick("search:" + root.query); }
+    property <bool> has-current: root.value != "";
+    property <bool> pictured: root.has-current && NetImages.has(root.value, NetImages.rev);
+    VerticalLayout {
+        if !root.searching: AppBar {
+            title: "图标";
+            can-back: true;
+            back => { root.back(); }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.link; tint: Theme.s.on-surface; clicked => { root.pick("link"); } } }
+        }
+        if root.searching: SearchBar {
+            query <=> root.query;
+            close => { root.query = ""; root.searching = false; }
+        }
+        ip-fl := Flickable {
+            vertical-stretch: 1;
+            content-height: ip-col.preferred-height + Dock.pad;
+            ip-col := VerticalLayout {
+                alignment: start;
+                padding-top: 8px;
+                padding-bottom: 20px;
+                if root.has-current: HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-bottom: 16px;
+                    Rectangle {
+                        background: Theme.s.card;
+                        border-radius: 20px;
+                        HorizontalLayout {
+                            padding: 12px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 40px;
+                                    height: 40px;
+                                    if root.pictured: Image { width: 40px; height: 40px; image-fit: contain; source: NetImages.image(root.value, NetImages.rev); }
+                                    if !root.pictured: Icon { glyph: Icons.photos; size: 28px; tint: Theme.s.on-surface-variant.with-alpha(0.5); }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+                                Text { text: root.value-title; font-size: 16px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
+                                if root.value-subtitle != "": Text { text: root.value-subtitle; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 32px;
+                                    height: 32px;
+                                    border-radius: 16px;
+                                    background: cr-ta.pressed ? Theme.s.error.with-alpha(0.12) : transparent;
+                                    Rectangle {
+                                        width: 20px;
+                                        height: 20px;
+                                        border-radius: 10px;
+                                        background: Theme.s.error;
+                                        Rectangle { width: 10px; height: 2px; border-radius: 1px; background: #ffffff; }
+                                    }
+                                    cr-ta := TouchArea { clicked => { root.pick("remove"); } }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.sections.length == 0: Rectangle {
+                    height: 320px;
+                    NullStatus { label: root.empty; }
+                }
+                if !root.searching && root.sections.length > 0 && root.chips.length > 0: Flickable {
+                    height: 36px;
+                    content-width: max(self.width, chip-row.preferred-width);
+                    chip-row := HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 8px;
+                        alignment: start;
+                        for c[i] in root.chips: Rectangle {
+                            height: 36px;
+                            width: chip-label.preferred-width + 28px;
+                            border-radius: 18px;
+                            background: i == root.chip ? Theme.s.primary : chip-ta.pressed ? Theme.s.inset : Theme.s.card;
+                            chip-label := Text { text: c; font-size: 14px * Type.scale; color: i == root.chip ? Theme.s.on-primary : Theme.s.on-surface; }
+                            chip-ta := TouchArea { clicked => { root.pick("source:" + i); } }
+                        }
+                    }
+                }
+                if !root.searching && root.sections.length > 0 && root.chips.length > 0: Rectangle { height: 16px; }
+                for sec[si] in root.sections: VerticalLayout {
+                    if sec.label != "": HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        Text { text: sec.label; height: 40px; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; }
+                    }
+                    grid := IconGrid {
+                        tiles: sec.tiles;
+                        view-top: -ip-fl.content-y - parent.y - self.y;
+                        view-h: ip-fl.height;
+                        picked(i) => { root.pick("select:" + si + ":" + i); }
+                        long(i) => {
+                            Anchor.x = self.absolute-position.x;
+                            Anchor.y = self.absolute-position.y;
+                            root.pick("long:" + si + ":" + i);
+                        }
+                    }
+                    if sec.label != "": Rectangle { height: 8px; }
+                }
+            }
+        }
+    }
+}
+
 // lib/views/about.dart: the logo (five taps turn on developer mode), name, version, the
 // description and the update check, then the sections.
 component AboutPage inherits Rectangle {
@@ -7642,8 +8180,28 @@ export component AppWindow inherits Window {
     // `EditProxyGroupView` as "group" over the custom profile page, its quick edit in the
     // editor with `editor-parent` "group".
     in property <string> pg-title;
-    in property <[SetSection]> pg-sections;
+    in property <[SetSection]> pg-head;
+    in property <[MemberItem]> pg-members;
+    in property <[SetSection]> pg-tail;
     in property <string> pg-issue;
+    callback pg-member(string);
+    // The member picker as "group-members", the icon picker as "group-icon".
+    in property <[MemberPickSection]> pg-pick-sections;
+    in property <bool> pg-pick-searchable;
+    in property <string> pg-pick-empty;
+    in-out property <bool> pg-pick-searching;
+    in-out property <string> pg-pick-query;
+    callback pg-pick(string);
+    in property <string> gi-value;
+    in property <string> gi-title;
+    in property <string> gi-subtitle;
+    in property <[string]> gi-chips;
+    in property <int> gi-chip;
+    in property <[IconSection]> gi-sections;
+    in property <string> gi-empty;
+    in-out property <bool> gi-searching;
+    in-out property <string> gi-query;
+    callback icon-pick(string);
     callback pg-clicked(string);
     callback pg-toggled(string, bool);
     callback pg-back();
@@ -8142,6 +8700,10 @@ export component AppWindow inherits Window {
                 if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "group") { root.group-yaml-closed(); root.editor-parent = ""; root.profiles-page = "group"; return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
                 if (root.tab == 2 && root.profiles-page == "group") { root.pg-back(); return accept; }
+                if (root.tab == 2 && root.profiles-page == "group-members" && root.pg-pick-searching) { root.pg-pick-query = ""; root.pg-pick-searching = false; return accept; }
+                if (root.tab == 2 && root.profiles-page == "group-members") { root.pg-pick("back"); return accept; }
+                if (root.tab == 2 && root.profiles-page == "group-icon" && root.gi-searching) { root.gi-query = ""; root.gi-searching = false; return accept; }
+                if (root.tab == 2 && root.profiles-page == "group-icon") { root.icon-pick("back"); return accept; }
                 if (root.tab == 2 && root.profiles-page == "placeholder" && root.placeholder-parent != "") { root.profiles-page = root.placeholder-parent; root.placeholder-parent = ""; return accept; }
                 if (root.tab == 2 && root.profiles-page == "custom" && (root.custom-group-selecting || root.custom-group-sorting)) { root.custom-group("clear"); return accept; }
                 if (root.tab == 0 && root.profiles-page == "preview") { root.profiles-page = ""; root.profile-sheet-open = true; return accept; }
@@ -8424,33 +8986,44 @@ export component AppWindow inherits Window {
                         root.placeholder-parent = "";
                     }
                 }
-                if root.tab == 2 && root.profiles-page == "group": SettingsPage {
+                if root.tab == 2 && root.profiles-page == "group": EditProxyGroupPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.pg-title;
-                    sections: root.pg-sections;
-                    action-glyph: Icons.check;
-                    action2-glyph: Icons.compose;
+                    issue: root.pg-issue;
+                    head: root.pg-head;
+                    members: root.pg-members;
+                    tail: root.pg-tail;
                     back => { root.pg-back(); }
-                    action => { root.pg-clicked("action"); }
-                    action2 => { root.pg-clicked("action2"); }
                     clicked(id) => { root.pg-clicked(id); }
                     toggled(id, on) => { root.pg-toggled(id, on); }
-                    if root.pg-issue != "": HorizontalLayout {
-                        padding-left: 16px;
-                        padding-right: 16px;
-                        padding-top: 8px;
-                        Rectangle {
-                            border-radius: 16px;
-                            background: Theme.s.error.with-alpha(0.12);
-                            HorizontalLayout {
-                                padding: 14px;
-                                spacing: 12px;
-                                VerticalLayout { alignment: start; Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; } }
-                                Text { text: root.pg-issue; font-size: 14px * Type.scale; color: Theme.s.error; wrap: word-wrap; horizontal-stretch: 1; }
-                            }
-                        }
-                    }
+                    member(a) => { root.pg-member(a); }
+                }
+                if root.tab == 2 && root.profiles-page == "group-members": MemberPickerPage {
+                    width: parent.width;
+                    height: parent.height;
+                    sections: root.pg-pick-sections;
+                    searchable: root.pg-pick-searchable;
+                    empty: root.pg-pick-empty;
+                    searching <=> root.pg-pick-searching;
+                    query <=> root.pg-pick-query;
+                    back => { root.pg-pick("back"); }
+                    pick(a) => { root.pg-pick(a); }
+                }
+                if root.tab == 2 && root.profiles-page == "group-icon": IconPickerPage {
+                    width: parent.width;
+                    height: parent.height;
+                    value: root.gi-value;
+                    value-title: root.gi-title;
+                    value-subtitle: root.gi-subtitle;
+                    chips: root.gi-chips;
+                    chip: root.gi-chip;
+                    sections: root.gi-sections;
+                    empty: root.gi-empty;
+                    searching <=> root.gi-searching;
+                    query <=> root.gi-query;
+                    back => { root.icon-pick("back"); }
+                    pick(a) => { root.icon-pick(a); }
                 }
                 if (root.tab == 3 && root.tools-page == "") || root.tab-leaving == 3: Tools {
                     x: root.tab-x(3);
@@ -9653,8 +10226,8 @@ export component AppWindow inherits Window {
                 spacing: 8px;
                 TextButton { text: root.confirm-action == "access-save" || root.confirm-action == "pg-save" ? "不保存" : "取消"; clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, false); } }
                 TextButton {
-                    text: root.confirm-action == "access-save" || root.confirm-action == "pg-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" || root.confirm-action == "color-delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : root.confirm-action == "color-reset" ? "重置" : "确定";
-                    danger: root.confirm-action == "delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset";
+                    text: root.confirm-action == "access-save" || root.confirm-action == "pg-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" || root.confirm-action == "color-delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "icon-record-delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : root.confirm-action == "color-reset" ? "重置" : "确定";
+                    danger: root.confirm-action == "delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "icon-record-delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset";
                     clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, true); }
                 }
             }

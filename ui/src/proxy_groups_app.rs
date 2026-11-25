@@ -3,8 +3,13 @@
 //! (`EditProxyGroupView`) with its options, quick edit and save.
 
 use crate::custom_profile as cp;
-use crate::proxy_groups::{self as pg, Data, Issue, Member, Opt, OPTS};
-use crate::{profile_ref, ActionItem, Anchor, App, GroupRow, SetRow, SetSection, CALL};
+use crate::icon_picker::{self as ip, Source};
+use crate::net_images::is_image_src;
+use crate::proxy_groups::{self as pg, Data, Issue, Member, MemberKind, Opt, OPTS};
+use crate::{
+    profile_ref, ActionItem, Anchor, App, GroupRow, IconSection, IconTile, MemberItem, MemberPick,
+    MemberPickSection, SetRow, SetSection, CALL,
+};
 use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::collections::{BTreeMap, BTreeSet};
@@ -128,7 +133,7 @@ pub fn group_rows(data: &Data, selected: &BTreeSet<u64>) -> Vec<GroupRow> {
                 mark: pg::monogram(&name).into(),
                 name: name.into(),
                 kind: pg::type_name(&pg::kind(def)).into(),
-                icon: if crate::icon_sets::is_http_url(&icon) {
+                icon: if is_image_src(&icon) {
                     icon
                 } else {
                     String::new()
@@ -160,26 +165,46 @@ fn section(title: &str, rows: Vec<SetRow>) -> SetSection {
     }
 }
 
-/// A member's title and subtitle as `ProxyGroupMembersSliver` gives them, and whether it
-/// names something the profile lacks.
-fn member_row(i: usize, m: &Member, data: &Data, presets: &[(String, String)]) -> SetRow {
-    let preset = |v: &str| {
+/// `ProxyGroupMembersSliver`'s rows: title, kind chip, and whether the member names
+/// something the profile lacks.
+pub fn member_items(d: &Draft, data: &Data, presets: &[(String, String)]) -> Vec<MemberItem> {
+    pg::members(&d.def)
+        .iter()
+        .map(|m| {
+            let (title, chip, invalid) = member_text(m, data, presets);
+            MemberItem {
+                title: title.into(),
+                chip: chip.into(),
+                tone: match m.kind {
+                    MemberKind::Filter => 1,
+                    MemberKind::ExcludeFilter => 2,
+                    _ => 0,
+                },
+                invalid,
+            }
+        })
+        .collect()
+}
+
+fn member_text(m: &Member, data: &Data, presets: &[(String, String)]) -> (String, String, bool) {
+    let n = &m.name;
+    let preset = || {
         presets
             .iter()
-            .find(|(regex, _)| regex == v)
+            .find(|(regex, _)| regex == n)
             .map(|(_, label)| label.clone())
-            .unwrap_or_else(|| v.to_string())
+            .unwrap_or_else(|| n.clone())
     };
-    let group_type = |n: &str| {
+    let group_type = || {
         data.groups
             .iter()
-            .find(|(_, g)| pg::name(g) == n)
+            .find(|(_, g)| pg::name(g) == *n)
             .map(|(_, g)| pg::kind(g))
     };
-    let (title, subtitle, invalid) = match m {
-        Member::Proxy(n) => (
+    match m.kind {
+        MemberKind::Proxy => (
             n.clone(),
-            group_type(n)
+            group_type()
                 .or_else(|| data.proxy_types.get(n).cloned())
                 .or_else(|| {
                     pg::RESERVED
@@ -189,23 +214,29 @@ fn member_row(i: usize, m: &Member, data: &Data, presets: &[(String, String)]) -
                 .unwrap_or_default(),
             !data.rule_targets().contains(n) && !data.proxies.contains(n),
         ),
-        Member::Provider(n) => (
+        MemberKind::Provider => (
             n.clone(),
             "代理集".into(),
             !data.proxy_providers.contains(n),
         ),
-        Member::AllProxies => ("全部被引用的代理".into(), "自动包含".into(), false),
-        Member::AllProviders => ("全部被引用的代理集".into(), "自动包含".into(), false),
-        Member::Filter(v) => (preset(v), "筛选".into(), false),
-        Member::ExcludeFilter(v) => (preset(v), "排除筛选".into(), false),
-    };
-    let mut r = row(&format!("pg-m:{i}"), "", &title, &subtitle);
-    r.invalid = invalid;
-    r
+        MemberKind::AllProxies => ("全部被引用的代理".into(), "自动包含".into(), false),
+        MemberKind::AllProviders => ("全部被引用的代理集".into(), "自动包含".into(), false),
+        MemberKind::Filter => (preset(), "筛选".into(), false),
+        MemberKind::ExcludeFilter => (preset(), "排除筛选".into(), false),
+    }
 }
 
-/// The form's sections: 常规, 节点 (read only until the member picker), 选项 and 操作.
-pub fn form_sections(d: &Draft, data: &Data, presets: &[(String, String)]) -> Vec<SetSection> {
+/// `invalidMessage`.
+fn member_message(m: &Member) -> String {
+    match m.kind {
+        MemberKind::Proxy => format!("{} 是一个无效的代理", m.name),
+        MemberKind::Provider => format!("{} 是一个无效的代理集", m.name),
+        _ => String::new(),
+    }
+}
+
+/// The form's sections around the members: 常规, then 选项 and 操作.
+pub fn form_sections(d: &Draft, data: &Data) -> Vec<SetSection> {
     let issues = d.issues(data);
     let name = pg::name(&d.def);
     let mut name_row = row(
@@ -226,7 +257,7 @@ pub fn form_sections(d: &Draft, data: &Data, presets: &[(String, String)]) -> Ve
         "图标",
         if icon.is_empty() { "可选" } else { "" },
     );
-    if crate::icon_sets::is_http_url(&icon) {
+    if is_image_src(&icon) {
         icon_row.image = icon.into();
     } else if !icon.is_empty() {
         icon_row.subtitle = pg::monogram(&icon).into();
@@ -241,15 +272,6 @@ pub fn form_sections(d: &Draft, data: &Data, presets: &[(String, String)]) -> Ve
         ),
         icon_row,
     ];
-    let mut members: Vec<SetRow> = pg::members(&d.def)
-        .iter()
-        .enumerate()
-        .map(|(i, m)| member_row(i, m, data, presets))
-        .collect();
-    let mut add = row("pg-members-add", "action", "添加节点", "");
-    add.lead = "add".into();
-    add.enabled = false;
-    members.push(add);
     let fallback_invalid = issues
         .iter()
         .any(|i| matches!(i, Issue::InvalidEmptyFallback(_)));
@@ -284,11 +306,7 @@ pub fn form_sections(d: &Draft, data: &Data, presets: &[(String, String)]) -> Ve
         r.lead = "add".into();
         options.push(r);
     }
-    let mut out = vec![
-        section("常规", general),
-        section("节点", members),
-        section("选项", options),
-    ];
+    let mut out = vec![section("常规", general), section("选项", options)];
     if !d.is_new {
         out.push(section(
             "操作",
@@ -305,6 +323,185 @@ struct Section {
     draft: Option<Draft>,
     rev: u64,
     yaml_open: bool,
+    picker: Option<Picker>,
+    icon: Option<IconPick>,
+}
+
+/// `_MemberPicker`: the form when it opened, the picks so far, the search and the
+/// categories unfolded.
+#[derive(Clone, Default)]
+struct Picker {
+    origin: Value,
+    picks: Vec<Member>,
+    query: String,
+    expanded: BTreeSet<String>,
+}
+
+/// `IconPickerView`: the value it opened on, the group's name, the source picked, the
+/// search, and what the last publish showed (to read taps back).
+#[derive(Clone, Default)]
+struct IconPick {
+    value: String,
+    group_name: String,
+    source: Option<String>,
+    query: String,
+    chips: Vec<String>,
+    shown: Vec<Source>,
+}
+
+fn pick_id(m: &Member) -> String {
+    format!("{}\t{}", m.kind.key(), m.name)
+}
+
+fn pick_of(id: &str) -> Option<Member> {
+    let (k, n) = id.split_once('\t')?;
+    Some(Member::new(MemberKind::of(k)?, n))
+}
+
+/// The picker's sections as the search leaves them, and whether it offers a search.
+fn picker_sections(p: &Picker, cats: Vec<pg::PickCategory>) -> (Vec<MemberPickSection>, bool) {
+    let total: usize = cats.iter().map(|c| c.entries.len()).sum();
+    let searching = !p.query.trim().is_empty();
+    let sections = pg::search_categories(cats, &p.query)
+        .into_iter()
+        .map(|c| {
+            let rows: Vec<MemberPick> = c
+                .entries
+                .iter()
+                .map(|e| MemberPick {
+                    id: pick_id(&e.member).into(),
+                    title: e.title.as_str().into(),
+                    subtitle: e.subtitle.as_str().into(),
+                    mono: e.member.kind.is_filter(),
+                    selected: p.picks.contains(&e.member),
+                })
+                .collect();
+            MemberPickSection {
+                expanded: searching || p.expanded.contains(&c.label),
+                collapsible: !searching,
+                count: rows.len().to_string().into(),
+                label: c.label.into(),
+                rows: ModelRc::new(VecModel::from(rows)),
+            }
+        })
+        .collect();
+    (sections, searching || total >= 10)
+}
+
+fn icon_tiles(icons: &[crate::icon_sets::IconSetIcon], value: &str) -> Vec<IconTile> {
+    icons
+        .iter()
+        .map(|i| IconTile {
+            url: i.url.as_str().into(),
+            label: ip::label(i).into(),
+            selected: i.url == value,
+        })
+        .collect()
+}
+
+/// What the icon picker shows, and the sources behind its taps.
+pub struct IconView {
+    pub value: String,
+    pub title: String,
+    pub subtitle: String,
+    pub labels: Vec<String>,
+    pub keys: Vec<String>,
+    pub chip: i32,
+    pub shown: Vec<Source>,
+    pub searching: bool,
+    pub empty: &'static str,
+}
+
+pub fn icon_view(
+    value: &str,
+    group_name: &str,
+    picked: Option<&str>,
+    query: &str,
+    sets: &[crate::icon_sets::IconSet],
+    records: &[ip::IconRecord],
+) -> IconView {
+    let sources = ip::sources(sets, &ip::recent(records), group_name);
+    let searching = !query.trim().is_empty();
+    let keys: Vec<String> = sources.iter().map(|s| s.key.clone()).collect();
+    let current = ip::shown_source(&sources, picked, value);
+    let shown = if searching {
+        ip::search(&sources, query)
+    } else {
+        sources
+            .iter()
+            .filter(|s| Some(&s.key) == current.as_ref())
+            .cloned()
+            .collect()
+    };
+    let (title, subtitle) = if value.is_empty() {
+        Default::default()
+    } else {
+        ip::describe(value, sets)
+    };
+    IconView {
+        value: value.to_string(),
+        title,
+        subtitle,
+        labels: sources.iter().map(|s| s.label.clone()).collect(),
+        chip: current
+            .and_then(|k| keys.iter().position(|c| *c == k))
+            .map(|i| i as i32)
+            .unwrap_or(-1),
+        keys,
+        shown,
+        searching,
+        empty: if searching {
+            "没有匹配的结果"
+        } else {
+            "暂无图标集，可在「自定义配置资源 → 图标集」中添加"
+        },
+    }
+}
+
+pub fn show_icon_view(ui: &crate::AppWindow, v: IconView) {
+    let sections: Vec<IconSection> = v
+        .shown
+        .iter()
+        .map(|s| IconSection {
+            label: if v.searching { s.label.as_str() } else { "" }.into(),
+            tiles: ModelRc::new(VecModel::from(icon_tiles(&s.icons, &v.value))),
+        })
+        .collect();
+    let labels: Vec<SharedString> = v.labels.iter().map(|l| l.as_str().into()).collect();
+    ui.set_gi_value(v.value.as_str().into());
+    ui.set_gi_title(v.title.as_str().into());
+    ui.set_gi_subtitle(v.subtitle.as_str().into());
+    ui.set_gi_chips(ModelRc::new(VecModel::from(labels)));
+    ui.set_gi_chip(v.chip);
+    ui.set_gi_sections(ModelRc::new(VecModel::from(sections)));
+    ui.set_gi_empty(v.empty.into());
+}
+
+/// The member picker's sections and whether it offers a search, for a form `origin` with
+/// these picks.
+pub fn member_picker_sections(
+    id: u64,
+    origin: &Value,
+    data: &Data,
+    presets: &[(String, String)],
+    picks: &[Member],
+    query: &str,
+    expanded: &BTreeSet<String>,
+) -> (Vec<MemberPickSection>, bool) {
+    let p = Picker {
+        origin: origin.clone(),
+        picks: picks.to_vec(),
+        query: query.to_string(),
+        expanded: expanded.clone(),
+    };
+    picker_sections(&p, pg::picker_categories(id, origin, data, presets))
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default()
 }
 
 fn section_state() -> &'static Mutex<Section> {
@@ -585,9 +782,14 @@ impl App {
         }
         .into();
         self.ui(move |ui| {
-            let sections = form_sections(&d, &data, &presets);
+            let mut tail = form_sections(&d, &data);
+            let head: Vec<SetSection> = tail.drain(..1).collect();
             ui.set_pg_title(title);
-            ui.set_pg_sections(ModelRc::new(VecModel::from(sections)));
+            ui.set_pg_head(ModelRc::new(VecModel::from(head)));
+            ui.set_pg_members(ModelRc::new(VecModel::from(member_items(
+                &d, &data, &presets,
+            ))));
+            ui.set_pg_tail(ModelRc::new(VecModel::from(tail)));
             ui.set_pg_issue(issue);
         });
     }
@@ -676,11 +878,8 @@ impl App {
                     .collect();
                 self.show_choice("代理类型", items);
             }
-            "pg-f:icon" => self.ui(|ui| {
-                ui.set_placeholder_title("图标".into());
-                ui.set_placeholder_parent("group".into());
-                ui.set_profiles_page("placeholder".into());
-            }),
+            "pg-f:icon" => self.open_icon_picker(&d),
+            "pg-members-add" => self.open_member_picker(&d),
             "pg-add" => {
                 let mut last = "";
                 let items = d
@@ -807,6 +1006,9 @@ impl App {
 
     pub(crate) fn groups_check(&self, key: &str, v1: &str) -> Option<String> {
         let target = key.strip_prefix("pg-in:")?;
+        if target == "icon-url" {
+            return Some(ip::url_issue(v1).unwrap_or_default().to_string());
+        }
         let v = v1.trim();
         let number = Opt::of(target).is_some_and(Opt::is_number);
         Some(if number && !v.is_empty() && v.parse::<u32>().is_err() {
@@ -821,6 +1023,12 @@ impl App {
             return false;
         };
         let v = v1.trim().to_string();
+        if target == "icon-url" {
+            if ip::url_issue(&v).is_none() {
+                self.pick_icon(Some(v));
+            }
+            return true;
+        }
         if target == "name" {
             self.edit_group_draft(move |d| d.set("name", Some(v.into())));
             return true;
@@ -867,10 +1075,14 @@ impl App {
         }
         let id = if d.is_new { new_id() } else { d.id };
         let def = d.def.clone();
+        let icon = pg::text(&def, "icon");
         let saved = {
             let mut store = self.store.lock().unwrap();
             let ok = pg::put(&mut store.state, &pid, id, def);
             if ok {
+                if !icon.is_empty() {
+                    ip::put_record(&mut store.state.icon_records, &icon, now_ms());
+                }
                 store.save();
             }
             ok
@@ -980,6 +1192,245 @@ impl App {
     pub(crate) fn group_yaml_closed(&self) {
         section_state().lock().unwrap().yaml_open = false;
     }
+
+    /// The members list: `remove:<i>`, `move:<from>:<to>` and `info:<i>`.
+    pub(crate) fn pg_member(self: &Arc<Self>, action: &str) {
+        let (verb, arg) = action.split_once(':').unwrap_or((action, ""));
+        let at: Vec<usize> = arg.split(':').filter_map(|n| n.parse().ok()).collect();
+        match (verb, at.as_slice()) {
+            ("remove", [i]) => {
+                let i = *i;
+                self.edit_group_draft(move |d| d.def = pg::removed_member(&d.def, i));
+                self.check_group_filters();
+            }
+            ("move", [from, to]) => {
+                let (from, to) = (*from, *to);
+                self.edit_group_draft(move |d| d.def = pg::moved_member(&d.def, from, to));
+            }
+            ("info", [i]) => {
+                let def = section_state()
+                    .lock()
+                    .unwrap()
+                    .draft
+                    .as_ref()
+                    .map(|d| d.def.clone());
+                if let Some(m) = def.and_then(|def| pg::members(&def).into_iter().nth(*i)) {
+                    self.alert("提示", member_message(&m));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn open_member_picker(self: &Arc<Self>, d: &Draft) {
+        section_state().lock().unwrap().picker = Some(Picker {
+            origin: d.def.clone(),
+            ..Default::default()
+        });
+        self.publish_member_picker();
+        self.ui(|ui| {
+            ui.set_pg_pick_query("".into());
+            ui.set_pg_pick_searching(false);
+            ui.set_profiles_page("group-members".into());
+        });
+    }
+
+    fn publish_member_picker(self: &Arc<Self>) {
+        let Some(pid) = crate::custom_profile_app::page_id() else {
+            return;
+        };
+        let (p, id) = {
+            let st = section_state().lock().unwrap();
+            match (&st.picker, &st.draft) {
+                (Some(p), Some(d)) => (p.clone(), d.id),
+                _ => return,
+            }
+        };
+        let cats = pg::picker_categories(
+            id,
+            &p.origin,
+            &self.group_data(&pid),
+            &self.filter_presets(),
+        );
+        let searching = !p.query.trim().is_empty();
+        self.ui(move |ui| {
+            let (sections, searchable) = picker_sections(&p, cats);
+            ui.set_pg_pick_searchable(searchable);
+            ui.set_pg_pick_empty(
+                if searching {
+                    "没有匹配的结果"
+                } else {
+                    "暂无数据"
+                }
+                .into(),
+            );
+            ui.set_pg_pick_sections(ModelRc::new(VecModel::from(sections)));
+        });
+    }
+
+    /// The picker: `toggle:<id>`, `expand:<label>`, `search:<query>` and `back`.
+    pub(crate) fn pg_pick(self: &Arc<Self>, action: &str) {
+        let (verb, arg) = action.split_once(':').unwrap_or((action, ""));
+        {
+            let mut st = section_state().lock().unwrap();
+            let Section { picker, draft, .. } = &mut *st;
+            let Some(p) = picker.as_mut() else {
+                return;
+            };
+            match verb {
+                "toggle" => {
+                    let Some(m) = pick_of(arg) else {
+                        return;
+                    };
+                    match p.picks.iter().position(|x| *x == m) {
+                        Some(i) => {
+                            p.picks.remove(i);
+                        }
+                        None => p.picks.push(m),
+                    }
+                    if let Some(d) = draft.as_mut() {
+                        d.def = pg::with_picks(&p.origin, &p.picks);
+                    }
+                }
+                "expand" => {
+                    if !p.expanded.remove(arg) {
+                        p.expanded.insert(arg.to_string());
+                    }
+                }
+                "search" => p.query = arg.to_string(),
+                "back" => *picker = None,
+                _ => return,
+            }
+        }
+        if verb == "back" {
+            self.publish_group_form();
+            self.check_group_filters();
+            self.ui(|ui| ui.set_profiles_page("group".into()));
+        } else {
+            self.publish_member_picker();
+        }
+    }
+
+    fn open_icon_picker(self: &Arc<Self>, d: &Draft) {
+        section_state().lock().unwrap().icon = Some(IconPick {
+            value: pg::text(&d.def, "icon"),
+            group_name: pg::name(&d.def),
+            ..Default::default()
+        });
+        self.publish_icon_picker();
+        self.ui(|ui| {
+            ui.set_gi_query("".into());
+            ui.set_gi_searching(false);
+            ui.set_profiles_page("group-icon".into());
+        });
+    }
+
+    fn publish_icon_picker(self: &Arc<Self>) {
+        let Some(p) = section_state().lock().unwrap().icon.clone() else {
+            return;
+        };
+        let v = {
+            let store = self.store.lock().unwrap();
+            icon_view(
+                &p.value,
+                &p.group_name,
+                p.source.as_deref(),
+                &p.query,
+                &store.state.settings.icon_sets,
+                &store.state.icon_records,
+            )
+        };
+        if let Some(st) = section_state().lock().unwrap().icon.as_mut() {
+            st.chips = v.keys.clone();
+            st.shown = v.shown.clone();
+        }
+        self.ui(move |ui| show_icon_view(&ui, v));
+    }
+
+    /// `Navigator.pop` with the icon: Some to set it (empty removes it), None to leave as is.
+    fn pick_icon(self: &Arc<Self>, icon: Option<String>) {
+        section_state().lock().unwrap().icon = None;
+        if let Some(icon) = icon {
+            self.edit_group_draft(move |d| d.set("icon", (!icon.is_empty()).then(|| icon.into())));
+        }
+        self.ui(|ui| ui.set_profiles_page("group".into()));
+    }
+
+    /// The icon picker: `source:<i>`, `select:<section>:<i>`, `long:<section>:<i>`,
+    /// `remove`, `link`, `search:<query>` and `back`.
+    pub(crate) fn icon_pick(self: &Arc<Self>, action: &str) {
+        let Some(p) = section_state().lock().unwrap().icon.clone() else {
+            return;
+        };
+        let (verb, arg) = action.split_once(':').unwrap_or((action, ""));
+        let at: Vec<usize> = arg.split(':').filter_map(|n| n.parse().ok()).collect();
+        let tile = |at: &[usize]| match at {
+            [s, i] => p
+                .shown
+                .get(*s)
+                .and_then(|s| s.icons.get(*i).map(|x| (s.key.clone(), x.clone()))),
+            _ => None,
+        };
+        match verb {
+            "source" => {
+                if let Some(k) = at.first().and_then(|i| p.chips.get(*i)) {
+                    let k = k.clone();
+                    if let Some(st) = section_state().lock().unwrap().icon.as_mut() {
+                        st.source = Some(k);
+                    }
+                    self.publish_icon_picker();
+                }
+            }
+            "search" => {
+                if let Some(st) = section_state().lock().unwrap().icon.as_mut() {
+                    st.query = arg.to_string();
+                }
+                self.publish_icon_picker();
+            }
+            "select" => {
+                if let Some((_, icon)) = tile(&at) {
+                    self.pick_icon(Some(icon.url));
+                }
+            }
+            "long" => {
+                let Some((key, icon)) = tile(&at) else {
+                    return;
+                };
+                let recorded = self
+                    .store
+                    .lock()
+                    .unwrap()
+                    .state
+                    .icon_records
+                    .iter()
+                    .any(|r| r.url == icon.url);
+                if key == ip::RECOMMENDED && recorded {
+                    let text = format!("确定删除当前{}吗？", ip::label(&icon));
+                    self.confirm("提示", text, "icon-record-delete", icon.url);
+                }
+            }
+            "remove" => self.pick_icon(Some(String::new())),
+            "link" => {
+                let value = if crate::icon_sets::is_http_url(&p.value) {
+                    p.value.clone()
+                } else {
+                    String::new()
+                };
+                self.open_input("pg-in:icon-url", "图标链接", "URL", &value);
+            }
+            "back" => self.pick_icon(None),
+            _ => {}
+        }
+    }
+
+    pub(crate) fn delete_icon_record(self: &Arc<Self>, url: &str) {
+        {
+            let mut store = self.store.lock().unwrap();
+            store.state.icon_records.retain(|r| r.url != url);
+            store.save();
+        }
+        self.publish_icon_picker();
+    }
 }
 
 #[cfg(test)]
@@ -1023,22 +1474,24 @@ mod tests {
     fn the_form_lists_general_members_options_and_actions() {
         let data = data();
         let mut d = Draft::open(1, data.groups[0].1.clone(), false);
-        let s = form_sections(&d, &data, &[]);
+        let s = form_sections(&d, &data);
         let ids = |s: &[SetSection], i: usize| -> Vec<String> {
             s[i].rows.iter().map(|r| r.id.to_string()).collect()
         };
         assert_eq!(ids(&s, 0), ["pg-f:name", "pg-f:type", "pg-f:icon"]);
-        assert_eq!(ids(&s, 1), ["pg-m:0", "pg-m:1", "pg-members-add"]);
-        assert_eq!(s[1].rows.row_data(0).unwrap().subtitle, "ss");
-        assert_eq!(s[1].rows.row_data(1).unwrap().subtitle, "url-test");
-        assert_eq!(ids(&s, 2), ["pg-add"]);
-        assert_eq!(ids(&s, 3), ["pg-delete"]);
+        assert_eq!(s[0].rows.row_data(2).unwrap().image, "https://x/a.png");
+        let m = member_items(&d, &data, &[]);
+        assert_eq!(m.len(), 2);
+        assert_eq!((m[0].title.as_str(), m[0].chip.as_str()), ("hk", "ss"));
+        assert_eq!(m[1].chip, "url-test");
+        assert_eq!(ids(&s, 1), ["pg-add"]);
+        assert_eq!(ids(&s, 2), ["pg-delete"]);
         d.add_option(Opt::Interval, "u");
         d.add_option(Opt::Lazy, "u");
         d.add_option(Opt::DefaultSelected, "u");
-        let s = form_sections(&d, &data, &[]);
+        let s = form_sections(&d, &data);
         assert_eq!(
-            ids(&s, 2),
+            ids(&s, 1),
             [
                 "pg-o:interval",
                 "pg-o:lazy",
@@ -1046,8 +1499,8 @@ mod tests {
                 "pg-add"
             ]
         );
-        assert_eq!(s[2].rows.row_data(0).unwrap().subtitle, "300 s");
-        assert!(s[2].rows.row_data(1).unwrap().on);
+        assert_eq!(s[1].rows.row_data(0).unwrap().subtitle, "300 s");
+        assert!(s[1].rows.row_data(1).unwrap().on);
         d.set("type", Some("load-balance".into()));
         assert_eq!(d.listed(), [Opt::Interval, Opt::Lazy]);
         assert!(d.addable().contains(&Opt::Strategy));
@@ -1061,7 +1514,7 @@ mod tests {
         let data = data();
         let mut d = Draft::open(0, json!({"name": "", "type": "select"}), true);
         assert!(d.issues(&data).is_empty());
-        assert_eq!(form_sections(&d, &data, &[]).len(), 3);
+        assert_eq!(form_sections(&d, &data).len(), 2);
         d.submitted = true;
         assert_eq!(d.issues(&data), [Issue::EmptyName, Issue::NoProxySource]);
         d.filter_errors.insert(1, "bad".into());
@@ -1072,16 +1525,55 @@ mod tests {
     }
 
     #[test]
-    fn filters_show_their_preset_labels() {
+    fn members_show_preset_labels_tones_and_missing_marks() {
         let data = data();
         let d = Draft::open(
             9,
-            json!({"name": "F", "type": "select", "filter": "(?i)hk`jp"}),
+            json!({"name": "F", "type": "select", "proxies": ["gone", "DIRECT"], "use": ["nope"],
+                   "filter": "(?i)hk`jp", "exclude-filter": "x"}),
             false,
         );
         let presets = vec![("(?i)hk".to_string(), "香港".to_string())];
-        let s = form_sections(&d, &data, &presets);
-        let titles: Vec<String> = s[1].rows.iter().map(|r| r.title.to_string()).collect();
-        assert_eq!(titles, ["香港", "jp", "添加节点"]);
+        let m = member_items(&d, &data, &presets);
+        let titles: Vec<String> = m.iter().map(|r| r.title.to_string()).collect();
+        assert_eq!(titles, ["gone", "DIRECT", "nope", "香港", "jp", "x"]);
+        assert!(m[0].invalid && !m[1].invalid && m[2].invalid);
+        assert_eq!(m[1].chip, "基础策略");
+        assert_eq!(m[2].chip, "代理集");
+        assert_eq!(
+            m.iter().map(|r| r.tone).collect::<Vec<_>>(),
+            [0, 0, 0, 1, 1, 2]
+        );
+        let all = pg::members(&d.def);
+        assert_eq!(member_message(&all[0]), "gone 是一个无效的代理");
+        assert_eq!(member_message(&all[2]), "nope 是一个无效的代理集");
+    }
+
+    #[test]
+    fn picker_rows_carry_ids_selection_and_search() {
+        let data = data();
+        let origin = json!({"name": "A", "type": "select", "proxies": ["hk"]});
+        let mut p = Picker {
+            origin: origin.clone(),
+            ..Default::default()
+        };
+        p.picks.push(Member::new(MemberKind::Proxy, "B"));
+        p.expanded.insert("策略组".into());
+        let cats = pg::picker_categories(1, &origin, &data, &[]);
+        let (sections, searchable) = picker_sections(&p, cats.clone());
+        assert!(!searchable);
+        let labels: Vec<String> = sections.iter().map(|s| s.label.to_string()).collect();
+        assert_eq!(labels, ["基础策略", "自动包含", "策略组"]);
+        assert!(!sections[0].expanded && sections[2].expanded && sections[2].collapsible);
+        let row = sections[2].rows.row_data(0).unwrap();
+        assert_eq!(row.id, "proxy\tB");
+        assert!(row.selected);
+        assert_eq!(pick_of(&row.id), Some(Member::new(MemberKind::Proxy, "B")));
+        p.query = "rej".into();
+        let (sections, searchable) = picker_sections(&p, cats);
+        assert!(searchable);
+        assert_eq!(sections.len(), 1);
+        assert!(sections[0].expanded && !sections[0].collapsible);
+        assert_eq!(sections[0].rows.row_count(), 2);
     }
 }

@@ -499,6 +499,7 @@ pub struct State {
     pub profile_rules: Vec<crate::custom_profile::ProfileRule>,
     pub proxy_dialers: Vec<crate::custom_profile::ProxyDialer>,
     pub disabled_rules: Vec<crate::custom_profile::DisabledRule>,
+    pub icon_records: Vec<crate::icon_picker::IconRecord>,
 }
 
 pub struct Store {

@@ -74,6 +74,7 @@ pub fn tiles(set: Option<&IconSet>, query: &str) -> Vec<IconTile> {
                 } else {
                     i.label().into()
                 },
+                selected: false,
             })
             .collect()
     })

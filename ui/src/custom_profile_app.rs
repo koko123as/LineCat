@@ -53,6 +53,12 @@ impl App {
         ui.on_pg_back(move || a.pg_back());
         let a = self.clone();
         ui.on_group_yaml_closed(move || a.group_yaml_closed());
+        let a = self.clone();
+        ui.on_pg_member(move |action| a.pg_member(&action));
+        let a = self.clone();
+        ui.on_pg_pick(move |action| a.pg_pick(&action));
+        let a = self.clone();
+        ui.on_icon_pick(move |action| a.icon_pick(&action));
     }
 
     /// `_toAddCustom`: an unnamed custom profile, opened as new.

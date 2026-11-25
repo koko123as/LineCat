@@ -300,6 +300,7 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             .map(|i| IconTile {
                 url: i.url.as_str().into(),
                 label: i.label().into(),
+                selected: false,
             })
             .collect::<Vec<_>>();
         ui.set_iconset_title("Qure 彩色国旗与服务图标合集".into());
@@ -932,6 +933,7 @@ fn snapshot_groups(ui: &AppWindow, overlay: &str, w: u32) {
         ]
         .into(),
         proxy_providers: ["机场订阅".to_string()].into(),
+        provider_types: [("机场订阅".to_string(), "URL".to_string())].into(),
     };
     let listed = matches!(
         overlay,
@@ -1006,9 +1008,70 @@ fn snapshot_groups(ui: &AppWindow, overlay: &str, w: u32) {
         }
         .into(),
     );
-    ui.set_pg_sections(ModelRc::new(VecModel::from(group_form_sections(
+    let mut tail = group_form_sections(&draft, &data);
+    let head: Vec<SetSection> = tail.drain(..1).collect();
+    ui.set_pg_head(ModelRc::new(VecModel::from(head)));
+    ui.set_pg_members(ModelRc::new(VecModel::from(member_items(
         &draft, &data, &presets,
     ))));
+    ui.set_pg_tail(ModelRc::new(VecModel::from(tail)));
+    if overlay.starts_with("gpick") {
+        use proxy_groups::{Member, MemberKind};
+        let origin = data.groups[0].1.clone();
+        let picks = [
+            Member::new(MemberKind::Proxy, "故障转移"),
+            Member::new(MemberKind::Filter, "(?i)港|hk"),
+        ];
+        let expanded: std::collections::BTreeSet<String> = [
+            "策略组".to_string(),
+            "筛选".to_string(),
+            "自动包含".to_string(),
+        ]
+        .into();
+        let query = if overlay == "gpicks" { "循环" } else { "" };
+        let (sections, searchable) = member_picker_sections(
+            1,
+            &origin,
+            &data,
+            &presets,
+            &picks,
+            if overlay == "gpicke" { "zzz" } else { query },
+            &expanded,
+        );
+        ui.set_pg_pick_sections(ModelRc::new(VecModel::from(sections)));
+        ui.set_pg_pick_searchable(searchable);
+        ui.set_pg_pick_empty(
+            if overlay == "gpicke" {
+                "没有匹配的结果"
+            } else {
+                "暂无数据"
+            }
+            .into(),
+        );
+        ui.set_pg_pick_searching(overlay != "gpick");
+        ui.set_pg_pick_query(if overlay == "gpicke" { "zzz" } else { query }.into());
+    }
+    if overlay.starts_with("gicon") {
+        let sets = if overlay == "giconempty" {
+            Vec::new()
+        } else {
+            sample_icon_sets()
+        };
+        let value = match overlay {
+            "giconempty" => "",
+            "gicondata" => "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+            _ => sets[0].icons[6].url.as_str(),
+        };
+        let records = vec![seasoncat_ui::icon_picker::IconRecord {
+            url: "https://example.com/icons/Netflix_Letter.png".into(),
+            last_accessed_ms: 1,
+        }];
+        let query = if overlay == "giconsearch" { "on" } else { "" };
+        let v = icon_view(value, "Netflix 港", None, query, &sets, &records);
+        show_icon_view(ui, v);
+        ui.set_gi_searching(overlay == "giconsearch");
+        ui.set_gi_query(query.into());
+    }
     ui.set_pg_issue(proxy_groups::issues_message(&draft.issues(&data)).into());
     if overlay == "gyaml" {
         ui.set_editor_title("故障转移".into());
@@ -1638,6 +1701,19 @@ fn main() {
         ("group-form-new-small", 2, "", "group", 1, "gnew"),
         ("group-form-lb", 2, "", "group", 1, "glb"),
         ("group-form-save", 2, "", "group", 1, "gsave"),
+        ("group-members", 2, "", "group-members", 1, "gpick"),
+        ("group-members-small", 2, "", "group-members", 1, "gpick"),
+        ("group-members-wide", 2, "", "group-members", 1, "gpick"),
+        ("group-members-tablet", 2, "", "group-members", 1, "gpick"),
+        ("group-members-search", 2, "", "group-members", 1, "gpicks"),
+        ("group-members-none", 2, "", "group-members", 1, "gpicke"),
+        ("group-icon", 2, "", "group-icon", 1, "gicon"),
+        ("group-icon-small", 2, "", "group-icon", 1, "gicon"),
+        ("group-icon-wide", 2, "", "group-icon", 1, "gicon"),
+        ("group-icon-tablet", 2, "", "group-icon", 1, "gicon"),
+        ("group-icon-search", 2, "", "group-icon", 1, "giconsearch"),
+        ("group-icon-empty", 2, "", "group-icon", 1, "giconempty"),
+        ("group-icon-data", 2, "", "group-icon", 1, "gicondata"),
         ("group-yaml", 2, "", "editor", 1, "gyaml"),
         ("group-yaml-small", 2, "", "editor", 1, "gyaml"),
         ("custom-issues", 2, "", "custom", 1, "issues"),

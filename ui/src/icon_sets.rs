@@ -48,7 +48,7 @@ pub fn is_http_url(value: &str) -> bool {
 }
 
 /// `urlFileName`: the last non-empty path segment.
-fn url_file_name(url: &str) -> String {
+pub fn url_file_name(url: &str) -> String {
     let path = url.split(['?', '#']).next().unwrap_or("");
     let path = path.split_once("://").map(|(_, p)| p).unwrap_or(path);
     path.split_once('/')

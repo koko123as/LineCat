@@ -384,6 +384,8 @@ pub struct Data {
     pub proxies: BTreeSet<String>,
     /// The custom proxies' types by name, for the members' subtitles.
     pub proxy_types: BTreeMap<String, String>,
+    /// `_providerTypes`: URL or 文件 by provider name.
+    pub provider_types: BTreeMap<String, String>,
 }
 
 impl Data {
@@ -433,6 +435,17 @@ pub fn data(state: &State, profile_id: &str) -> Data {
             .custom_proxies
             .iter()
             .map(|p| (p.name(), p.kind()))
+            .collect(),
+        provider_types: state
+            .profiles
+            .iter()
+            .filter(|p| !p.is_custom())
+            .map(|p| {
+                (
+                    p.label(),
+                    if p.is_url() { "URL" } else { "文件" }.to_string(),
+                )
+            })
             .collect(),
     }
 }
@@ -906,15 +919,80 @@ pub fn delete(state: &mut State, profile_id: &str, ids: &BTreeSet<u64>) {
         .retain(|g| g.profile_id != profile_id || !ids.contains(&g.id));
 }
 
-/// A member row of the form (`ProxyGroupMembersSliver`, read only here): kind, name.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Member {
-    Proxy(String),
-    Provider(String),
+/// `_MemberKind`: what a row of the members list stands for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum MemberKind {
+    Proxy,
+    Provider,
     AllProxies,
     AllProviders,
-    Filter(String),
-    ExcludeFilter(String),
+    Filter,
+    ExcludeFilter,
+}
+
+pub const MEMBER_KINDS: [MemberKind; 6] = [
+    MemberKind::Proxy,
+    MemberKind::Provider,
+    MemberKind::AllProxies,
+    MemberKind::AllProviders,
+    MemberKind::Filter,
+    MemberKind::ExcludeFilter,
+];
+
+/// `_everyName`: the one name an include-all row carries.
+pub const EVERY: &str = "*";
+
+impl MemberKind {
+    /// The enum's name, as `memberLayout` stores a run.
+    pub fn key(self) -> &'static str {
+        match self {
+            MemberKind::Proxy => "proxy",
+            MemberKind::Provider => "provider",
+            MemberKind::AllProxies => "allProxies",
+            MemberKind::AllProviders => "allProviders",
+            MemberKind::Filter => "filter",
+            MemberKind::ExcludeFilter => "excludeFilter",
+        }
+    }
+
+    pub fn of(key: &str) -> Option<MemberKind> {
+        MEMBER_KINDS.into_iter().find(|k| k.key() == key)
+    }
+
+    pub fn is_filter(self) -> bool {
+        matches!(self, MemberKind::Filter | MemberKind::ExcludeFilter)
+    }
+
+    /// Providers sit among the proxies, so the two share a run.
+    pub fn run(self) -> MemberKind {
+        match self {
+            MemberKind::Provider => MemberKind::Proxy,
+            k => k,
+        }
+    }
+
+    pub fn parts_of(self, name: &str) -> Vec<String> {
+        if self.is_filter() {
+            filter_parts(name)
+        } else {
+            vec![name.to_string()]
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Member {
+    pub kind: MemberKind,
+    pub name: String,
+}
+
+impl Member {
+    pub fn new(kind: MemberKind, name: &str) -> Member {
+        Member {
+            kind,
+            name: name.to_string(),
+        }
+    }
 }
 
 /// `filterParts`: mihomo splits a filter on backticks.
@@ -925,9 +1003,103 @@ pub fn filter_parts(v: &str) -> Vec<String> {
         .collect()
 }
 
-/// `membersOf` without a layout: the proxies with the providers at their positions, then
-/// the include-all keys and the filters.
-pub fn members(def: &Value) -> Vec<Member> {
+fn runs() -> Vec<MemberKind> {
+    let mut out: Vec<MemberKind> = Vec::new();
+    for k in MEMBER_KINDS {
+        if !out.contains(&k.run()) {
+            out.push(k.run());
+        }
+    }
+    out
+}
+
+/// `_GroupMembers.namesOf`.
+pub fn names_of(def: &Value, kind: MemberKind) -> Vec<String> {
+    let every = |key: &str| {
+        if includes_all(def, key) {
+            vec![EVERY.to_string()]
+        } else {
+            Vec::new()
+        }
+    };
+    match kind {
+        MemberKind::Proxy => names(def, "proxies"),
+        MemberKind::Provider => names(def, "use"),
+        MemberKind::AllProxies => every("include-all-proxies"),
+        MemberKind::AllProviders => every("include-all-providers"),
+        MemberKind::Filter => filter_parts(&text(def, "filter")),
+        MemberKind::ExcludeFilter => filter_parts(&text(def, "exclude-filter")),
+    }
+}
+
+fn put_or_remove(m: &mut Map<String, Value>, key: &str, value: Option<Value>) {
+    match value {
+        Some(v) => {
+            m.insert(key.into(), v);
+        }
+        None => {
+            m.remove(key);
+        }
+    }
+}
+
+/// `_GroupMembers.withNames`. A legacy `include-all` is split into the two keys it stands
+/// for before either changes.
+pub fn with_names(def: &mut Value, kind: MemberKind, list: &[String]) {
+    let Some(m) = def.as_object_mut() else {
+        return;
+    };
+    let strings = || Value::Array(list.iter().map(|n| n.clone().into()).collect());
+    let some = |v: Value| (!list.is_empty()).then_some(v);
+    match kind {
+        MemberKind::Proxy => put_or_remove(m, "proxies", some(strings())),
+        MemberKind::Provider => put_or_remove(m, "use", some(strings())),
+        MemberKind::AllProxies | MemberKind::AllProviders => {
+            if let Some(all) = m.remove("include-all") {
+                for key in ["include-all-proxies", "include-all-providers"] {
+                    if all == Value::Bool(true) && !m.contains_key(key) {
+                        m.insert(key.into(), true.into());
+                    }
+                }
+            }
+            let key = if kind == MemberKind::AllProxies {
+                "include-all-proxies"
+            } else {
+                "include-all-providers"
+            };
+            put_or_remove(m, key, some(true.into()));
+        }
+        MemberKind::Filter => put_or_remove(m, "filter", some(list.join("`").into())),
+        MemberKind::ExcludeFilter => {
+            put_or_remove(m, "exclude-filter", some(list.join("`").into()))
+        }
+    }
+}
+
+/// `memberLayout`: the run each leading row takes, which no config carries.
+pub fn layout_of(def: &Value) -> Option<Vec<String>> {
+    def.get("memberLayout")
+        .is_some_and(Value::is_array)
+        .then(|| names(def, "memberLayout"))
+}
+
+/// What the picker no longer offers as a `kind`: what the group has, and itself.
+pub fn taken_in(def: &Value, kind: MemberKind) -> HashSet<String> {
+    let mut out: HashSet<String> = names_of(def, kind).into_iter().collect();
+    if kind == MemberKind::Proxy {
+        out.insert(name(def));
+    }
+    out
+}
+
+/// `runOf`: the proxies with the providers at their positions; any other run as named.
+fn run_of(def: &Value, run: MemberKind) -> Vec<Member> {
+    if run != MemberKind::Proxy {
+        return names_of(def, run)
+            .iter()
+            .map(|n| Member::new(run, n))
+            .collect();
+    }
     let proxies = names(def, "proxies");
     let positions = use_position(def).unwrap_or_default();
     let mut before: Vec<Vec<Member>> = vec![Vec::new(); proxies.len() + 1];
@@ -938,32 +1110,274 @@ pub fn members(def: &Value) -> Vec<Member> {
             .map(|p| p as usize)
             .unwrap_or(proxies.len())
             .min(proxies.len());
-        before[at].push(Member::Provider(u));
+        before[at].push(Member::new(MemberKind::Provider, &u));
     }
     let mut out = Vec::new();
     for (i, providers) in before.into_iter().enumerate() {
         out.extend(providers);
         if let Some(p) = proxies.get(i) {
-            out.push(Member::Proxy(p.clone()));
+            out.push(Member::new(MemberKind::Proxy, p));
         }
     }
-    if includes_all(def, "include-all-proxies") {
-        out.push(Member::AllProxies);
-    }
-    if includes_all(def, "include-all-providers") {
-        out.push(Member::AllProviders);
-    }
-    out.extend(
-        filter_parts(&text(def, "filter"))
-            .into_iter()
-            .map(Member::Filter),
-    );
-    out.extend(
-        filter_parts(&text(def, "exclude-filter"))
-            .into_iter()
-            .map(Member::ExcludeFilter),
-    );
     out
+}
+
+/// `membersOf`: the rows take a run each as the layout names it, then the rest follow run
+/// by run, since the core reads each run's own order only.
+pub fn members(def: &Value) -> Vec<Member> {
+    let mut by_run: Vec<(MemberKind, std::vec::IntoIter<Member>)> = runs()
+        .into_iter()
+        .map(|r| (r, run_of(def, r).into_iter()))
+        .collect();
+    let mut out = Vec::new();
+    for key in layout_of(def).unwrap_or_default() {
+        if let Some((_, it)) = by_run.iter_mut().find(|(r, _)| r.key() == key) {
+            out.extend(it.next());
+        }
+    }
+    for (_, it) in by_run {
+        out.extend(it);
+    }
+    out
+}
+
+/// `_layoutOf`: the leading runs, leaving out the trailing rows [members] puts there anyway.
+fn layout_for(members: &[Member]) -> Option<Vec<String>> {
+    let order = runs();
+    let at: Vec<usize> = members
+        .iter()
+        .map(|m| order.iter().position(|r| *r == m.kind.run()).unwrap_or(0))
+        .collect();
+    let mut end = at.len();
+    while end > 0 && (end == at.len() || at[end - 1] <= at[end]) {
+        end -= 1;
+    }
+    (end > 0).then(|| {
+        at[..end]
+            .iter()
+            .map(|i| order[*i].key().to_string())
+            .collect()
+    })
+}
+
+/// `_GroupMembers.withMembers`: names per kind, the layout, and where the providers sit
+/// among the proxies.
+pub fn with_members(def: &Value, members: &[Member]) -> Value {
+    let mut next = def.clone();
+    for kind in MEMBER_KINDS {
+        let list: Vec<String> = members
+            .iter()
+            .filter(|m| m.kind == kind)
+            .map(|m| m.name.clone())
+            .collect();
+        if names_of(def, kind) != list {
+            with_names(&mut next, kind, &list);
+        }
+    }
+    let layout = layout_for(members);
+    if layout_of(def) != layout {
+        if let Some(m) = next.as_object_mut() {
+            put_or_remove(
+                m,
+                "memberLayout",
+                layout.map(|l| l.into_iter().map(Value::from).collect()),
+            );
+        }
+    }
+    let count = members
+        .iter()
+        .filter(|m| m.kind == MemberKind::Proxy)
+        .count();
+    let mut seen = 0;
+    let mut positions = Map::new();
+    for m in members {
+        match m.kind {
+            MemberKind::Proxy => seen += 1,
+            MemberKind::Provider if seen < count => {
+                positions.insert(m.name.clone(), json!(seen));
+            }
+            _ => {}
+        }
+    }
+    let positions = (!positions.is_empty()).then_some(Value::Object(positions));
+    if def.get("use-position") != positions.as_ref() {
+        if let Some(m) = next.as_object_mut() {
+            put_or_remove(m, "use-position", positions);
+        }
+    }
+    next
+}
+
+/// `_MembersSliverState._handleReorder` once the rows settle.
+pub fn moved_member(def: &Value, from: usize, to: usize) -> Value {
+    let mut list = members(def);
+    if from >= list.len() {
+        return def.clone();
+    }
+    let m = list.remove(from);
+    list.insert(to.min(list.len()), m);
+    with_members(def, &list)
+}
+
+pub fn removed_member(def: &Value, index: usize) -> Value {
+    let mut list = members(def);
+    if index >= list.len() {
+        return def.clone();
+    }
+    list.remove(index);
+    with_members(def, &list)
+}
+
+/// An entry of the picker (`_Entry`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PickEntry {
+    pub member: Member,
+    pub title: String,
+    pub subtitle: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PickCategory {
+    pub label: String,
+    pub entries: Vec<PickEntry>,
+}
+
+/// `FilterExt.isAppliedTo`: every part of the preset is in the filter already.
+fn applied(regex: &str, parts: &[String]) -> bool {
+    let own = filter_parts(regex);
+    !own.is_empty() && own.iter().all(|p| parts.contains(p))
+}
+
+/// `_MemberPicker._categories` for a group, against the form as it was when the picker
+/// opened (`origin`, with its stored `id`).
+pub fn picker_categories(
+    id: u64,
+    origin: &Value,
+    data: &Data,
+    presets: &[(String, String)],
+) -> Vec<PickCategory> {
+    let entry = |kind: MemberKind, name: &str, title: &str, subtitle: &str| PickEntry {
+        member: Member::new(kind, name),
+        title: title.to_string(),
+        subtitle: subtitle.to_string(),
+    };
+    let taken = taken_in(origin, MemberKind::Proxy);
+    let used = taken_in(origin, MemberKind::Provider);
+    let mut auto = Vec::new();
+    if !data.proxy_types.is_empty() && names_of(origin, MemberKind::AllProxies).is_empty() {
+        auto.push(entry(MemberKind::AllProxies, EVERY, "全部被引用的代理", ""));
+    }
+    if !data.proxy_providers.is_empty() && names_of(origin, MemberKind::AllProviders).is_empty() {
+        auto.push(entry(
+            MemberKind::AllProviders,
+            EVERY,
+            "全部被引用的代理集",
+            "",
+        ));
+    }
+    let missing_presets = |kind: MemberKind| -> Vec<PickEntry> {
+        let parts = names_of(origin, kind);
+        presets
+            .iter()
+            .filter(|(regex, _)| !applied(regex, &parts))
+            .map(|(regex, label)| entry(kind, regex, label, regex))
+            .collect()
+    };
+    vec![
+        PickCategory {
+            label: "基础策略".into(),
+            entries: RESERVED
+                .iter()
+                .filter(|t| !taken.contains(**t))
+                .map(|t| entry(MemberKind::Proxy, t, t, ""))
+                .collect(),
+        },
+        PickCategory {
+            label: "自动包含".into(),
+            entries: auto,
+        },
+        PickCategory {
+            label: "本地代理".into(),
+            entries: data
+                .proxy_types
+                .iter()
+                .filter(|(n, _)| !taken.contains(*n))
+                .map(|(n, t)| entry(MemberKind::Proxy, n, n, t))
+                .collect(),
+        },
+        PickCategory {
+            label: "策略组".into(),
+            entries: data
+                .groups
+                .iter()
+                .filter(|(i, g)| *i != id && !taken.contains(&name(g)))
+                .map(|(_, g)| {
+                    let n = name(g);
+                    entry(MemberKind::Proxy, &n, &n, &kind(g))
+                })
+                .collect(),
+        },
+        PickCategory {
+            label: "代理集".into(),
+            entries: data
+                .proxy_providers
+                .iter()
+                .filter(|n| !used.contains(*n))
+                .map(|n| {
+                    let t = data.provider_types.get(n).cloned().unwrap_or_default();
+                    entry(MemberKind::Provider, n, n, &t)
+                })
+                .collect(),
+        },
+        PickCategory {
+            label: "筛选".into(),
+            entries: missing_presets(MemberKind::Filter),
+        },
+        PickCategory {
+            label: "排除筛选".into(),
+            entries: missing_presets(MemberKind::ExcludeFilter),
+        },
+    ]
+}
+
+/// The categories the search leaves, empty ones dropped.
+pub fn search_categories(categories: Vec<PickCategory>, query: &str) -> Vec<PickCategory> {
+    categories
+        .into_iter()
+        .map(|mut c| {
+            c.entries.retain(|e| {
+                query.trim().is_empty()
+                    || crate::proxies::matches(query, &e.title)
+                    || crate::proxies::matches(query, &e.subtitle)
+            });
+            c
+        })
+        .filter(|c| !c.entries.is_empty())
+        .collect()
+}
+
+/// `_handleToggle`: the picks so far go into the form as it was, each kind's after what it
+/// had.
+pub fn with_picks(origin: &Value, picks: &[Member]) -> Value {
+    let mut next = origin.clone();
+    for kind in MEMBER_KINDS {
+        let picked: Vec<String> = picks
+            .iter()
+            .filter(|m| m.kind == kind)
+            .flat_map(|m| kind.parts_of(&m.name))
+            .collect();
+        if picked.is_empty() {
+            continue;
+        }
+        let mut list = names_of(&next, kind);
+        for p in picked {
+            if !list.contains(&p) {
+                list.push(p);
+            }
+        }
+        with_names(&mut next, kind, &list);
+    }
+    next
 }
 
 /// `GroupMonogram`: the first letter or digit, upper-cased.
@@ -1459,8 +1873,13 @@ mod tests {
         assert_eq!(dns_dialer("8.8.8.8"), None);
     }
 
+    fn m(kind: MemberKind, n: &str) -> Member {
+        Member::new(kind, n)
+    }
+
     #[test]
     fn members_follow_the_use_positions() {
+        use MemberKind::*;
         let def = json!({
             "name": "G", "type": "select", "proxies": ["a", "b"], "use": ["p", "q"],
             "use-position": {"p": 1}, "include-all-proxies": true, "filter": "HK`JP",
@@ -1469,16 +1888,131 @@ mod tests {
         assert_eq!(
             members(&def),
             [
-                Member::Proxy("a".into()),
-                Member::Provider("p".into()),
-                Member::Proxy("b".into()),
-                Member::Provider("q".into()),
-                Member::AllProxies,
-                Member::Filter("HK".into()),
-                Member::Filter("JP".into()),
-                Member::ExcludeFilter("x".into()),
+                m(Proxy, "a"),
+                m(Provider, "p"),
+                m(Proxy, "b"),
+                m(Provider, "q"),
+                m(AllProxies, EVERY),
+                m(Filter, "HK"),
+                m(Filter, "JP"),
+                m(ExcludeFilter, "x"),
             ]
         );
+    }
+
+    #[test]
+    fn the_layout_places_runs_and_round_trips() {
+        use MemberKind::*;
+        let def = json!({"name": "G", "type": "select", "proxies": ["a", "b"], "filter": "HK"});
+        let rows = vec![m(Filter, "HK"), m(Proxy, "a"), m(Proxy, "b")];
+        let next = with_members(&def, &rows);
+        assert_eq!(next["memberLayout"], json!(["filter"]));
+        assert_eq!(members(&next), rows);
+        let back = moved_member(&next, 0, 2);
+        assert!(back.get("memberLayout").is_none());
+        assert_eq!(names_of(&back, Proxy), ["a", "b"]);
+        let swapped = moved_member(&back, 1, 0);
+        assert_eq!(names_of(&swapped, Proxy), ["b", "a"]);
+        assert!(swapped.get("memberLayout").is_none());
+    }
+
+    #[test]
+    fn providers_moved_among_proxies_keep_their_position() {
+        use MemberKind::*;
+        let def = json!({"name": "G", "type": "select", "proxies": ["a", "b"], "use": ["p"]});
+        assert_eq!(members(&def).last(), Some(&m(Provider, "p")));
+        let next = moved_member(&def, 2, 1);
+        assert_eq!(next["use-position"], json!({"p": 1}));
+        assert_eq!(members(&next)[1], m(Provider, "p"));
+        let end = moved_member(&next, 1, 2);
+        assert!(end.get("use-position").is_none());
+    }
+
+    #[test]
+    fn removing_rows_drops_empty_keys() {
+        let def = json!({"name": "G", "type": "select", "proxies": ["a"], "include-all": true, "filter": "HK`JP"});
+        let mut next = removed_member(&def, 0);
+        assert!(next.get("proxies").is_none());
+        assert_eq!(members(&next)[0], m(MemberKind::AllProxies, EVERY));
+        next = removed_member(&next, 0);
+        assert!(next.get("include-all").is_none());
+        assert_eq!(next["include-all-providers"], json!(true));
+        assert!(next.get("include-all-proxies").is_none());
+        next = removed_member(&next, 1);
+        assert_eq!(next["filter"], json!("JP"));
+        next = removed_member(&next, 1);
+        assert!(next.get("filter").is_none());
+    }
+
+    #[test]
+    fn the_picker_offers_what_the_group_lacks() {
+        let data = Data {
+            groups: vec![
+                g(
+                    1,
+                    json!({"name": "Self", "type": "select", "proxies": ["DIRECT", "hk"]}),
+                ),
+                g(2, json!({"name": "Auto", "type": "url-test"})),
+            ],
+            proxies: ["hk".into(), "jp".into()].into(),
+            proxy_types: [("hk".into(), "ss".into()), ("jp".into(), "vmess".into())].into(),
+            proxy_providers: ["sub".into()].into(),
+            provider_types: [("sub".into(), "URL".into())].into(),
+        };
+        let presets = vec![
+            ("(?i)hk".to_string(), "香港".to_string()),
+            ("a`b".to_string(), "AB".to_string()),
+        ];
+        let origin =
+            json!({"name": "Self", "type": "select", "proxies": ["DIRECT", "hk"], "filter": "a`b"});
+        let cats = picker_categories(1, &origin, &data, &presets);
+        let labels: Vec<&str> = cats.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "基础策略",
+                "自动包含",
+                "本地代理",
+                "策略组",
+                "代理集",
+                "筛选",
+                "排除筛选"
+            ]
+        );
+        let titles =
+            |i: usize| -> Vec<String> { cats[i].entries.iter().map(|e| e.title.clone()).collect() };
+        assert!(!titles(0).contains(&"DIRECT".to_string()));
+        assert_eq!(titles(1), ["全部被引用的代理", "全部被引用的代理集"]);
+        assert_eq!(titles(2), ["jp"]);
+        assert_eq!(cats[2].entries[0].subtitle, "vmess");
+        assert_eq!(titles(3), ["Auto"]);
+        assert_eq!(cats[4].entries[0].subtitle, "URL");
+        assert_eq!(titles(5), ["香港"]);
+        assert_eq!(titles(6), ["香港", "AB"]);
+        let found = search_categories(cats, "auto");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].label, "策略组");
+    }
+
+    #[test]
+    fn picks_join_the_form_after_what_it_had() {
+        use MemberKind::*;
+        let origin =
+            json!({"name": "G", "type": "select", "proxies": ["a"], "exclude-filter": "x"});
+        let next = with_picks(
+            &origin,
+            &[
+                m(Proxy, "b"),
+                m(AllProviders, EVERY),
+                m(ExcludeFilter, "y`x"),
+                m(Provider, "sub"),
+            ],
+        );
+        assert_eq!(names_of(&next, Proxy), ["a", "b"]);
+        assert_eq!(names_of(&next, Provider), ["sub"]);
+        assert_eq!(next["include-all-providers"], json!(true));
+        assert_eq!(next["exclude-filter"], json!("x`y"));
+        assert_eq!(with_picks(&origin, &[]), origin);
     }
 
     #[test]

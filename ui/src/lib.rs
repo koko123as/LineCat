@@ -17,6 +17,7 @@ pub mod drag;
 pub mod edges;
 pub mod fonts;
 pub mod http_capture;
+pub mod icon_picker;
 pub mod icon_sets;
 mod icon_sets_app;
 pub use icon_sets_app::sections as icon_sets_sections;
@@ -59,7 +60,10 @@ pub mod custom_profile;
 mod custom_profile_app;
 pub mod proxy_groups;
 mod proxy_groups_app;
-pub use proxy_groups_app::{form_sections as group_form_sections, group_rows, Draft as GroupDraft};
+pub use proxy_groups_app::{
+    form_sections as group_form_sections, group_rows, icon_view, member_items,
+    member_picker_sections, show_icon_view, Draft as GroupDraft,
+};
 pub mod custom_proxies;
 pub mod mitm;
 mod mitm_app;
@@ -2060,6 +2064,7 @@ impl App {
             ("cp-delete", true) => self.delete_custom_proxy(&arg),
             ("pg-delete", true) => self.delete_groups(&arg),
             ("pg-save", _) => self.pg_save_answer(yes),
+            ("icon-record-delete", true) => self.delete_icon_record(&arg),
             (a, _) if a.starts_with("mitm-") => self.mitm_confirmed(a, &arg, yes),
             ("ua-delete", true) => self.delete_user_agent(&arg),
             ("access-save", _) => self.access_save_answer(yes),

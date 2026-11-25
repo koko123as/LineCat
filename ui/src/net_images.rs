@@ -1,6 +1,6 @@
 //! Pictures behind an http url (`CommonTargetIcon`'s network image): downloaded once to a
 //! disk cache, decoded as PNG and shrunk to an icon's size, kept here by url, `None` once
-//! a url turned out to hold none.
+//! a url turned out to hold none. A base64 `data:` url is decoded in place.
 
 use crate::app_icons::{decode_png, Pixels};
 use slint::{Rgba8Pixel, SharedPixelBuffer};
@@ -22,6 +22,13 @@ pub struct Cache {
 
 impl Cache {
     pub fn lookup(&mut self, url: &str) -> Option<Pixels> {
+        if is_data_url(url) {
+            return self
+                .images
+                .entry(url.to_string())
+                .or_insert_with(|| decode_data_url(url))
+                .clone();
+        }
         if !crate::icon_sets::is_http_url(url) {
             return None;
         }
@@ -55,6 +62,47 @@ impl Cache {
 pub fn cache() -> &'static Mutex<Cache> {
     static CACHE: std::sync::OnceLock<Mutex<Cache>> = std::sync::OnceLock::new();
     CACHE.get_or_init(Default::default)
+}
+
+pub fn is_data_url(url: &str) -> bool {
+    url.starts_with("data:")
+}
+
+/// What `CommonTargetIcon` can draw: an http url or a data url.
+pub fn is_image_src(src: &str) -> bool {
+    is_data_url(src) || crate::icon_sets::is_http_url(src)
+}
+
+/// `getBase64`: the payload after `base64,`, read as PNG (the only format decoded here).
+pub fn decode_data_url(url: &str) -> Option<Pixels> {
+    let (_, payload) = url.split_once("base64,")?;
+    decode_png(&base64(payload)?).map(|p| shrink(&p, MAX_SIDE))
+}
+
+/// Standard or url-safe alphabet, padding and whitespace ignored.
+pub fn base64(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in text.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            b'=' => break,
+            b' ' | b'\n' | b'\r' | b'\t' => continue,
+            _ => return None,
+        } as u32;
+        acc = (acc << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 pub fn file_name(url: &str) -> String {
@@ -163,6 +211,42 @@ mod tests {
         assert!(c.lookup("https://h.example/a.png").is_none());
         assert_eq!(c.take_pending(9).len(), 1);
         assert!(!c.has_pending());
+    }
+
+    #[test]
+    fn data_urls_decode_without_waiting() {
+        assert_eq!(base64("aGk=").unwrap(), b"hi");
+        assert_eq!(base64("aGVs bG8").unwrap(), b"hello");
+        assert_eq!(base64("_-8").unwrap(), [0xff, 0xef]);
+        assert!(base64("a*b").is_none());
+        let mut png = Vec::new();
+        {
+            let mut e = ::png::Encoder::new(&mut png, 2, 1);
+            e.set_color(::png::ColorType::Rgba);
+            e.set_depth(::png::BitDepth::Eight);
+            let mut w = e.write_header().unwrap();
+            w.write_image_data(&[1, 2, 3, 255, 4, 5, 6, 255]).unwrap();
+        }
+        let url = format!("data:image/png;base64,{}", encode(&png));
+        let mut c = Cache::default();
+        let p = c.lookup(&url).unwrap();
+        assert_eq!((p.width(), p.height()), (2, 1));
+        assert!(!c.has_pending());
+        assert!(c.lookup("data:image/svg+xml;base64,PHN2Zz4=").is_none());
+        assert!(is_image_src(&url) && is_image_src("https://h.example/a.png"));
+        assert!(!is_image_src("a.png"));
+    }
+
+    fn encode(bytes: &[u8]) -> String {
+        const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::new();
+        for chunk in bytes.chunks(3) {
+            let n = chunk.iter().fold(0u32, |a, b| (a << 8) | *b as u32) << (8 * (3 - chunk.len()));
+            for i in 0..=chunk.len() {
+                out.push(A[(n >> (18 - 6 * i) & 63) as usize] as char);
+            }
+        }
+        out
     }
 
     #[test]
