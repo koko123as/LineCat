@@ -453,6 +453,37 @@ impl Conn {
         })
     }
 
+    /// `trackerSummaryText`: the title, the headline, then each non-empty field as
+    /// "label: value".
+    pub fn summary(&self, now: i64) -> String {
+        let mut chains = self.chains.clone();
+        chains.reverse();
+        let mut fields = vec![
+            (
+                "来源".to_string(),
+                endpoint(&self.source_ip, &self.source_port),
+            ),
+            (
+                "目标地址".to_string(),
+                endpoint(&self.dest_ip, &self.dest_port),
+            ),
+            ("进程路径".to_string(), self.process_path.clone()),
+            ("规则".to_string(), self.rule_text()),
+            ("链路".to_string(), chains.join(" → ")),
+        ];
+        if let Some((kind, message)) = &self.failure {
+            fields.push((failure_label(kind).to_string(), message.clone()));
+        }
+        let mut lines = vec![self.title(), self.headline(now)];
+        lines.extend(
+            fields
+                .into_iter()
+                .filter(|(_, v)| !v.is_empty())
+                .map(|(l, v)| format!("{l}: {v}")),
+        );
+        lines.join("\n")
+    }
+
     pub fn title(&self) -> String {
         if self.host.is_empty() {
             self.dest_ip.clone()
@@ -1221,5 +1252,15 @@ mod tests {
             2,
         );
         assert_eq!(s, vec![("b".to_string(), 2), ("ab".to_string(), 1)]);
+    }
+
+    #[test]
+    fn summary_lists_the_filled_fields() {
+        let c = Conn::parse(&conn(1, "a.com", "chrome")).unwrap();
+        let text = c.summary(5_000);
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines[0], c.title());
+        assert!(lines.iter().any(|l| l.starts_with("来源: 10.0.0.2")));
+        assert!(lines.iter().all(|l| !l.ends_with(": ")));
     }
 }

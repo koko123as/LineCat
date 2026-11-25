@@ -377,8 +377,29 @@ impl ReqState {
     }
 
     /// The text a copy action of a row puts on the clipboard (`trackerCopyText`).
+    /// `trackerDetailMenuItems`: copy the host, the destination and the summary.
+    pub fn detail_actions(&self, id: i64) -> Vec<(String, &'static str, &'static str)> {
+        let Some(c) = self.conns.conns.get(&id) else {
+            return Vec::new();
+        };
+        let mut items = Vec::new();
+        if !c.host.is_empty() {
+            items.push((format!("copy-host:{id}"), "copy", "复制主机"));
+        }
+        if !requests::endpoint(&c.dest_ip, &c.dest_port).is_empty() {
+            items.push((format!("copy-dest:{id}"), "copy", "复制目标地址"));
+        }
+        items.push((format!("copy-summary:{id}"), "copy", "复制摘要"));
+        items
+    }
+
     pub fn copy_text(&self, action: &str, id: i64) -> Option<String> {
         match action {
+            "copy-dest" => self
+                .conns
+                .conns
+                .get(&id)
+                .map(|c| requests::endpoint(&c.dest_ip, &c.dest_port)),
             "copy-host" => self.conns.conns.get(&id).map(|c| {
                 if c.host.is_empty() {
                     requests::endpoint(&c.dest_ip, &c.dest_port)

@@ -85,7 +85,7 @@ pub fn tools(settings: &Settings, mobile: bool, pages: &[&str]) -> Vec<SetSectio
             "语言",
             locale_label(settings.locale.as_deref()),
         ),
-        open("theme", "palette", "主题"),
+        open("theme", "paintbrush", "主题"),
     ];
     if has("access") {
         set.push(open("access", "apps", "访问控制"));

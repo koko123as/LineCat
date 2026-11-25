@@ -422,7 +422,16 @@ impl App {
                 }
             }),
             "close" => self.close_connections(Some(vec![num])),
-            "copy-host" | "copy-domain" | "copy-answers" => {
+            "copy-summary" => {
+                let text = {
+                    let req = self.req.lock().unwrap();
+                    req.conns.conns.get(&num).map(|c| c.summary(now_ms()))
+                };
+                if let Some(text) = text {
+                    self.copy(text);
+                }
+            }
+            "copy-host" | "copy-dest" | "copy-domain" | "copy-answers" => {
                 let text = self.req.lock().unwrap().copy_text(name, num);
                 if let Some(text) = text {
                     self.copy(text);
@@ -763,6 +772,17 @@ impl App {
                         enabled: true,
                         ..Default::default()
                     }],
+                    (CONNECTIONS, Some(id)) => req
+                        .detail_actions(id)
+                        .into_iter()
+                        .map(|(id, glyph, label)| ActionItem {
+                            id: id.into(),
+                            glyph: glyph.into(),
+                            label: label.into(),
+                            enabled: true,
+                            ..Default::default()
+                        })
+                        .collect(),
                     (_, Some(id)) => req
                         .row_actions(seg, id)
                         .into_iter()

@@ -1970,6 +1970,7 @@ impl App {
             ui.set_dash_groups(ModelRc::new(VecModel::from(dash)));
             ui.set_proxies_hint(hint.into());
             ui.set_proxy_groups(ModelRc::new(VecModel::from(list)));
+            ui.set_groups_loaded(true);
             ui.set_proxy_style(ProxyStyle {
                 kind: style.kind,
                 sort: style.sort,

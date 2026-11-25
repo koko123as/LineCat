@@ -773,6 +773,10 @@ fn main() {
         ("resources-tablet", 3, "", "resources", 1, ""),
         ("tools-wide", 3, "", "", 1, ""),
         ("dashboard", 0, "", "", 1, ""),
+        ("nav-noproxies", 0, "", "", 1, "noproxies"),
+        ("nav-noproxies-small", 0, "", "", 1, "noproxies"),
+        ("nav-noproxies-wide", 0, "", "", 1, "noproxies"),
+        ("nav-noproxies-tablet", 0, "", "", 1, "noproxies"),
         ("dash-memsheet", 0, "", "", 1, "memsheet"),
         ("dash-memsheet-small", 0, "", "", 1, "memsheet"),
         ("dash-memsheet-wide", 0, "", "", 1, "memsheet"),
@@ -985,6 +989,7 @@ fn main() {
     ui.show().unwrap();
     let mut saved_logs: Option<ModelRc<LogItem>> = None;
     let base_traffic = ui.get_dash_traffic();
+    let base_groups = ui.get_proxy_groups();
     for (name, tab, group, page, mode, overlay) in shots {
         if !only.is_empty() && !only.split(',').any(|p| name.contains(p)) {
             continue;
@@ -1011,6 +1016,13 @@ fn main() {
         ui.set_dash_editing(*overlay == "edit");
         ui.set_ip_sheet_open(*overlay == "ipsheet");
         ui.set_mem_sheet_open(*overlay == "memsheet");
+        // "noproxies": the Core answered with no groups, so 代理 leaves the bar.
+        ui.set_groups_loaded(*overlay == "noproxies");
+        if *overlay == "noproxies" {
+            ui.set_proxy_groups(ModelRc::new(VecModel::<ProxyGroup>::default()));
+        } else {
+            ui.set_proxy_groups(base_groups.clone());
+        }
         ui.set_profile_sheet_open(*overlay == "profsheet");
         ui.set_picker_open(*overlay == "picker");
         ui.set_dash_fault_count(if *overlay == "faults" { 2 } else { 0 });

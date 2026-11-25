@@ -579,7 +579,7 @@ impl App {
                 self.open_page(id)
             }
             (page, id) if overrides::spec(page).is_some() => self.override_clicked(page, id),
-            ("developer", "message-test") => self.toast("info: 这是一条消息。"),
+            ("developer", "message-test") => self.message_test(),
             ("developer", "logs-test") => self.logs_test(),
             ("developer", "clear-data") => self.confirm(
                 "提示",
@@ -942,6 +942,17 @@ impl App {
         self.spawn(move |app| {
             if let Ok(b) = app.bridge() {
                 let _ = b.shell("app.hidden", json!({"value": hidden}), CALL);
+            }
+        });
+    }
+
+    /// `messageTest`: one banner for each level, in turn.
+    fn message_test(self: &Arc<Self>) {
+        let app = self.clone();
+        std::thread::spawn(move || {
+            for level in ["info", "success", "warning", "error"] {
+                app.toast(format!("{level}: 这是一条消息。"));
+                std::thread::sleep(std::time::Duration::from_millis(1500));
             }
         });
     }
