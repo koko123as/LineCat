@@ -286,6 +286,56 @@ pub fn columns(width: f32, layout: i32) -> i32 {
     }
 }
 
+const PAD: f32 = 8.0;
+const GAP: f32 = 8.0;
+const HEADER: f32 = 64.0;
+const GROUP_GAP: f32 = 10.0;
+
+pub struct Placed {
+    pub name: String,
+    pub count: usize,
+    pub expanded: bool,
+    pub selected: usize,
+}
+
+/// `scrollToGroupSelected`: list groups go to `group_columns` columns in turn, so only
+/// the groups above in the same column count.
+pub fn locate(
+    groups: &[Placed],
+    group: &str,
+    tab: bool,
+    columns: usize,
+    group_columns: usize,
+    card_height: f32,
+) -> f32 {
+    let columns = columns.max(1);
+    let group_columns = group_columns.max(1);
+    let card = card_height + GAP;
+    let row = |g: &Placed| (g.selected / columns) as f32 * card;
+    if tab {
+        return groups
+            .iter()
+            .find(|g| g.name == group)
+            .map(|g| PAD + row(g))
+            .unwrap_or(0.0);
+    }
+    let Some(at) = groups.iter().position(|g| g.name == group) else {
+        return 0.0;
+    };
+    let mut y = PAD;
+    for g in groups[..at]
+        .iter()
+        .skip(at % group_columns)
+        .step_by(group_columns)
+    {
+        y += HEADER + GROUP_GAP;
+        if g.expanded {
+            y += g.count.div_ceil(columns) as f32 * card;
+        }
+    }
+    y + HEADER + GAP + row(&groups[at])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,5 +446,28 @@ mod tests {
         assert_eq!(columns(380.0, 0), 3);
         assert_eq!(columns(380.0, 2), 1);
         assert_eq!(columns(900.0, 1), 4);
+    }
+
+    #[test]
+    fn locate_counts_only_the_groups_above_in_the_same_column() {
+        let g = |name: &str, count, expanded, selected| Placed {
+            name: name.into(),
+            count,
+            expanded,
+            selected,
+        };
+        let groups = [
+            g("a", 5, true, 0),
+            g("b", 3, false, 0),
+            g("c", 4, true, 3),
+            g("d", 1, true, 0),
+        ];
+        let one = locate(&groups, "c", false, 2, 1, 76.0);
+        assert_eq!(one, 8.0 + (74.0 + 3.0 * 84.0) + 74.0 + 64.0 + 8.0 + 84.0);
+        let two = locate(&groups, "c", false, 2, 2, 76.0);
+        assert_eq!(two, 8.0 + (74.0 + 3.0 * 84.0) + 64.0 + 8.0 + 84.0);
+        assert_eq!(locate(&groups, "d", false, 2, 2, 76.0), 8.0 + 74.0 + 72.0);
+        assert_eq!(locate(&groups, "c", true, 2, 2, 76.0), 8.0 + 84.0);
+        assert_eq!(locate(&groups, "zz", false, 2, 2, 76.0), 0.0);
     }
 }

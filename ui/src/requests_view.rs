@@ -7,8 +7,8 @@ use crate::http_capture::{self, Summary};
 use crate::proxies::Groups;
 use crate::requests::{self, Condition, Conn, Filters};
 use crate::{
-    ActionItem, ConditionItem, ConditionLine, DetailRow, DetailSection, RecordRow, ReqDetail,
-    Suggestion,
+    ActionItem, ConditionItem, ConditionLine, ConditionRow, DetailRow, DetailSection, RecordRow,
+    ReqDetail, Suggestion,
 };
 use serde_json::Value;
 use slint::{ModelRc, SharedString, VecModel};
@@ -48,6 +48,8 @@ pub struct ReqState {
     pub conn_http: Option<(i64, Vec<Summary>)>,
     pub draft: Option<Draft>,
     pub limit_open: bool,
+    /// The width a condition line's chips wrap to.
+    pub cond_width: f32,
 }
 
 /// What a page build reads besides the state.
@@ -150,17 +152,26 @@ impl ReqState {
     pub fn condition_lines(&self) -> Vec<ConditionLine> {
         requests::condition_lines(self.filters(), fields(self.segment))
             .into_iter()
-            .map(|(label, items)| ConditionLine {
-                label: s(label),
-                items: model(
-                    items
-                        .into_iter()
-                        .map(|(index, text)| ConditionItem {
-                            index: index as i32,
-                            text: s(text),
-                        })
-                        .collect(),
-                ),
+            .map(|(label, items)| {
+                let texts: Vec<String> = items.iter().map(|(_, t)| t.clone()).collect();
+                let rows = requests::wrap_chips(&texts, self.cond_width)
+                    .into_iter()
+                    .map(|row| ConditionRow {
+                        items: model(
+                            row.into_iter()
+                                .map(|i| ConditionItem {
+                                    index: items[i].0 as i32,
+                                    text: s(&items[i].1),
+                                    or: i > 0,
+                                })
+                                .collect(),
+                        ),
+                    })
+                    .collect();
+                ConditionLine {
+                    label: s(label),
+                    rows: model(rows),
+                }
             })
             .collect()
     }
@@ -349,6 +360,9 @@ impl ReqState {
                         "隐藏此主机",
                         c.process.is_empty(),
                     ));
+                }
+                if c.mitm {
+                    items.push(item(format!("view-http:{id}"), "eye", "查看 HTTP", true));
                 }
             }
             DNS => {

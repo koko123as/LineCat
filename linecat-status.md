@@ -12,6 +12,7 @@ landed and what is left.
 | B2 dashboard | "dashboard faults badge, memory and profile sheets" | ServiceFaultsButton (engine.state faults, badge in the bar, alert listing service and reason), memory detail sheet with release memory (`core.releaseMemory`, banner with what was freed), profile detail sheet (counts from `profile.inspect` and `provider.list`, subscription, last update, providers), 切换配置 swap button and picker sheet. |
 | C1 batch C part 1 | "connection detail menu, navigation rules and small fixes" | Connection detail ⋯ per `trackerDetailMenuItems` (复制主机 / 复制目标地址 / 复制摘要 with `trackerSummaryText`), developer 消息测试 sends one banner per level, 主题 row uses a paintbrush icon, 代理 leaves the bar and rail when the Core has no groups (before the first load: when there are no profiles), a window narrowed on 请求 shows 仪表盘 and widening returns to 请求 (`shownPageLabelOf`). |
 | Fix device taps | "dashboard taps, cat colour, floating dock and proxies menu" | Status card taps restored: b0c3b35 left the editor's drag TouchArea above every card and enabled outside edit mode, swallowing all taps (cat, country icon, IP). It is now enabled only while editing and a 400ms long press lifts the card (follows the finger, swaps past 60% of a neighbour, saves on swap). Cat strokes use the theme primary while running. Floating dock (approved departure): radius 32, 12px from the sides and bottom, pages pad by `Dock.pad`. Proxies ⋯ is FlClash's popup menu (风格 / 排序 / 布局 / 尺寸 / 图标样式 / 隐藏超时代理), layout and size shown 宽松/标准/紧凑 with stored values unchanged. |
+| C2 batch C part 2 | "proxies and profiles menus, profiles grid, wrapped conditions" | Proxies: node long press opens the anchored menu (选中 for a selector, 首选 for URLTest/Fallback/Smart, both checked as FlClash), the tab bar's ▾ group menu once the tabs overflow (7 rows, current checked), the delay test as the bar's primary action with a spinner while testing (no FAB), the list style in 1–3 group columns off mobile (groups taken in turn, nodes per column width, locate counts only its column). Profiles: long press opens the anchored `_menuItems` (更多 unfolds in place), add in the bar when not empty (menu anchored at the button, also from the empty state), grid of `getProfilesColumns` (≥300 wide, ≤3) with view-mode spacing, the sort sheet drags rows after a 400ms hold and saves with ✓ (no touch area on the page outside the sheet). Requests: 查看 HTTP on MITM rows opens the detail on its HTTP tab, condition chips wrap into rows Rust breaks by the block's width (no horizontal scroll). |
 
 ## Remaining
 
@@ -20,12 +21,10 @@ landed and what is left.
   its Wi-Fi SSID bridge method), the service status sheet (order/enable services), the connections table on tall
   desktop windows, the 运行时配置 preview button in the profile sheet (with profile preview), the 扩展脚本 value
   (with profile extensions).
-- Phase 1 batch C, still open: proxies (node long-press menu, ▾ group picker in tab style, delay test as the bar's
-  main action with loading, layout and card size options ordered 宽松/标准/紧凑, wide list columns), profiles
-  (long-press menu instead of ⋯, add in the bar when not empty, wide grid, drag-sort sheet), requests (查看 HTTP on
-  MITM-captured rows, auto-open the detail when switching to split view, condition blocks wrap), developer (live
-  status card test, update download test), UA (long-press delete with confirm, drag sort), real app icons through
-  UiBridge; the 「语言」 row waits on the owner.
+- Phase 1 batch C, still open: developer (live status card test, update download test), UA (long-press delete with
+  confirm, drag sort), real app icons through UiBridge; the 「语言」 row waits on the owner. Switching to the split
+  requests view already keeps the selection in the pane (`_settleDetail`, kept from C1). 添加到本地代理 in the node
+  menu follows the custom proxies page.
 - Phase 2: tools settings (theme extras, on-demand), advanced config (rule providers, icon sets, custom proxies, MITM),
   TUN / sniffer / NTP override pages, profile editor and extensions, QR import / TV send / preview, resources leftovers.
 - Final page-by-page comparison with FlClash `lib/`.

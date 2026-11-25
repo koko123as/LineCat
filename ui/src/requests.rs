@@ -227,6 +227,43 @@ pub fn condition_lines(
     lines
 }
 
+/// Rough width: a full-width character an em, any other 0.6 em.
+pub fn text_width(text: &str, size: f32) -> f32 {
+    text.chars()
+        .map(|c| {
+            if (c as u32) >= 0x1100 {
+                size
+            } else {
+                size * 0.6
+            }
+        })
+        .sum()
+}
+
+/// `Wrap` for a condition line's chips, 或 before all but the first.
+pub fn wrap_chips(texts: &[String], width: f32) -> Vec<Vec<usize>> {
+    const GAP: f32 = 6.0;
+    let mut rows: Vec<Vec<usize>> = Vec::new();
+    let mut used = 0.0;
+    for (i, t) in texts.iter().enumerate() {
+        let mut w = text_width(t, 13.0) + 42.0;
+        if i > 0 {
+            w += text_width("或", 12.0) + GAP;
+        }
+        match rows.last_mut() {
+            Some(row) if used + GAP + w <= width => {
+                row.push(i);
+                used += GAP + w;
+            }
+            _ => {
+                rows.push(vec![i]);
+                used = w;
+            }
+        }
+    }
+    rows
+}
+
 /// `FieldDraft.suggestionsOf`: the values a field holds most, those holding [text].
 pub fn suggestions(
     values: impl Iterator<Item = String>,
@@ -1262,5 +1299,16 @@ mod tests {
         assert_eq!(lines[0], c.title());
         assert!(lines.iter().any(|l| l.starts_with("来源: 10.0.0.2")));
         assert!(lines.iter().all(|l| !l.ends_with(": ")));
+    }
+
+    #[test]
+    fn chips_wrap_by_width() {
+        let t = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let chips = t(&["包含 a", "包含 b", "包含 c"]);
+        assert_eq!(wrap_chips(&chips, 400.0), vec![vec![0, 1, 2]]);
+        assert_eq!(wrap_chips(&chips, 200.0), vec![vec![0, 1], vec![2]]);
+        assert_eq!(wrap_chips(&chips, 90.0), vec![vec![0], vec![1], vec![2]]);
+        assert!(wrap_chips(&[], 100.0).is_empty());
+        assert_eq!(text_width("ab主机", 10.0), 32.0);
     }
 }

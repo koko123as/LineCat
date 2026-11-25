@@ -422,6 +422,22 @@ impl App {
                 }
             }),
             "close" => self.close_connections(Some(vec![num])),
+            // `showTrackerInfoDetail(opensRequests: true)`.
+            "view-http" => {
+                let capturing = http_capture::capturing(&self.mitm());
+                {
+                    let mut req = self.req.lock().unwrap();
+                    req.selected[CONNECTIONS as usize] = Some(num);
+                    req.tab[CONNECTIONS as usize] = if capturing { 1 } else { 0 };
+                }
+                self.load_selection();
+                self.republish();
+                self.ui(|ui| {
+                    if !ui.get_req_split() {
+                        ui.set_req_sheet_open(true);
+                    }
+                });
+            }
             "copy-summary" => {
                 let text = {
                     let req = self.req.lock().unwrap();
@@ -736,6 +752,16 @@ impl App {
         });
         let a = self.clone();
         ui.on_req_select(move |id, split| a.select(id as i64, split));
+        let a = self.clone();
+        ui.on_req_cond_width(move |w| {
+            let mut req = a.req.lock().unwrap();
+            if (req.cond_width - w).abs() < 1.0 {
+                return;
+            }
+            req.cond_width = w;
+            drop(req);
+            a.republish();
+        });
         let a = self.clone();
         ui.on_req_row_menu(move |id| {
             let items = {

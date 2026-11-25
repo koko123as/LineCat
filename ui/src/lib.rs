@@ -22,6 +22,7 @@ pub use logs_app::log_item;
 pub mod overrides;
 pub mod profile;
 pub mod proxies;
+pub mod reorder;
 pub mod requests;
 pub mod rules;
 mod rules_app;
@@ -55,10 +56,6 @@ const CALL: Duration = Duration::from_secs(30);
 const APPLY: Duration = Duration::from_secs(120);
 const DELAY_WORKERS: usize = 8;
 // The proxies list's measures, as app.slint lays it out.
-const PROXY_PAD: f32 = 8.0;
-const PROXY_GAP: f32 = 8.0;
-const PROXY_HEADER: f32 = 64.0;
-const PROXY_GROUP_GAP: f32 = 10.0;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(target_os = "android")]
@@ -1834,29 +1831,28 @@ impl App {
     }
 
     fn publish_sort(self: &Arc<Self>) {
-        let items: Vec<ProfileItem> = {
+        let titles: Vec<slint::SharedString> = {
             let store = self.store.lock().unwrap();
-            let busy = self.busy.lock().unwrap();
             self.sort_order
                 .lock()
                 .unwrap()
                 .iter()
                 .filter_map(|id| store.state.profiles.iter().find(|p| &p.id == id))
-                .map(|p| self.profile_item(&store, p, &busy))
+                .map(|p| p.label().into())
                 .collect()
         };
-        self.ui(move |ui| ui.set_sort_items(ModelRc::new(VecModel::from(items))));
+        self.ui(move |ui| ui.set_sort_titles(ModelRc::new(VecModel::from(titles))));
     }
 
-    fn sort_move(self: &Arc<Self>, index: i32, delta: i32) {
-        {
-            let mut order = self.sort_order.lock().unwrap();
-            let (i, j) = (index, index + delta);
-            if i < 0 || j < 0 || i as usize >= order.len() || j as usize >= order.len() {
-                return;
-            }
-            order.swap(i as usize, j as usize);
+    fn sort_move(self: &Arc<Self>, from: i32, to: i32) {
+        if from < 0 || to < 0 {
+            return;
         }
+        reorder::move_item(
+            &mut self.sort_order.lock().unwrap(),
+            from as usize,
+            to as usize,
+        );
         self.publish_sort();
     }
 
@@ -1969,6 +1965,11 @@ impl App {
                 .collect();
             ui.set_dash_groups(ModelRc::new(VecModel::from(dash)));
             ui.set_proxies_hint(hint.into());
+            ui.set_proxy_group_names(ModelRc::new(VecModel::from(
+                list.iter()
+                    .map(|g| g.name.clone())
+                    .collect::<Vec<slint::SharedString>>(),
+            )));
             ui.set_proxy_groups(ModelRc::new(VecModel::from(list)));
             ui.set_groups_loaded(true);
             ui.set_proxy_style(ProxyStyle {
@@ -2175,29 +2176,24 @@ impl App {
 /// Where the selected card of a group sits in the proxies list, from the top of its
 /// content, by the same measures the page lays the list out with.
 fn locate_offset(ui: &AppWindow, group: &str) -> f32 {
-    let cols = ui.get_proxy_columns().max(1) as usize;
-    let card = ui.get_proxy_card_height() + PROXY_GAP;
-    let groups = ui.get_proxy_groups();
-    let selected = |g: &ProxyGroup| g.nodes.iter().position(|n| n.selected).unwrap_or(0);
-    if ui.get_proxy_style().kind == 0 {
-        return groups
-            .iter()
-            .find(|g| g.name == group)
-            .map(|g| PROXY_PAD + (selected(&g) / cols) as f32 * card)
-            .unwrap_or(0.0);
-    }
-    let mut y = PROXY_PAD;
-    for g in groups.iter() {
-        if g.name == group {
-            return y + PROXY_HEADER + PROXY_GAP + (selected(&g) / cols) as f32 * card;
-        }
-        y += PROXY_HEADER + PROXY_GROUP_GAP;
-        if g.expanded {
-            let rows = g.nodes.row_count().div_ceil(cols);
-            y += PROXY_GAP + rows as f32 * card - PROXY_GAP;
-        }
-    }
-    0.0
+    let groups: Vec<proxies::Placed> = ui
+        .get_proxy_groups()
+        .iter()
+        .map(|g| proxies::Placed {
+            selected: g.nodes.iter().position(|n| n.selected).unwrap_or(0),
+            count: g.nodes.row_count(),
+            expanded: g.expanded,
+            name: g.name.to_string(),
+        })
+        .collect();
+    proxies::locate(
+        &groups,
+        group,
+        ui.get_proxy_style().kind == 0,
+        ui.get_proxy_columns().max(1) as usize,
+        ui.get_proxy_group_columns().max(1) as usize,
+        ui.get_proxy_card_height(),
+    )
 }
 
 /// Builds the window, starts the shell connection and runs the event loop until the

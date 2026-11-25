@@ -118,7 +118,18 @@ fn sample_requests(now: i64) -> requests_view::ReqState {
 }
 
 /// The requests page's properties for a shot: `req:<segment>:<selected>:<tab>:<extra>`.
-fn requests_shot(ui: &AppWindow, st: &mut requests_view::ReqState, now: i64, overlay: &str) {
+fn requests_shot(
+    ui: &AppWindow,
+    st: &mut requests_view::ReqState,
+    now: i64,
+    overlay: &str,
+    width: u32,
+) {
+    st.cond_width = if width > 1000 {
+        264.0
+    } else {
+        width as f32 - 128.0
+    };
     let parts: Vec<&str> = overlay.split(':').collect();
     let num = |i: usize| parts.get(i).and_then(|p| p.parse::<i64>().ok());
     st.segment = num(1).unwrap_or(0) as i32;
@@ -142,6 +153,14 @@ fn requests_shot(ui: &AppWindow, st: &mut requests_view::ReqState, now: i64, ove
             excludes: false,
             equals: false,
         });
+        for v in ["facebook.com", "twitter", "instagram.com"] {
+            st.filters[0].add(requests::Condition {
+                field: "host".into(),
+                value: v.into(),
+                excludes: false,
+                equals: false,
+            });
+        }
         st.filters[0].add(requests::Condition {
             field: "app".into(),
             value: "com.tencent.mm".into(),
@@ -589,7 +608,9 @@ fn main() {
             is_url: false,
         },
     ])));
-    ui.set_sort_items(ui.get_profiles());
+    ui.set_sort_titles(ModelRc::new(VecModel::from(
+        ui.get_profiles().iter().map(|p| p.name).collect::<Vec<_>>(),
+    )));
     ui.set_edit_is_url(true);
     ui.set_edit_name("我的机场".into());
     ui.set_edit_url("https://sub.example.com/api/v1/client/subscribe?token=abc".into());
@@ -712,6 +733,16 @@ fn main() {
     let shots: &[(&str, i32, &str, &str, i32, &str)] = &[
         ("requests", 3, "", "requests", 1, "req:0:0:0"),
         ("requests-filter", 3, "", "requests", 1, "req:0:0:0:filter"),
+        (
+            "requests-filter-small",
+            3,
+            "",
+            "requests",
+            1,
+            "req:0:0:0:filter",
+        ),
+        ("requests-filter-wide", 4, "", "", 1, "req:0:0:0:filter"),
+        ("requests-filter-tablet", 4, "", "", 1, "req:0:0:0:filter"),
         ("requests-dns", 3, "", "requests", 1, "req:2:0:0"),
         ("requests-http", 3, "", "requests", 1, "req:1:0:0"),
         ("requests-sheet", 3, "", "requests", 1, "req:0:6:0:sheet"),
@@ -831,6 +862,20 @@ fn main() {
         ("dashboard-edit", 0, "", "", 1, "edit"),
         ("dashboard-edit-small", 0, "", "", 1, "edit"),
         ("proxies-wide", 1, "节点选择", "", 1, ""),
+        ("pmenu-node", 1, "节点选择", "", 1, "nodemenu"),
+        ("pmenu-node-small", 1, "节点选择", "", 1, "nodemenu"),
+        ("pmenu-node-wide", 1, "节点选择", "", 1, "nodemenu"),
+        ("pmenu-node-tablet", 1, "节点选择", "", 1, "nodemenu"),
+        ("pmenu-group", 1, "节点选择", "", 1, "groupmenu"),
+        ("pmenu-group-small", 1, "节点选择", "", 1, "groupmenu"),
+        ("pmenu-group-wide", 1, "节点选择", "", 1, "groupmenu"),
+        ("pmenu-group-tablet", 1, "节点选择", "", 1, "groupmenu"),
+        ("plist-wide", 1, "节点选择", "", 1, "tabs-list"),
+        ("plist-tablet", 1, "节点选择", "", 1, "tabs-list"),
+        ("ptab", 1, "节点选择", "", 1, "tabs"),
+        ("ptab-small", 1, "节点选择", "", 1, "tabs"),
+        ("ptab-wide", 1, "节点选择", "", 1, "tabs"),
+        ("ptab-tablet", 1, "节点选择", "", 1, "tabs"),
         ("profiles-tablet", 2, "", "", 1, ""),
         ("proxies", 1, "节点选择", "", 1, ""),
         ("proxies-tab", 1, "节点选择", "", 1, "tab"),
@@ -845,6 +890,13 @@ fn main() {
         ("profiles-edit", 2, "", "edit", 1, ""),
         ("profiles-preview", 2, "", "preview", 1, ""),
         ("profiles-sort", 2, "", "sort", 1, ""),
+        ("profiles-sort-small", 2, "", "sort", 1, ""),
+        ("profiles-sort-wide", 2, "", "sort", 1, ""),
+        ("profiles-sort-tablet", 2, "", "sort", 1, ""),
+        ("profiles-wide", 2, "", "", 1, ""),
+        ("profiles-menu-small", 2, "", "", 1, "menu"),
+        ("profiles-menu-wide", 2, "", "", 1, "menu"),
+        ("profiles-add-menu-wide", 2, "", "", 1, "add-menu"),
         ("tools", 3, "", "", 1, ""),
         ("logs", 3, "", "logs", 1, ""),
         ("logs-small", 3, "", "logs", 1, ""),
@@ -1082,7 +1134,7 @@ fn main() {
         ui.set_req_actions_open(false);
         ui.set_cond_open(false);
         if overlay.starts_with("req") {
-            requests_shot(&ui, &mut req, now, overlay);
+            requests_shot(&ui, &mut req, now, overlay, w);
         }
         ui.set_res_dialog(overlay.strip_prefix("res:").unwrap_or("").into());
         if *overlay == "res:interval" {
@@ -1103,7 +1155,7 @@ fn main() {
             ui.set_profiles_page("".into());
         }
         ui.set_proxy_style(ProxyStyle {
-            kind: if matches!(*overlay, "tab" | "loose") {
+            kind: if matches!(*overlay, "tab" | "loose" | "tabs" | "groupmenu") {
                 0
             } else {
                 1
@@ -1131,6 +1183,14 @@ fn main() {
         ui.set_proxy_sub(overlay.strip_prefix("options-").unwrap_or("").into());
         ui.set_proxy_searching(*overlay == "search");
         ui.set_add_menu_open(*overlay == "add-menu");
+        if matches!(*overlay, "add-menu" | "menu") {
+            // The add button in the bar, or the first card.
+            let menu = *overlay == "menu";
+            ui.set_ctx_x(if menu { 16.0 } else { w as f32 - 48.0 });
+            ui.set_ctx_y(if menu { 60.0 } else { 8.0 });
+            ui.set_ctx_w(if menu { w as f32 - 32.0 } else { 40.0 });
+            ui.set_ctx_h(if menu { 72.0 } else { 40.0 });
+        }
         ui.set_link_open(*overlay == "link");
         ui.set_menu_open(*overlay == "menu");
         ui.set_menu_more(true);
@@ -1150,6 +1210,62 @@ fn main() {
             traffic.down_unit = "B/s".into();
         }
         ui.set_dash_traffic(traffic);
+        // "nodemenu" / "groupmenu": the anchored menus of a node's long press and the tab
+        // bar's ▾, over many groups so the tabs overflow.
+        ui.set_ctx_kind("".into());
+        if matches!(*overlay, "groupmenu" | "tabs" | "tabs-list") {
+            let mut many: Vec<ProxyGroup> = base_groups.iter().collect();
+            for (i, name) in [
+                "Telegram",
+                "YouTube",
+                "Netflix",
+                "苹果服务",
+                "微软服务",
+                "谷歌",
+            ]
+            .iter()
+            .enumerate()
+            {
+                let from = if *overlay == "tabs-list" && i % 3 == 0 {
+                    0
+                } else {
+                    2
+                };
+                let mut g = many[from].clone();
+                g.name = (*name).into();
+                many.push(g);
+            }
+            ui.set_proxy_group_names(ModelRc::new(VecModel::from(
+                many.iter().map(|g| g.name.clone()).collect::<Vec<_>>(),
+            )));
+            ui.set_proxy_groups(ModelRc::new(VecModel::from(many)));
+        }
+        if *overlay == "groupmenu" {
+            ui.set_ctx_kind("group".into());
+            ui.set_ctx_items(ModelRc::default());
+            ui.set_ctx_names(ui.get_proxy_group_names());
+            ui.set_ctx_x(w as f32 - 44.0);
+            ui.set_ctx_y(56.0);
+            ui.set_ctx_w(40.0);
+            ui.set_ctx_h(40.0);
+        }
+        if *overlay == "nodemenu" {
+            ui.set_ctx_kind("node".into());
+            ui.set_ctx_names(ModelRc::default());
+            ui.set_ctx_items(ModelRc::new(VecModel::from(vec![ActionItem {
+                id: "select".into(),
+                glyph: "check-circle".into(),
+                label: "选中".into(),
+                check: true,
+                checked: true,
+                enabled: true,
+                ..Default::default()
+            }])));
+            ui.set_ctx_x(16.0);
+            ui.set_ctx_y(130.0);
+            ui.set_ctx_w(w as f32 / 2.0 - 20.0);
+            ui.set_ctx_h(76.0);
+        }
         ui.global::<Theme>().set_mode(*mode);
         ui.set_theme_mode(*mode);
         slint::platform::update_timers_and_animations();
