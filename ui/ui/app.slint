@@ -7453,6 +7453,9 @@ export component AppWindow inherits Window {
     property <float> tab-t: root.tab-prev >= 0 ? clamp((animation-tick() - root.tab-started) / root.tab-span, 0, 1) : 1;
     property <float> tab-eased: root.tab-fade ? root.tab-t * root.tab-t * (3 - 2 * root.tab-t) : 1 - (1 - root.tab-t) * (1 - root.tab-t);
     property <float> tab-dir: root.tab-prev > root.tab ? -1 : 1;
+    // The page left stays drawn only until the switch ends: faded out it would still sit
+    // over the new page and take its touches.
+    property <int> tab-leaving: root.tab-t < 1 ? root.tab-prev : -1;
     pure function tab-x(t: int) -> length {
         if (root.tab-prev < 0 || root.tab-fade) { return 0px; }
         if (t == root.tab) { return root.tab-dir * root.width * (1 - root.tab-eased); }
@@ -7467,11 +7470,8 @@ export component AppWindow inherits Window {
     }
     tab-done := Timer {
         interval: root.tab-span;
-        running: false;
-        triggered => {
-            root.tab-prev = -1;
-            self.stop();
-        }
+        running: root.tab-prev >= 0;
+        triggered => { root.tab-prev = -1; }
     }
     function nav(t: int) {
         if (!root.wide && t != root.tab && root.tab <= 3) {
@@ -7618,7 +7618,7 @@ export component AppWindow inherits Window {
             Rectangle {
                 vertical-stretch: 1;
                 clip: root.tab-prev >= 0;
-                if root.tab == 0 || root.tab-prev == 0: Dashboard {
+                if root.tab == 0 || root.tab-leaving == 0: Dashboard {
                     x: root.tab-x(0);
                     opacity: root.tab-opacity(0);
                     width: parent.width;
@@ -7698,7 +7698,7 @@ export component AppWindow inherits Window {
                 }
                 // Kept in the tree so its measures stay readable and its scroll stays put.
                 proxies-page := Proxies {
-                    visible: root.tab == 1 || root.tab-prev == 1;
+                    visible: root.tab == 1 || root.tab-leaving == 1;
                     x: root.tab-x(1);
                     opacity: root.tab-opacity(1);
                     width: parent.width;
@@ -7742,7 +7742,7 @@ export component AppWindow inherits Window {
                         root.ctx-h = h;
                     }
                 }
-                if (root.tab == 2 && (root.profiles-page == "" || root.profiles-page == "sort")) || root.tab-prev == 2: Profiles {
+                if (root.tab == 2 && (root.profiles-page == "" || root.profiles-page == "sort")) || root.tab-leaving == 2: Profiles {
                     x: root.tab-x(2);
                     opacity: root.tab-opacity(2);
                     width: parent.width;
@@ -7798,7 +7798,7 @@ export component AppWindow inherits Window {
                         root.profiles-page = root.profiles-page == "editor" ? "edit" : "";
                     }
                 }
-                if (root.tab == 3 && root.tools-page == "") || root.tab-prev == 3: Tools {
+                if (root.tab == 3 && root.tools-page == "") || root.tab-leaving == 3: Tools {
                     x: root.tab-x(3);
                     opacity: root.tab-opacity(3);
                     width: parent.width;
