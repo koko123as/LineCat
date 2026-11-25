@@ -343,7 +343,16 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    excluded.extend(PRIVATE_ROUTES.iter().map(|r| Value::from(*r)));
+    let network = &settings.network;
+    excluded.extend(
+        network
+            .route_exclude_address
+            .iter()
+            .map(|r| Value::from(r.as_str())),
+    );
+    if network.bypass_private_route {
+        excluded.extend(PRIVATE_ROUTES.iter().map(|r| Value::from(*r)));
+    }
     tun.insert("route-exclude-address".into(), Value::Array(excluded));
     set(&mut c, "tun", Value::Object(tun));
     set(&mut c, "geo-auto-update", settings.geo_auto_update.into());
@@ -512,23 +521,26 @@ pub fn host_settings(general: &crate::store::General) -> Option<Value> {
 /// route list routes everything; the private ranges stay out through the overlay's
 /// `route-exclude-address`, which the Core applies to the TUN.
 pub fn vpn_options(settings: &crate::store::Settings) -> Value {
+    let n = &settings.network;
+    let authenticated = !authentication(&settings.general).is_empty();
     json!({
-        "enable": true,
+        "enable": n.vpn,
         "port": settings.general.mixed_port,
-        "ipv6": false,
-        "dnsHijacking": false,
+        "ipv6": n.ipv6,
+        "dnsHijacking": n.dns_hijacking,
         "accessControlProps": settings.access_control.sorted(),
-        "allowBypass": true,
-        "systemProxy": true,
-        "bypassDomain": BYPASS_DOMAIN,
-        "routeAddress": [],
-        "mtu": 9000,
-        "congestionController": "cubic",
+        "allowBypass": n.allow_bypass,
+        // VpnService.setHttpProxy cannot carry credentials.
+        "systemProxy": n.system_proxy && !authenticated,
+        "bypassDomain": n.bypass_domain,
+        "routeAddress": n.route_address,
+        "mtu": n.mtu,
+        "congestionController": n.congestion_controller,
     })
 }
 
 /// `defaultBypassDomain` in lib/models/config.dart.
-const BYPASS_DOMAIN: [&str; 26] = [
+pub const BYPASS_DOMAIN: [&str; 26] = [
     "*zhihu.com",
     "*zhimg.com",
     "*jd.com",

@@ -10,7 +10,27 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// The settings pages built so far; the tools list leaves the others out.
-pub const PAGES: &[&str] = &["access", "backup"];
+pub const PAGES: &[&str] = &["access", "backup", "advanced"];
+
+/// The list the list page edits, and the page it was opened from.
+fn list_target() -> &'static std::sync::Mutex<(String, String)> {
+    static T: std::sync::OnceLock<std::sync::Mutex<(String, String)>> = std::sync::OnceLock::new();
+    T.get_or_init(Default::default)
+}
+
+/// The network list a key names, with its title.
+fn list_of<'a>(
+    s: &'a mut store::Settings,
+    key: &str,
+) -> Option<(&'a mut Vec<String>, &'static str)> {
+    let n = &mut s.network;
+    match key {
+        "bypass-domain" => Some((&mut n.bypass_domain, "排除域名")),
+        "route-address" => Some((&mut n.route_address, "路由地址")),
+        "route-exclude" => Some((&mut n.route_exclude_address, "排除路由地址")),
+        _ => None,
+    }
+}
 
 /// What a change to a general setting needs beyond saving it.
 #[derive(PartialEq)]
@@ -55,6 +75,9 @@ impl App {
         ui.on_input_submit(move |key, v1, v2| a.input_submit(&key, &v1, &v2));
         let a = self.clone();
         ui.on_input_remove(move |key| {
+            if key.starts_with("list:") {
+                a.list_set(&key, None);
+            }
             if let Some(host) = key.strip_prefix("host:") {
                 a.update_general(Effect::Reapply, |g| {
                     g.hosts.remove(host);
@@ -85,6 +108,19 @@ impl App {
                 "about" => settings_view::about(&settings),
                 "hosts" => settings_view::hosts(&settings),
                 "backup" => app.backup_sections(&settings),
+                "advanced" => settings_view::advanced(&settings),
+                "network" => settings_view::network(&settings),
+                "list" => {
+                    let key = list_target().lock().unwrap().0.clone();
+                    let mut s = settings.clone();
+                    match list_of(&mut s, &key) {
+                        Some((items, title)) => {
+                            ui.set_list_title(title.into());
+                            settings_view::list(items)
+                        }
+                        None => Vec::new(),
+                    }
+                }
                 _ => return,
             };
             ui.set_page_sections(models(sections));
@@ -180,7 +216,7 @@ impl App {
             value2.into(),
         );
         self.ui(move |ui| {
-            ui.set_input_number(key == "port");
+            ui.set_input_number(key == "port" || key == "mtu");
             ui.set_input_key(key);
             ui.set_input_title(title);
             ui.set_input_label(label);
@@ -225,6 +261,42 @@ impl App {
             }
             ("general", "hosts") => self.open_page("hosts"),
             ("backup", id) => self.backup_clicked(id),
+            ("advanced", "network") => self.open_page("network"),
+            ("network", "mtu") => {
+                let mtu = self.store.lock().unwrap().state.settings.network.mtu;
+                self.open_input("mtu", "MTU", "", &mtu.to_string());
+            }
+            ("network", "congestion") => self.open_choice("congestion", "TCP 拥塞控制"),
+            ("network", key @ ("bypass-domain" | "route-address" | "route-exclude")) => {
+                *list_target().lock().unwrap() = (key.to_string(), "network".to_string());
+                self.ui(|ui| ui.set_list_parent("network".into()));
+                self.open_page("list");
+            }
+            ("list", "add") => {
+                let key = list_target().lock().unwrap().0.clone();
+                self.open_input(&format!("list:{key}:new"), "添加", "", "");
+            }
+            ("list", id) => {
+                if let Some(i) = id
+                    .strip_prefix("item:")
+                    .and_then(|i| i.parse::<usize>().ok())
+                {
+                    let key = list_target().lock().unwrap().0.clone();
+                    let mut s = self.store.lock().unwrap().state.settings.clone();
+                    let value = list_of(&mut s, &key)
+                        .and_then(|(v, _)| v.get(i).cloned())
+                        .unwrap_or_default();
+                    self.open_input_with(
+                        &format!("list:{key}:{i}"),
+                        "编辑",
+                        "",
+                        &value,
+                        "",
+                        "",
+                        true,
+                    );
+                }
+            }
             ("hosts", "add") => self.open_input_with("host:", "添加", "键", "", "值", "", false),
             ("hosts", id) => {
                 if let Some(host) = id.strip_prefix("host:") {
@@ -309,6 +381,18 @@ impl App {
             ("general", "append-system-dns") => {
                 self.update_general(Effect::Reapply, |g| g.append_system_dns = on)
             }
+            ("network", id) => self.update_settings(Effect::Reapply, |s| {
+                let n = &mut s.network;
+                match id {
+                    "vpn" => n.vpn = on,
+                    "system-proxy" => n.system_proxy = on,
+                    "allow-bypass" => n.allow_bypass = on,
+                    "ipv6" => n.ipv6 = on,
+                    "dns-hijacking" => n.dns_hijacking = on,
+                    "bypass-private" => n.bypass_private_route = on,
+                    _ => {}
+                }
+            }),
             ("general", "open-logs") => self.update_general(Effect::None, |g| g.open_logs = on),
             _ => {}
         }
@@ -331,6 +415,9 @@ impl App {
             }),
             "user-agent-add" => self.open_input("user-agent-add", "添加", "用户代理", ""),
             "acc" => self.access_menu_picked(&value),
+            "congestion" => {
+                self.update_settings(Effect::None, |s| s.network.congestion_controller = value)
+            }
             "restore-option" => self.run_restore(if value == "all" {
                 crate::backup::RestoreOption::All
             } else {
@@ -353,6 +440,11 @@ impl App {
             }
             "secret" => self.update_general(Effect::Reapply, |g| g.secret = value),
             "dav-file" => self.set_dav_file(&value),
+            "mtu" => {
+                if let Ok(mtu) = value.parse::<i64>() {
+                    self.update_settings(Effect::None, |s| s.network.mtu = mtu);
+                }
+            }
             "auth-user" => {
                 self.update_general(Effect::Reapply, |g| g.authentication.username = value)
             }
@@ -365,6 +457,7 @@ impl App {
                 }
                 g.global_ua = Some(value);
             }),
+            k if k.starts_with("list:") => self.list_set(k, Some(value)),
             _ => {
                 if let Some(old) = key.strip_prefix("host:") {
                     let (host, address) = (value.trim().to_string(), v2.trim().to_string());
@@ -378,6 +471,32 @@ impl App {
                 }
             }
         }
+    }
+
+    /// A list page's add (`list:<key>:new`), edit (`list:<key>:<i>`) or removal (None).
+    fn list_set(self: &Arc<Self>, key: &str, value: Option<String>) {
+        let mut parts = key.splitn(3, ':').skip(1);
+        let (Some(list), Some(at)) = (parts.next(), parts.next()) else {
+            return;
+        };
+        let (list, at) = (list.to_string(), at.to_string());
+        self.update_settings(Effect::Reapply, move |s| {
+            let Some((items, _)) = list_of(s, &list) else {
+                return;
+            };
+            match (at.parse::<usize>().ok(), value) {
+                (None, Some(v)) => {
+                    if !items.contains(&v) {
+                        items.push(v);
+                    }
+                }
+                (Some(i), Some(v)) if i < items.len() => items[i] = v,
+                (Some(i), None) if i < items.len() => {
+                    items.remove(i);
+                }
+                _ => {}
+            }
+        });
     }
 
     /// `updateExcludeFromRecents`.

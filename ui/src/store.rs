@@ -36,6 +36,52 @@ pub struct Settings {
     pub dav: Option<crate::backup::Dav>,
     /// `restoreStrategy`: false compatible, true override.
     pub restore_override: bool,
+    /// lib/views/config/network.dart on Android.
+    pub network: Network,
+}
+
+/// The network page's settings: `VpnProps`, `NetworkProps` and the TUN part of
+/// `PatchClashConfig` that Android uses.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Network {
+    pub vpn: bool,
+    pub system_proxy: bool,
+    pub bypass_domain: Vec<String>,
+    pub allow_bypass: bool,
+    pub ipv6: bool,
+    pub dns_hijacking: bool,
+    pub mtu: i64,
+    pub congestion_controller: String,
+    pub bypass_private_route: bool,
+    pub route_address: Vec<String>,
+    pub route_exclude_address: Vec<String>,
+}
+
+/// `minTunMtu`, `maxTunMtu`, `defaultTunMtu` and `congestionControllers` in
+/// lib/models/clash_config.dart.
+pub const TUN_MTU: (i64, i64, i64) = (1280, 65535, 9000);
+pub const CONGESTION_CONTROLLERS: [&str; 3] = ["cubic", "reno", "bbr"];
+
+impl Default for Network {
+    fn default() -> Self {
+        Network {
+            vpn: true,
+            system_proxy: true,
+            bypass_domain: crate::profile::BYPASS_DOMAIN
+                .iter()
+                .map(|d| d.to_string())
+                .collect(),
+            allow_bypass: true,
+            ipv6: false,
+            dns_hijacking: false,
+            mtu: TUN_MTU.2,
+            congestion_controller: CONGESTION_CONTROLLERS[0].into(),
+            bypass_private_route: true,
+            route_address: Vec::new(),
+            route_exclude_address: Vec::new(),
+        }
+    }
 }
 
 /// What lib/views/config/general.dart sets: `AppSettingProps`, `PatchClashConfig` and
@@ -132,6 +178,7 @@ impl Default for Settings {
             access_control: Default::default(),
             dav: None,
             restore_override: false,
+            network: Network::default(),
         }
     }
 }

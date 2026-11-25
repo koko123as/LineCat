@@ -322,6 +322,7 @@ global Icons {
     out property <string> external: "M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6";
     out property <string> select-all: "M4 4h16v16H4z M8 12l3 3 5-6";
     out property <string> deselect: "M4 4h16v16H4z M9 9l6 6 M15 9l-6 6";
+    out property <string> key: "M8 15a4 4 0 1 1 3.5-6H21v3h-2v3h-3v-3h-4.5A4 4 0 0 1 8 15z M7 11h.01";
     out property <string> memory: "M6 6h12v12H6z M9 9h6v6H9z M9 3v3 M15 3v3 M9 18v3 M15 18v3 M3 9h3 M3 15h3 M18 9h3 M18 15h3";
 }
 
@@ -332,7 +333,7 @@ global Glyphs {
             : k == "language" ? Icons.language : k == "palette" ? Icons.palette : k == "apps" ? Icons.apps
             : k == "cloud-sync" ? Icons.cloud-sync : k == "wrench" ? Icons.tools : k == "settings" ? Icons.settings
             : k == "gavel" ? Icons.gavel : k == "cpu" ? Icons.memory : k == "info" ? Icons.info
-            : k == "code" ? Icons.code : k == "send" ? Icons.send : "";
+            : k == "code" ? Icons.code : k == "key" ? Icons.key : k == "send" ? Icons.send : "";
     }
 }
 
@@ -3867,6 +3868,8 @@ export component AppWindow inherits Window {
     // sections, a picker sheet and a one or two field input dialog.
     in property <[SetSection]> tools-sections;
     in property <[SetSection]> page-sections;
+    in property <string> list-title;
+    in property <string> list-parent;
     in property <bool> pure-black;
     in property <string> app-version;
     in property <image> app-icon;
@@ -4006,6 +4009,8 @@ export component AppWindow inherits Window {
                 if (root.tab == 3 && root.tools-page == "access" && root.acc-searching) { root.acc-query = ""; root.acc-searching = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "access") { root.acc-back(); return accept; }
                 if (root.tab == 3 && root.tools-page == "hosts") { root.tools-page = "general"; return accept; }
+                if (root.tab == 3 && root.tools-page == "list") { root.tools-page = root.list-parent; return accept; }
+                if (root.tab == 3 && root.tools-page == "network") { root.tools-page = "advanced"; return accept; }
                 if (root.tab == 3 && root.tools-page != "") {
                     root.tools-page = "";
                     return accept;
@@ -4147,15 +4152,21 @@ export component AppWindow inherits Window {
                     sections: root.tools-sections;
                     open(p) => { root.tools-clicked(p); }
                 }
-                if root.tab == 3 && (root.tools-page == "general" || root.tools-page == "developer" || root.tools-page == "hosts" || root.tools-page == "backup"): SettingsPage {
+                if root.tab == 3 && (root.tools-page == "general" || root.tools-page == "developer" || root.tools-page == "hosts" || root.tools-page == "backup" || root.tools-page == "advanced" || root.tools-page == "network" || root.tools-page == "list"): SettingsPage {
                     width: parent.width;
                     height: parent.height;
-                    title: root.tools-page == "general" ? "常规" : root.tools-page == "developer" ? "开发者模式" : root.tools-page == "backup" ? "备份与恢复" : "Hosts";
+                    title: root.tools-page == "general" ? "常规" : root.tools-page == "developer" ? "开发者模式" : root.tools-page == "backup" ? "备份与恢复" : root.tools-page == "advanced" ? "进阶配置" : root.tools-page == "network" ? "网络" : root.tools-page == "list" ? root.list-title : "Hosts";
                     sections: root.page-sections;
-                    bottom-gap: root.tools-page == "hosts" ? 96px : 24px;
-                    back => { root.tools-page = root.tools-page == "hosts" ? "general" : ""; }
+                    bottom-gap: root.tools-page == "hosts" || root.tools-page == "list" ? 96px : 24px;
+                    back => { root.tools-page = root.tools-page == "hosts" ? "general" : root.tools-page == "list" ? root.list-parent : root.tools-page == "network" ? "advanced" : ""; }
                     clicked(id) => { root.set-clicked(root.tools-page, id); }
                     toggled(id, on) => { root.set-toggled(root.tools-page, id, on); }
+                }
+                if root.tab == 3 && root.tools-page == "list": Fab {
+                    x: parent.width - self.width - 16px;
+                    y: parent.height - self.height - 16px;
+                    glyph: Icons.plus;
+                    clicked => { root.set-clicked("list", "add"); }
                 }
                 if root.tab == 3 && root.tools-page == "hosts": Fab {
                     x: parent.width - self.width - 16px;

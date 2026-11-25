@@ -234,6 +234,12 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
         "developer" => settings_view::developer(&s),
         "about" => settings_view::about(&s),
         "hosts" => settings_view::hosts(&s),
+        "advanced" => settings_view::advanced(&s),
+        "network" => settings_view::network(&s),
+        "list" => {
+            ui.set_list_title("排除域名".into());
+            settings_view::list(&s.network.bypass_domain)
+        }
         "backup" => {
             if overlay.starts_with("dav") {
                 s.dav = Some(seasoncat_ui::backup::Dav {
@@ -716,6 +722,14 @@ fn main() {
         ("set-port-wide", 3, "", "general", 1, "input:port"),
         ("set-port-tablet", 3, "", "general", 1, "input:port"),
         ("set-general-dark", 3, "", "general", 2, ""),
+        ("set-advanced", 3, "", "advanced", 1, ""),
+        ("set-advanced-wide", 3, "", "advanced", 1, ""),
+        ("set-network", 3, "", "network", 1, ""),
+        ("set-network-small", 3, "", "network", 1, ""),
+        ("set-network-wide", 3, "", "network", 1, ""),
+        ("set-network-tablet", 3, "", "network", 1, ""),
+        ("set-list", 3, "", "list", 1, ""),
+        ("set-list-small", 3, "", "list", 1, ""),
         ("set-access", 3, "", "access", 1, ""),
         ("set-access-small", 3, "", "access", 1, ""),
         ("set-access-wide", 3, "", "access", 1, ""),

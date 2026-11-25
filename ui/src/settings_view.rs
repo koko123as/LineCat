@@ -226,6 +226,97 @@ pub fn hosts(settings: &Settings) -> Vec<SetSection> {
     vec![section("", "", rows)]
 }
 
+/// `AdvancedConfigView`: the pages built so far.
+pub fn advanced(_settings: &Settings) -> Vec<SetSection> {
+    vec![section("", "", vec![open("network", "key", "网络")])]
+}
+
+fn count(items: &[String]) -> String {
+    if items.is_empty() {
+        "无".into()
+    } else {
+        format!("{} 项", items.len())
+    }
+}
+
+/// `NetworkListView` on Android: `VpnSections` and `TunSection`.
+pub fn network(settings: &Settings) -> Vec<SetSection> {
+    let n = &settings.network;
+    let mut footer = Vec::new();
+    if settings.general.authentication.enable {
+        footer.push("认证启用时，系统代理不生效。");
+    }
+    footer.push("排除域名仅在系统代理启用时生效。");
+    vec![
+        section("", "", vec![toggle("vpn", "VPN", n.vpn)]),
+        section(
+            "VPN",
+            &footer.join("\n"),
+            vec![
+                toggle("system-proxy", "系统代理", n.system_proxy),
+                row(
+                    "bypass-domain",
+                    "open",
+                    "",
+                    "排除域名",
+                    &count(&n.bypass_domain),
+                ),
+                toggle("allow-bypass", "允许应用绕过VPN", n.allow_bypass),
+                toggle("ipv6", "IPv6", n.ipv6),
+                toggle("dns-hijacking", "DNS劫持", n.dns_hijacking),
+            ],
+        ),
+        section(
+            "虚拟网卡",
+            "",
+            vec![
+                value("mtu", "MTU", &n.mtu.to_string()),
+                value("congestion", "TCP 拥塞控制", &n.congestion_controller),
+                toggle("bypass-private", "绕过私有路由地址", n.bypass_private_route),
+                row(
+                    "route-address",
+                    "open",
+                    "",
+                    "路由地址",
+                    &count(&n.route_address),
+                ),
+                row(
+                    "route-exclude",
+                    "open",
+                    "",
+                    "排除路由地址",
+                    &count(&n.route_exclude_address),
+                ),
+            ],
+        ),
+    ]
+}
+
+/// `ConfigListEditItem`'s page: one row per item, tap to edit.
+pub fn list(items: &[String]) -> Vec<SetSection> {
+    let rows = items
+        .iter()
+        .enumerate()
+        .map(|(i, v)| row(&format!("item:{i}"), "action", "", v, ""))
+        .collect();
+    vec![section("", "", rows)]
+}
+
+/// `validateCidr`: an IPv4 or IPv6 address with a prefix length in range.
+pub fn valid_cidr(value: &str) -> bool {
+    let Some((addr, prefix)) = value.split_once('/') else {
+        return false;
+    };
+    let Ok(prefix) = prefix.parse::<u8>() else {
+        return false;
+    };
+    match addr.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(_)) => prefix <= 32,
+        Ok(std::net::IpAddr::V6(_)) => prefix <= 128,
+        Err(_) => false,
+    }
+}
+
 /// `DeveloperView`.
 pub fn developer(settings: &Settings) -> Vec<SetSection> {
     vec![
@@ -331,6 +422,13 @@ pub fn choices(settings: &Settings, key: &str) -> Vec<(String, String, bool)> {
                 )
                 .collect()
         }
+        "congestion" => crate::store::CONGESTION_CONTROLLERS
+            .iter()
+            .map(|c| {
+                let on = *c == settings.network.congestion_controller;
+                (c.to_string(), c.to_string(), on)
+            })
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -354,6 +452,23 @@ pub fn check_input(key: &str, value: &str) -> Result<String, String> {
         "auth-user" => Ok(value.replace(':', "")),
         "user-agent-add" if value.is_empty() => Err("用户代理不能为空".into()),
         "dav-file" if value.is_empty() => Err("文件不能为空".into()),
+        "mtu" => {
+            let (min, max, _) = crate::store::TUN_MTU;
+            let mtu: i64 = value.parse().map_err(|_| "MTU必须为数字".to_string())?;
+            if !(min..=max).contains(&mtu) {
+                return Err(format!("MTU必须在 {min} 到 {max} 之间"));
+            }
+            Ok(mtu.to_string())
+        }
+        k if k.starts_with("list:") => {
+            if value.is_empty() {
+                return Err("值不能为空".into());
+            }
+            if (k.contains(":route-") || k.ends_with(":route-address")) && !valid_cidr(value) {
+                return Err("请输入有效的 CIDR".into());
+            }
+            Ok(value.to_string())
+        }
         _ => Ok(value.to_string()),
     }
 }
@@ -401,6 +516,27 @@ pub fn is_newer(tag: &str, version: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cidr_and_network_rows() {
+        use super::*;
+        assert!(valid_cidr("10.0.0.0/8"));
+        assert!(valid_cidr("fd00::/8"));
+        assert!(!valid_cidr("10.0.0.0/33"));
+        assert!(!valid_cidr("10.0.0.0"));
+        assert!(!valid_cidr("example.com/8"));
+        assert_eq!(
+            check_input("mtu", "1279").unwrap_err(),
+            "MTU必须在 1280 到 65535 之间"
+        );
+        assert_eq!(check_input("mtu", " 1500 ").unwrap(), "1500");
+        assert!(check_input("list:route-address:new", "1.2.3.4").is_err());
+        assert!(check_input("list:bypass-domain:new", "*.lan").is_ok());
+        let s = Settings::default();
+        let n = network(&s);
+        assert_eq!(n.len(), 3);
+        assert_eq!(list(&["a".into(), "b".into()])[0].rows.row_count(), 2);
+    }
+
     use super::*;
     use slint::Model;
 
