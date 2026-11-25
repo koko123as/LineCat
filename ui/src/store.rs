@@ -30,6 +30,12 @@ pub struct Settings {
     pub developer_mode: bool,
     pub auto_check_update: bool,
     pub general: General,
+    /// `vpnProps.accessControlProps`.
+    pub access_control: crate::access::AccessControl,
+    /// `davProps`; None until a server is bound.
+    pub dav: Option<crate::backup::Dav>,
+    /// `restoreStrategy`: false compatible, true override.
+    pub restore_override: bool,
 }
 
 /// What lib/views/config/general.dart sets: `AppSettingProps`, `PatchClashConfig` and
@@ -123,6 +129,9 @@ impl Default for Settings {
             developer_mode: false,
             auto_check_update: true,
             general: General::default(),
+            access_control: Default::default(),
+            dav: None,
+            restore_override: false,
         }
     }
 }

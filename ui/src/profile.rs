@@ -517,7 +517,7 @@ pub fn vpn_options(settings: &crate::store::Settings) -> Value {
         "port": settings.general.mixed_port,
         "ipv6": false,
         "dnsHijacking": false,
-        "accessControlProps": {"enable": false, "mode": "rejectSelected", "acceptList": [], "rejectList": []},
+        "accessControlProps": settings.access_control.sorted(),
         "allowBypass": true,
         "systemProxy": true,
         "bypassDomain": BYPASS_DOMAIN,

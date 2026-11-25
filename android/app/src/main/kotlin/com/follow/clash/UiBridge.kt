@@ -9,6 +9,7 @@ import com.follow.clash.common.GlobalState
 import com.follow.clash.core.Core
 import com.follow.clash.core.NativeCore
 import com.follow.clash.models.SharedState
+import com.follow.clash.packages.PackageResolver
 import com.follow.clash.service.NetworkObserver
 import com.follow.clash.service.models.VpnOptions
 import com.google.gson.Gson
@@ -42,6 +43,9 @@ object UiBridge {
     private val GEO_ASSETS = listOf("GEOIP.metadb", "GEOSITE.dat")
 
     private val gson = Gson()
+    private val packageResolver by lazy {
+        PackageResolver(GlobalState.application.packageManager, GlobalState.application.packageName)
+    }
     private val connections = CopyOnWriteArraySet<Connection>()
 
     @Volatile
@@ -246,6 +250,59 @@ object UiBridge {
                     .getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("SeasonCat", text))
             }
+            ok()
+        }
+
+        "clipboard.get" -> {
+            val text = withContext(Dispatchers.Main) {
+                val app = GlobalState.application
+                val clipboard = app.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(app)?.toString() ?: ""
+            }
+            ok { addProperty("text", text) }
+        }
+
+        // AppPlugin's getPackages and isInstalledAppsPermissionGranted, for the access control page.
+        "packages.list" -> {
+            val (packages, granted) = withContext(Dispatchers.IO) {
+                packageResolver.installedPackages to packageResolver.hasInstalledAppsPermission()
+            }
+            ok {
+                add("packages", gson.toJsonTree(packages))
+                addProperty("granted", granted)
+            }
+        }
+
+        // getChinaPackageNames: the installed apps `intelligentSelected` keeps out of the VPN.
+        "packages.china" -> {
+            val names = withContext(Dispatchers.IO) { packageResolver.getChinaPackageNames() }
+            ok { add("packages", gson.toJsonTree(names)) }
+        }
+
+        // requestInstalledAppsPermission.
+        "packages.request" -> {
+            val granted = packageResolver.hasInstalledAppsPermission() || run {
+                val host = activity ?: error("界面未就绪")
+                withContext(Dispatchers.Main) {
+                    suspendCancellableCoroutine { continuation ->
+                        host.requestPermission(PackageResolver.GET_INSTALLED_APPS) { granted ->
+                            if (continuation.isActive) continuation.resume(granted)
+                        }
+                    }
+                }
+            }
+            if (granted) packageResolver.invalidate()
+            ok { addProperty("granted", granted) }
+        }
+
+        // openAppSettings: this app's page in the system settings.
+        "app.settings" -> {
+            val app = GlobalState.application
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.fromParts("package", app.packageName, null),
+            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            withContext(Dispatchers.Main) { app.startActivity(intent) }
             ok()
         }
 

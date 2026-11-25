@@ -20,6 +20,7 @@ import android.view.ViewTreeObserver
 class SlintActivity : NativeActivity() {
     private var vpnCallback: ((Boolean) -> Unit)? = null
     private var documentCallback: ((android.net.Uri?) -> Unit)? = null
+    private var permissionCallback: ((Boolean) -> Unit)? = null
     private val layoutListener = ViewTreeObserver.OnGlobalLayoutListener { reportEdges() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,6 +74,8 @@ class SlintActivity : NativeActivity() {
         vpnCallback = null
         documentCallback?.invoke(null)
         documentCallback = null
+        permissionCallback?.invoke(false)
+        permissionCallback = null
         val exit = isFinishing && UiBridge.isStopped
         super.onDestroy()
         // Nothing runs once the UI is closed and the VPN is off, so the process goes with it
@@ -115,6 +118,25 @@ class SlintActivity : NativeActivity() {
         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_REQUEST)
     }
 
+    /** A runtime permission prompt; [callback] gets whether it was granted. */
+    fun requestPermission(permission: String, callback: (Boolean) -> Unit) {
+        permissionCallback?.invoke(false)
+        permissionCallback = callback
+        runCatching { requestPermissions(arrayOf(permission), PERMISSION_REQUEST) }
+            .onFailure {
+                permissionCallback = null
+                callback(false)
+            }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != PERMISSION_REQUEST) return
+        val callback = permissionCallback
+        permissionCallback = null
+        callback?.invoke(grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED })
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode == VPN_REQUEST) {
             val callback = vpnCallback
@@ -135,6 +157,7 @@ class SlintActivity : NativeActivity() {
         const val VPN_REQUEST = 0x5643
         const val NOTIFICATION_REQUEST = 0x4e54
         const val DOCUMENT_REQUEST = 0x4443
+        const val PERMISSION_REQUEST = 0x5052
         const val PREFERENCES = "seasoncat_shell"
         const val NOTIFICATION_ASKED = "notification_asked"
     }

@@ -234,8 +234,77 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
         "developer" => settings_view::developer(&s),
         "about" => settings_view::about(&s),
         "hosts" => settings_view::hosts(&s),
+        "backup" => {
+            if overlay.starts_with("dav") {
+                s.dav = Some(seasoncat_ui::backup::Dav {
+                    uri: "https://dav.example.com/remote.php/dav/files/me".into(),
+                    user: "flclash-user@example.com".into(),
+                    password: "secret".into(),
+                    ..Default::default()
+                });
+            }
+            seasoncat_ui::backup_app_sections(&s, Some(true))
+        }
         _ => Vec::new(),
     };
+    ui.set_dav_open(overlay == "dav-form");
+    if overlay == "dav-form" {
+        ui.set_dav_bound(true);
+        ui.set_dav_uri("https://dav.example.com/remote.php/dav/files/me".into());
+        ui.set_dav_user("flclash-user@example.com".into());
+        ui.set_dav_pass("secret".into());
+    }
+    if page == "access" {
+        let apps = [
+            ("com.tencent.mm", "微信", true),
+            ("com.eg.android.AlipayGphone", "支付宝", true),
+            ("org.telegram.messenger", "Telegram", false),
+            ("com.google.android.youtube", "YouTube", false),
+            ("com.android.chrome", "Chrome", true),
+            ("com.taobao.taobao", "淘宝", false),
+            (
+                "com.ss.android.ugc.aweme.with.a.very.long.package.name",
+                "抖音极速版超长的应用名字用于测试省略",
+                false,
+            ),
+            ("com.spotify.music", "Spotify", false),
+            ("com.github.android", "GitHub", false),
+            ("com.twitter.android", "X", false),
+            ("com.zhihu.android", "知乎", true),
+        ];
+        let rows: Vec<AccessRow> = apps
+            .iter()
+            .map(|(n, l, c)| AccessRow {
+                name: (*n).into(),
+                label: (*l).into(),
+                monogram: l
+                    .chars()
+                    .next()
+                    .unwrap()
+                    .to_uppercase()
+                    .collect::<String>()
+                    .into(),
+                checked: *c,
+            })
+            .collect();
+        let on = overlay != "off";
+        ui.set_acc_rows(ModelRc::new(VecModel::from(rows)));
+        ui.set_acc_enabled(on);
+        ui.set_acc_changed(on);
+        ui.set_acc_can_select_all(true);
+        ui.set_acc_loading(false);
+        ui.set_acc_needs_permission(overlay == "perm");
+        ui.set_acc_authorize(false);
+        ui.set_acc_status(
+            if on {
+                "选中应用将会被排除在VPN之外"
+            } else {
+                "应用访问控制已关闭"
+            }
+            .into(),
+        );
+        ui.set_acc_count("已选 4".into());
+    }
     ui.set_page_sections(m(sections));
     ui.set_choice_open(overlay.starts_with("choice:"));
     if let Some(key) = overlay.strip_prefix("choice:") {
@@ -647,6 +716,20 @@ fn main() {
         ("set-port-wide", 3, "", "general", 1, "input:port"),
         ("set-port-tablet", 3, "", "general", 1, "input:port"),
         ("set-general-dark", 3, "", "general", 2, ""),
+        ("set-access", 3, "", "access", 1, ""),
+        ("set-access-small", 3, "", "access", 1, ""),
+        ("set-access-wide", 3, "", "access", 1, ""),
+        ("set-access-tablet", 3, "", "access", 1, ""),
+        ("set-access-off-small", 3, "", "access", 1, "off"),
+        ("set-access-perm", 3, "", "access", 1, "perm"),
+        ("set-backup", 3, "", "backup", 1, ""),
+        ("set-backup-small", 3, "", "backup", 1, ""),
+        ("set-backup-wide", 3, "", "backup", 1, ""),
+        ("set-backup-tablet", 3, "", "backup", 1, ""),
+        ("set-backup-dav", 3, "", "backup", 1, "dav"),
+        ("set-backup-dav-small", 3, "", "backup", 1, "dav"),
+        ("set-dav-form", 3, "", "backup", 1, "dav-form"),
+        ("set-dav-form-small", 3, "", "backup", 1, "dav-form"),
     ];
     let only = std::env::args().nth(2).unwrap_or_default();
     ui.show().unwrap();

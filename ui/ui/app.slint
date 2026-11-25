@@ -241,6 +241,14 @@ export struct SetRow {
     enabled: bool,
 }
 
+// An installed app on the access control page (`PackageListItem`).
+export struct AccessRow {
+    name: string,
+    label: string,
+    monogram: string,
+    checked: bool,
+}
+
 // `generateSection`: a titled group of rows with an optional footer.
 export struct SetSection {
     title: string,
@@ -312,6 +320,8 @@ global Icons {
     out property <string> code: "M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16";
     out property <string> send: "M21 3 3 10l7 3 3 7z M10 13l11-10";
     out property <string> external: "M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6";
+    out property <string> select-all: "M4 4h16v16H4z M8 12l3 3 5-6";
+    out property <string> deselect: "M4 4h16v16H4z M9 9l6 6 M15 9l-6 6";
     out property <string> memory: "M6 6h12v12H6z M9 9h6v6H9z M9 3v3 M15 3v3 M9 18v3 M15 18v3 M3 9h3 M3 15h3 M18 9h3 M18 15h3";
 }
 
@@ -3002,6 +3012,188 @@ component ReqList inherits Rectangle {
     }
 }
 
+// lib/views/access.dart: the installed apps with a checkbox each, a floating bar saying what
+// the selection does, select all and save in the bar, the rest in the menu.
+component AccessPage inherits Rectangle {
+    in property <[AccessRow]> rows;
+    in property <bool> enabled;
+    in property <bool> changed;
+    in property <bool> all-selected;
+    in property <bool> can-select-all;
+    in property <bool> loading;
+    in property <bool> needs-permission;
+    in property <bool> authorize;
+    in property <string> status;
+    in property <string> count;
+    in property <length> bottom-gap;
+    in-out property <bool> searching;
+    in-out property <string> query;
+    callback back();
+    callback toggle(string);
+    callback select-all();
+    callback save();
+    callback menu();
+    callback enable();
+    callback grant();
+    callback search(string);
+    changed query => { root.search(root.query); }
+    VerticalLayout {
+        if !root.searching: AppBar {
+            title: "应用访问控制";
+            can-back: true;
+            back => { root.back(); }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
+            if root.enabled && !root.needs-permission: VerticalLayout {
+                alignment: center;
+                IconButton { glyph: root.all-selected ? Icons.deselect : Icons.select-all; enabled: root.can-select-all; tint: Theme.s.on-surface; clicked => { root.select-all(); } }
+            }
+            if root.changed: VerticalLayout { alignment: center; IconButton { glyph: Icons.check; tint: Theme.s.primary; clicked => { root.save(); } } }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.menu(); } } }
+        }
+        if root.searching: HorizontalLayout {
+            height: 56px;
+            padding-left: 4px;
+            padding-right: 8px;
+            spacing: 4px;
+            VerticalLayout {
+                alignment: center;
+                IconButton { glyph: Icons.back; tint: Theme.s.on-surface; clicked => { root.query = ""; root.searching = false; } }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Rectangle {
+                    height: 44px;
+                    border-radius: 22px;
+                    background: Theme.s.block;
+                    Text {
+                        x: 16px;
+                        visible: acc-input.text == "";
+                        text: "搜索";
+                        color: Theme.s.on-surface-variant;
+                        font-size: 15px;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                    acc-input := TextInput {
+                        x: 16px;
+                        width: parent.width - 32px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        single-line: true;
+                        font-size: 15px;
+                        color: Theme.s.on-surface;
+                        text <=> root.query;
+                        init => { self.focus(); }
+                    }
+                }
+            }
+            if root.enabled && !root.needs-permission: VerticalLayout {
+                alignment: center;
+                IconButton { glyph: root.all-selected ? Icons.deselect : Icons.select-all; enabled: root.can-select-all; tint: Theme.s.on-surface; clicked => { root.select-all(); } }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            if root.needs-permission: VerticalLayout {
+                alignment: center;
+                spacing: 6px;
+                padding-left: 32px;
+                padding-right: 32px;
+                Text { text: "需要读取应用列表权限"; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; wrap: word-wrap; }
+                Text { text: "当前系统在授权前不会提供已安装的应用列表，授权后即可配置分应用代理。"; font-size: 13px; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
+                HorizontalLayout {
+                    alignment: center;
+                    padding-top: 12px;
+                    TextButton { text: "授权"; filled: true; clicked => { root.grant(); } }
+                }
+            }
+            if !root.needs-permission && root.loading: Spinner { width: 32px; height: 32px; indeterminate: true; }
+            if !root.needs-permission && !root.loading && root.rows.length == 0: NullStatus { label: "暂无数据"; }
+            if !root.needs-permission && !root.loading && root.rows.length > 0: Rectangle {
+                opacity: root.enabled ? 1 : 0.45;
+                ListView {
+                    y: 0;
+                    height: parent.height - 80px - root.bottom-gap;
+                    for r in root.rows: Rectangle {
+                        height: 72px;
+                        background: row-ta.pressed ? Theme.s.inset : transparent;
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            spacing: 16px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 44px;
+                                    height: 44px;
+                                    border-radius: 12px;
+                                    background: Theme.s.primary-container;
+                                    Text { text: r.monogram; font-size: 18px; font-weight: 600; color: Theme.s.on-primary-container; }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+                                Text { text: r.label; font-size: 16px; color: Theme.s.on-surface; overflow: elide; }
+                                Text { text: r.name; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 20px;
+                                    height: 20px;
+                                    border-radius: 4px;
+                                    border-width: r.checked ? 0px : 2px;
+                                    border-color: Theme.s.on-surface-variant;
+                                    background: r.checked ? Theme.s.primary : transparent;
+                                    if r.checked: Icon { glyph: Icons.check; size: 16px; tint: Theme.s.on-primary; }
+                                }
+                            }
+                        }
+                        row-ta := TouchArea {
+                            enabled: root.enabled;
+                            clicked => { root.toggle(r.name); }
+                        }
+                    }
+                }
+            }
+            if !root.needs-permission: Rectangle {
+                x: 16px;
+                y: parent.height - self.height - 12px - root.bottom-gap;
+                width: parent.width - 32px;
+                height: max(56px, foot.preferred-height);
+                border-radius: 16px;
+                background: Theme.s.card;
+                border-width: 1px;
+                border-color: Theme.s.outline-variant.with-alpha(0.6);
+                foot := HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: root.enabled && !root.authorize ? 16px : 8px;
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    spacing: 12px;
+                    VerticalLayout { alignment: center; Icon { glyph: root.enabled && !root.authorize ? Icons.apps : Icons.info; size: 20px; tint: Theme.s.on-surface-variant; } }
+                    Text { horizontal-stretch: 1; text: root.status; font-size: 13px; color: Theme.s.on-surface; vertical-alignment: center; wrap: word-wrap; overflow: elide; }
+                    if root.authorize: VerticalLayout { alignment: center; TextButton { text: "授权"; clicked => { root.grant(); } } }
+                    if root.enabled && !root.authorize: VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            height: 28px;
+                            min-width: chip.preferred-width * 1.1 + 20px;
+                            border-radius: 14px;
+                            background: Theme.s.primary.with-alpha(0.15);
+                            chip := Text { text: root.count; font-size: 13px; color: Theme.s.primary; }
+                        }
+                    }
+                    if !root.enabled: VerticalLayout { alignment: center; TextButton { text: "开启"; clicked => { root.enable(); } } }
+                }
+            }
+        }
+    }
+}
+
 // lib/views/connection/requests.dart: the connections, HTTP requests and DNS queries of
 // this run; beside the list on a wide page the selection's detail, else a sheet.
 component RequestsPage inherits Rectangle {
@@ -3702,6 +3894,37 @@ export component AppWindow inherits Window {
     callback input-submit(string, string, string);
     property <string> input-error: root.input-open ? root.input-check(root.input-key, root.input-value, root.input-value2) : "";
     callback input-remove(string);
+    // Access control (lib/views/access.dart)
+    in property <[AccessRow]> acc-rows;
+    in property <bool> acc-enabled;
+    in property <bool> acc-changed;
+    in property <bool> acc-all-selected;
+    in property <bool> acc-can-select-all;
+    in property <bool> acc-loading;
+    in property <bool> acc-needs-permission;
+    in property <bool> acc-authorize;
+    in property <string> acc-status;
+    in property <string> acc-count;
+    in-out property <bool> acc-searching;
+    in-out property <string> acc-query;
+    callback acc-back();
+    callback acc-toggle(string);
+    callback acc-select-all();
+    callback acc-save();
+    callback acc-menu();
+    callback acc-enable();
+    callback acc-grant();
+    callback acc-search(string);
+    // WebDAV form (`WebDAVForm`)
+    in-out property <bool> dav-open;
+    in property <bool> dav-bound;
+    in-out property <string> dav-uri;
+    in-out property <string> dav-user;
+    in-out property <string> dav-pass;
+    pure callback dav-check(string, string, string) -> string;
+    callback dav-submit(string, string, string);
+    callback dav-delete();
+    property <string> dav-error: root.dav-open ? root.dav-check(root.dav-uri, root.dav-user, root.dav-pass) : "";
     // Feedback
     in property <string> toast;
 
@@ -3766,6 +3989,7 @@ export component AppWindow inherits Window {
                 if (root.req-visible && root.req-searching) { root.req-searching = false; root.req-query = ""; return accept; }
                 if (root.proxy-options-open) { root.proxy-options-open = false; return accept; }
                 if (root.tab == 1 && root.proxy-searching) { root.proxy-searching = false; root.search-proxies(""); return accept; }
+                if (root.confirm-open && root.confirm-action == "access-save") { root.confirm-open = false; return accept; }
                 if (root.confirm-open) {
                     root.confirm-open = false;
                     root.confirm-answer(root.confirm-action, root.confirm-arg, false);
@@ -3778,6 +4002,9 @@ export component AppWindow inherits Window {
                 if (root.link-open) { root.link-open = false; return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
                 if (root.tab == 2 && root.profiles-page != "") { root.profiles-page = ""; return accept; }
+                if (root.dav-open) { root.dav-open = false; return accept; }
+                if (root.tab == 3 && root.tools-page == "access" && root.acc-searching) { root.acc-query = ""; root.acc-searching = false; return accept; }
+                if (root.tab == 3 && root.tools-page == "access") { root.acc-back(); return accept; }
                 if (root.tab == 3 && root.tools-page == "hosts") { root.tools-page = "general"; return accept; }
                 if (root.tab == 3 && root.tools-page != "") {
                     root.tools-page = "";
@@ -3920,10 +4147,10 @@ export component AppWindow inherits Window {
                     sections: root.tools-sections;
                     open(p) => { root.tools-clicked(p); }
                 }
-                if root.tab == 3 && (root.tools-page == "general" || root.tools-page == "developer" || root.tools-page == "hosts"): SettingsPage {
+                if root.tab == 3 && (root.tools-page == "general" || root.tools-page == "developer" || root.tools-page == "hosts" || root.tools-page == "backup"): SettingsPage {
                     width: parent.width;
                     height: parent.height;
-                    title: root.tools-page == "general" ? "常规" : root.tools-page == "developer" ? "开发者模式" : "Hosts";
+                    title: root.tools-page == "general" ? "常规" : root.tools-page == "developer" ? "开发者模式" : root.tools-page == "backup" ? "备份与恢复" : "Hosts";
                     sections: root.page-sections;
                     bottom-gap: root.tools-page == "hosts" ? 96px : 24px;
                     back => { root.tools-page = root.tools-page == "hosts" ? "general" : ""; }
@@ -3935,6 +4162,30 @@ export component AppWindow inherits Window {
                     y: parent.height - self.height - 16px;
                     glyph: Icons.plus;
                     clicked => { root.set-clicked("hosts", "add"); }
+                }
+                if root.tab == 3 && root.tools-page == "access": AccessPage {
+                    width: parent.width;
+                    height: parent.height;
+                    rows: root.acc-rows;
+                    enabled: root.acc-enabled;
+                    changed: root.acc-changed;
+                    all-selected: root.acc-all-selected;
+                    can-select-all: root.acc-can-select-all;
+                    loading: root.acc-loading;
+                    needs-permission: root.acc-needs-permission;
+                    authorize: root.acc-authorize;
+                    status: root.acc-status;
+                    count: root.acc-count;
+                    searching <=> root.acc-searching;
+                    query <=> root.acc-query;
+                    back => { root.acc-back(); }
+                    toggle(n) => { root.acc-toggle(n); }
+                    select-all => { root.acc-select-all(); }
+                    save => { root.acc-save(); }
+                    menu => { root.acc-menu(); }
+                    enable => { root.acc-enable(); }
+                    grant => { root.acc-grant(); }
+                    search(q) => { root.acc-search(q); }
                 }
                 if root.tab == 3 && root.tools-page == "about": AboutPage {
                     width: parent.width;
@@ -4363,9 +4614,9 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 alignment: end;
                 spacing: 8px;
-                TextButton { text: "取消"; clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, false); } }
+                TextButton { text: root.confirm-action == "access-save" ? "不保存" : "取消"; clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, false); } }
                 TextButton {
-                    text: root.confirm-action == "delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : "确定";
+                    text: root.confirm-action == "access-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : "确定";
                     danger: root.confirm-action == "delete" || root.confirm-action == "close-active";
                     clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, true); }
                 }
@@ -4404,6 +4655,31 @@ export component AppWindow inherits Window {
                     clicked => {
                         root.input-open = false;
                         root.input-submit(root.input-key, root.input-value, root.input-value2);
+                    }
+                }
+            }
+        }
+
+        if root.dav-open: Dialog {
+            title: "WebDAV配置";
+            keyboard: root.keyboard;
+            top: root.top-inset;
+            dismiss => { root.dav-open = false; }
+            Field { label: "地址"; text <=> root.dav-uri; init => { self.focus-input(); } }
+            Field { label: "账号"; text <=> root.dav-user; }
+            Field { label: "密码"; text <=> root.dav-pass; input-type: InputType.password; }
+            if root.dav-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.dav-error; font-size: 13px; color: Theme.s.error; wrap: word-wrap; } }
+            HorizontalLayout {
+                spacing: 8px;
+                if root.dav-bound: TextButton { text: "删除"; danger: true; clicked => { root.dav-open = false; root.dav-delete(); } }
+                Rectangle { horizontal-stretch: 1; }
+                TextButton { text: "取消"; clicked => { root.dav-open = false; } }
+                TextButton {
+                    text: "保存";
+                    enabled: root.dav-error == "";
+                    clicked => {
+                        root.dav-open = false;
+                        root.dav-submit(root.dav-uri, root.dav-user, root.dav-pass);
                     }
                 }
             }

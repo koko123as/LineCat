@@ -353,6 +353,7 @@ pub fn check_input(key: &str, value: &str) -> Result<String, String> {
         }
         "auth-user" => Ok(value.replace(':', "")),
         "user-agent-add" if value.is_empty() => Err("用户代理不能为空".into()),
+        "dav-file" if value.is_empty() => Err("文件不能为空".into()),
         _ => Ok(value.to_string()),
     }
 }

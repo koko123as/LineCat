@@ -2,6 +2,11 @@
 //! (VPN consent, the VPN service, the Core session) goes through the Kotlin shell's local
 //! socket, see `bridge`.
 
+pub mod access;
+mod access_app;
+pub mod backup;
+mod backup_app;
+pub use backup_app::sections as backup_app_sections;
 pub mod bridge;
 pub mod dashboard;
 pub mod dns_queries;
@@ -1905,6 +1910,8 @@ impl App {
             ("delete", true) => self.delete_profile(arg),
             ("close-active", true) => self.close_active(),
             ("clear-data", true) => self.clear_data(),
+            ("access-save", _) => self.access_save_answer(yes),
+            ("app-settings", true) => self.open_app_settings(),
             ("edit-save", _) => self.save_edit(form, yes),
             _ => {}
         }
@@ -2428,6 +2435,8 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
 
     app.bind_requests(&ui);
     app.bind_settings(&ui);
+    app.bind_access(&ui);
+    app.bind_backup(&ui);
     let ticker = slint::Timer::default();
     let a = app.clone();
     let w = ui.as_weak();

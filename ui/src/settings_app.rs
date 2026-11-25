@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// The settings pages built so far; the tools list leaves the others out.
-pub const PAGES: &[&str] = &[];
+pub const PAGES: &[&str] = &["access", "backup"];
 
 /// What a change to a general setting needs beyond saving it.
 #[derive(PartialEq)]
@@ -71,6 +71,7 @@ impl App {
     /// The tools list and the open settings page, from the settings as they are.
     pub(crate) fn publish_settings(self: &Arc<Self>) {
         let settings = self.store.lock().unwrap().state.settings.clone();
+        let app = self.clone();
         self.ui(move |ui| {
             let window = ui.window();
             let width = window.size().width as f32 / window.scale_factor().max(0.1);
@@ -83,6 +84,7 @@ impl App {
                 "developer" => settings_view::developer(&settings),
                 "about" => settings_view::about(&settings),
                 "hosts" => settings_view::hosts(&settings),
+                "backup" => app.backup_sections(&settings),
                 _ => return,
             };
             ui.set_page_sections(models(sections));
@@ -104,6 +106,14 @@ impl App {
     fn tools_clicked(self: &Arc<Self>, id: &str) {
         match id {
             "language" => self.open_choice("language", "语言"),
+            "access" => {
+                self.open_access();
+                self.open_page(id);
+            }
+            "backup" => {
+                self.open_page(id);
+                self.ping_dav();
+            }
             _ => self.open_page(id),
         }
     }
@@ -139,7 +149,7 @@ impl App {
         });
     }
 
-    fn open_input(self: &Arc<Self>, key: &str, title: &str, label: &str, value: &str) {
+    pub(crate) fn open_input(self: &Arc<Self>, key: &str, title: &str, label: &str, value: &str) {
         self.open_input_with(key, title, label, value, "", "", false);
     }
 
@@ -214,6 +224,7 @@ impl App {
                 self.open_input("auth-pass", "密码", "", &g.authentication.password)
             }
             ("general", "hosts") => self.open_page("hosts"),
+            ("backup", id) => self.backup_clicked(id),
             ("hosts", "add") => self.open_input_with("host:", "添加", "键", "", "值", "", false),
             ("hosts", id) => {
                 if let Some(host) = id.strip_prefix("host:") {
@@ -319,6 +330,13 @@ impl App {
                 g.global_ua = (!value.is_empty()).then_some(value)
             }),
             "user-agent-add" => self.open_input("user-agent-add", "添加", "用户代理", ""),
+            "acc" => self.access_menu_picked(&value),
+            "restore-option" => self.run_restore(if value == "all" {
+                crate::backup::RestoreOption::All
+            } else {
+                crate::backup::RestoreOption::OnlyProfiles
+            }),
+            "restore-strategy" => self.set_restore_strategy(value == "override"),
             _ => {}
         }
     }
@@ -334,6 +352,7 @@ impl App {
                 }
             }
             "secret" => self.update_general(Effect::Reapply, |g| g.secret = value),
+            "dav-file" => self.set_dav_file(&value),
             "auth-user" => {
                 self.update_general(Effect::Reapply, |g| g.authentication.username = value)
             }
