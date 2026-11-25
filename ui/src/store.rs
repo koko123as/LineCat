@@ -38,6 +38,9 @@ pub struct Settings {
     pub restore_override: bool,
     /// lib/views/config/network.dart on Android.
     pub network: Network,
+    /// `PatchClashConfig.dns` with `dnsOverrideKeys`: what the DNS page writes over
+    /// every URL and file profile.
+    pub dns_override: crate::overrides::OverrideState,
 }
 
 /// The network page's settings: `VpnProps`, `NetworkProps` and the TUN part of
@@ -184,6 +187,7 @@ impl Default for Settings {
             dav: None,
             restore_override: false,
             network: Network::default(),
+            dns_override: Default::default(),
         }
     }
 }

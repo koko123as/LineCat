@@ -239,6 +239,21 @@ export struct SetRow {
     subtitle: string,
     on: bool,
     enabled: bool,
+    // "remove": led by the button that takes the row off (`EntryButton.remove`).
+    lead: string,
+}
+
+// What the page shell needs of a settings page Rust builds: its title, where back goes,
+// the bar's action, whether it has an add button, and what it shows while empty.
+export struct PageMeta {
+    known: bool,
+    title: string,
+    parent: string,
+    action: string,
+    fab: bool,
+    empty: string,
+    empty-desc: string,
+    empty-action: string,
 }
 
 // An installed app on the access control page (`PackageListItem`).
@@ -268,6 +283,8 @@ global Icons {
     out property <string> pause: "M8 5h3v14H8z M13 5h3v14h-3z";
     out property <string> bolt: "M13 2 4 14h7l-1 8 9-12h-7z";
     out property <string> plus: "M12 5v14 M5 12h14";
+    out property <string> add-circle: "M12 3a9 9 0 1 0 0.01 0z M12 8v8 M8 12h8";
+    out property <string> dns: "M4 5h16v5H4z M4 14h16v5H4z M7 7.5h.01 M7 16.5h.01";
     out property <string> more: "M12 4.2a1.3 1.3 0 1 0 0.01 0z M12 10.7a1.3 1.3 0 1 0 0.01 0z M12 17.2a1.3 1.3 0 1 0 0.01 0z";
     out property <string> back: "M15 5l-7 7 7 7";
     out property <string> chevron: "M9 6l6 6-6 6";
@@ -333,7 +350,7 @@ global Glyphs {
             : k == "language" ? Icons.language : k == "palette" ? Icons.palette : k == "apps" ? Icons.apps
             : k == "cloud-sync" ? Icons.cloud-sync : k == "wrench" ? Icons.tools : k == "settings" ? Icons.settings
             : k == "gavel" ? Icons.gavel : k == "cpu" ? Icons.memory : k == "info" ? Icons.info
-            : k == "code" ? Icons.code : k == "key" ? Icons.key : k == "send" ? Icons.send : "";
+            : k == "code" ? Icons.code : k == "key" ? Icons.key : k == "send" ? Icons.send : k == "dns" ? Icons.dns : "";
     }
 }
 
@@ -2052,7 +2069,7 @@ component SetRowView inherits Rectangle {
     background: ta.pressed && root.item.kind != "person" ? Theme.s.inset : transparent;
     opacity: root.item.enabled ? 1 : 0.45;
     HorizontalLayout {
-        padding-left: 16px;
+        padding-left: root.item.lead == "remove" ? 52px : 16px;
         padding-right: 16px;
         spacing: 14px;
         if root.item.kind == "check": VerticalLayout {
@@ -2106,7 +2123,7 @@ component SetRowView inherits Rectangle {
         if root.item.kind == "check" && root.item.glyph == "edit": Rectangle { width: 40px; }
     }
     if root.divider: Rectangle {
-        x: root.leading ? 54px : 16px;
+        x: root.item.lead == "remove" ? 52px : root.leading ? 54px : 16px;
         y: parent.height - 1px;
         width: parent.width - self.x;
         height: 1px;
@@ -2120,8 +2137,8 @@ component SetRowView inherits Rectangle {
         clicked => { root.clicked("edit:" + root.item.id); }
     }
     ta := TouchArea {
-        width: root.item.kind == "check" && root.item.glyph == "edit" ? parent.width - 56px : parent.width;
-        x: 0;
+        width: root.item.kind == "check" && root.item.glyph == "edit" ? parent.width - 56px : parent.width - self.x;
+        x: root.item.lead == "remove" ? 48px : 0;
         enabled: root.item.enabled && root.item.kind != "person";
         clicked => {
             if (root.item.kind == "toggle") {
@@ -2130,6 +2147,22 @@ component SetRowView inherits Rectangle {
                 root.clicked(root.item.id);
             }
         }
+    }
+    if root.item.lead == "remove": Rectangle {
+        x: 12px;
+        y: (parent.height - self.height) / 2;
+        width: 32px;
+        height: 32px;
+        border-radius: 16px;
+        background: rta.pressed ? Theme.s.error.with-alpha(0.12) : transparent;
+        Rectangle {
+            width: 20px;
+            height: 20px;
+            border-radius: 10px;
+            background: Theme.s.error;
+            Rectangle { width: 10px; height: 2px; border-radius: 1px; background: #ffffff; }
+        }
+        rta := TouchArea { clicked => { root.clicked("remove:" + root.item.id); } }
     }
 }
 
@@ -2160,11 +2193,44 @@ component Sections inherits VerticalLayout {
                 }
             }
         }
-        if sec.rows.length > 0 && sec.footer != "": HorizontalLayout {
+        if sec.footer != "" && (sec.rows.length > 0 || sec.title == ""): HorizontalLayout {
             padding-left: 14px;
             padding-right: 14px;
             padding-top: 6px;
             Text { text: sec.footer; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+        }
+    }
+}
+
+component NullStatus inherits Rectangle {
+    in property <string> label;
+    in property <string> description;
+    // `TonalButton` under the text, when given.
+    in property <string> action;
+    callback act();
+    VerticalLayout {
+        alignment: center;
+        spacing: 6px;
+        padding-left: 32px;
+        padding-right: 32px;
+        Text { text: root.label; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; wrap: word-wrap; }
+        if root.description != "": Text { text: root.description; font-size: 13px; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
+        if root.action != "": HorizontalLayout {
+            alignment: center;
+            padding-top: 12px;
+            Rectangle {
+                height: 44px;
+                min-width: nsa-row.preferred-width * 1.1 + 40px;
+                border-radius: 22px;
+                background: nsa.pressed ? Theme.s.primary-container.darker(0.1) : Theme.s.primary-container;
+                nsa-row := HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    VerticalLayout { alignment: center; Icon { glyph: Icons.add-circle; size: 20px; tint: Theme.s.on-primary-container; } }
+                    Text { text: root.action; font-size: 15px; font-weight: 600; color: Theme.s.on-primary-container; vertical-alignment: center; }
+                }
+                nsa := TouchArea { clicked => { root.act(); } }
+            }
         }
     }
 }
@@ -2176,6 +2242,11 @@ component SettingsPage inherits Rectangle {
     in property <[SetSection]> sections;
     in property <length> bottom-gap: 24px;
     in property <string> action-glyph;
+    // `NullStatus` in place of the list while there are no sections, when given.
+    in property <string> empty;
+    in property <string> empty-desc;
+    in property <string> empty-action;
+    property <bool> is-empty: root.empty != "" && root.sections.length == 0;
     callback back();
     callback action();
     callback clicked(string);
@@ -2185,9 +2256,10 @@ component SettingsPage inherits Rectangle {
             title: root.title;
             can-back: root.can-back;
             back => { root.back(); }
-            if root.action-glyph != "": VerticalLayout { alignment: center; IconButton { glyph: root.action-glyph; tint: Theme.s.on-surface; clicked => { root.action(); } } }
+            if root.action-glyph != "" && !root.is-empty: VerticalLayout { alignment: center; IconButton { glyph: root.action-glyph; tint: Theme.s.on-surface; clicked => { root.action(); } } }
         }
         Flickable {
+            visible: !root.is-empty;
             content-height: page-col.preferred-height;
             page-col := VerticalLayout {
                 alignment: start;
@@ -2200,6 +2272,14 @@ component SettingsPage inherits Rectangle {
                 }
             }
         }
+    }
+    if root.is-empty: NullStatus {
+        y: 56px;
+        height: parent.height - 56px;
+        label: root.empty;
+        description: root.empty-desc;
+        action: root.empty-action;
+        act => { root.action(); }
     }
 }
 
@@ -2756,19 +2836,6 @@ component RecordRowView inherits Rectangle {
 }
 
 // `NullStatus`: what an empty list or pane says.
-component NullStatus inherits Rectangle {
-    in property <string> label;
-    in property <string> description;
-    VerticalLayout {
-        alignment: center;
-        spacing: 6px;
-        padding-left: 32px;
-        padding-right: 32px;
-        Text { text: root.label; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; wrap: word-wrap; }
-        if root.description != "": Text { text: root.description; font-size: 13px; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
-    }
-}
-
 component DetailRowView inherits Rectangle {
     in property <DetailRow> item;
     in property <bool> divider;
@@ -3893,7 +3960,9 @@ export component AppWindow inherits Window {
     // sections, a picker sheet and a one or two field input dialog.
     in property <[SetSection]> tools-sections;
     in property <[SetSection]> page-sections;
-    in property <string> list-title;
+    // The settings pages Rust builds (`page-meta` names them).
+    pure callback page-meta(string) -> PageMeta;
+    property <PageMeta> meta: root.page-meta(root.tools-page);
     // The port form (`PortForm`)
     in-out property <bool> ports-open;
     in-out property <string> port-mixed;
@@ -3902,7 +3971,6 @@ export component AppWindow inherits Window {
     pure callback ports-check(string, string, string) -> string;
     callback ports-submit(string, string, string);
     property <string> ports-error: root.ports-open ? root.ports-check(root.port-mixed, root.port-http, root.port-socks) : "";
-    in property <string> list-parent;
     in property <bool> pure-black;
     in property <string> app-version;
     in property <image> app-icon;
@@ -4042,10 +4110,7 @@ export component AppWindow inherits Window {
                 if (root.ports-open) { root.ports-open = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "access" && root.acc-searching) { root.acc-query = ""; root.acc-searching = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "access") { root.acc-back(); return accept; }
-                if (root.tab == 3 && root.tools-page == "hosts") { root.tools-page = "general"; return accept; }
-                if (root.tab == 3 && root.tools-page == "list") { root.tools-page = root.list-parent; return accept; }
-                if (root.tab == 3 && root.tools-page == "network") { root.tools-page = "advanced"; return accept; }
-                if (root.tab == 3 && root.tools-page == "user-agents") { root.tools-page = "general"; return accept; }
+                if (root.tab == 3 && root.meta.known) { root.tools-page = root.meta.parent; return accept; }
                 if (root.tab == 3 && root.tools-page != "") {
                     root.tools-page = "";
                     return accept;
@@ -4187,29 +4252,26 @@ export component AppWindow inherits Window {
                     sections: root.tools-sections;
                     open(p) => { root.tools-clicked(p); }
                 }
-                if root.tab == 3 && (root.tools-page == "general" || root.tools-page == "developer" || root.tools-page == "hosts" || root.tools-page == "backup" || root.tools-page == "advanced" || root.tools-page == "network" || root.tools-page == "list" || root.tools-page == "user-agents"): SettingsPage {
-                    action-glyph: root.tools-page == "user-agents" ? Icons.plus : "";
+                if root.tab == 3 && root.meta.known: SettingsPage {
+                    action-glyph: root.meta.action == "plus" ? Icons.plus : root.meta.action == "add-circle" ? Icons.add-circle : "";
                     action => { root.set-clicked(root.tools-page, "action"); }
                     width: parent.width;
                     height: parent.height;
-                    title: root.tools-page == "general" ? "常规" : root.tools-page == "developer" ? "开发者模式" : root.tools-page == "backup" ? "备份与恢复" : root.tools-page == "advanced" ? "进阶配置" : root.tools-page == "network" ? "网络" : root.tools-page == "list" ? root.list-title : root.tools-page == "user-agents" ? "用户代理" : "Hosts";
+                    title: root.meta.title;
                     sections: root.page-sections;
-                    bottom-gap: root.tools-page == "hosts" || root.tools-page == "list" ? 96px : 24px;
-                    back => { root.tools-page = root.tools-page == "hosts" ? "general" : root.tools-page == "list" ? root.list-parent : root.tools-page == "network" ? "advanced" : root.tools-page == "user-agents" ? "general" : ""; }
+                    empty: root.meta.empty;
+                    empty-desc: root.meta.empty-desc;
+                    empty-action: root.meta.empty-action;
+                    bottom-gap: root.meta.fab ? 96px : 24px;
+                    back => { root.tools-page = root.meta.parent; }
                     clicked(id) => { root.set-clicked(root.tools-page, id); }
                     toggled(id, on) => { root.set-toggled(root.tools-page, id, on); }
                 }
-                if root.tab == 3 && root.tools-page == "list": Fab {
+                if root.tab == 3 && root.meta.known && root.meta.fab: Fab {
                     x: parent.width - self.width - 16px;
                     y: parent.height - self.height - 16px;
                     glyph: Icons.plus;
-                    clicked => { root.set-clicked("list", "add"); }
-                }
-                if root.tab == 3 && root.tools-page == "hosts": Fab {
-                    x: parent.width - self.width - 16px;
-                    y: parent.height - self.height - 16px;
-                    glyph: Icons.plus;
-                    clicked => { root.set-clicked("hosts", "add"); }
+                    clicked => { root.set-clicked(root.tools-page, "add"); }
                 }
                 if root.tab == 3 && root.tools-page == "access": AccessPage {
                     width: parent.width;

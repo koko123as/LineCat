@@ -3,7 +3,7 @@
 //! developer.dart, about.dart, theme.dart).
 
 use crate::settings_view::{self, choices};
-use crate::{profile, store, ActionItem, App, AppWindow, SetSection, CALL};
+use crate::{overrides, profile, store, ActionItem, App, AppWindow, PageMeta, SetSection, CALL};
 use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::sync::Arc;
@@ -12,23 +12,183 @@ use std::time::{Duration, Instant};
 /// The settings pages built so far; the tools list leaves the others out.
 pub const PAGES: &[&str] = &["access", "backup", "advanced"];
 
-/// The list the list page edits, and the page it was opened from.
-fn list_target() -> &'static std::sync::Mutex<(String, String)> {
-    static T: std::sync::OnceLock<std::sync::Mutex<(String, String)>> = std::sync::OnceLock::new();
+/// The list or map the list and map pages edit, each with the page it was opened from.
+#[derive(Default)]
+struct Targets {
+    list: (String, String),
+    map: (String, String),
+}
+
+fn targets() -> &'static std::sync::Mutex<Targets> {
+    static T: std::sync::OnceLock<std::sync::Mutex<Targets>> = std::sync::OnceLock::new();
     T.get_or_init(Default::default)
 }
 
-/// The network list a key names, with its title.
-fn list_of<'a>(
-    s: &'a mut store::Settings,
+/// The list a key names (a network list, or `<spec>:<path>` of an override), with its
+/// title and the description its page shows.
+pub(crate) fn list_get(
+    s: &store::Settings,
     key: &str,
-) -> Option<(&'a mut Vec<String>, &'static str)> {
+) -> Option<(Vec<String>, String, &'static str)> {
+    let n = &s.network;
+    match key {
+        "bypass-domain" => Some((n.bypass_domain.clone(), "排除域名".into(), "")),
+        "route-address" => Some((n.route_address.clone(), "路由地址".into(), "")),
+        "route-exclude" => Some((n.route_exclude_address.clone(), "排除路由地址".into(), "")),
+        _ => {
+            let (spec, state, path) = override_of(s, key)?;
+            let k = spec.key(path)?;
+            let overrides::Kind::List(_, desc) = k.kind else {
+                return None;
+            };
+            Some((
+                overrides::strings(&spec.value(state, path)),
+                k.label.into(),
+                desc,
+            ))
+        }
+    }
+}
+
+fn list_put(s: &mut store::Settings, key: &str, items: Vec<String>) {
     let n = &mut s.network;
     match key {
-        "bypass-domain" => Some((&mut n.bypass_domain, "排除域名")),
-        "route-address" => Some((&mut n.route_address, "路由地址")),
-        "route-exclude" => Some((&mut n.route_exclude_address, "排除路由地址")),
+        "bypass-domain" => n.bypass_domain = items,
+        "route-address" => n.route_address = items,
+        "route-exclude" => n.route_exclude_address = items,
+        _ => {
+            if let Some((spec, state, path)) = override_mut(s, key) {
+                spec.set(state, path, serde_json::json!(items));
+            }
+        }
+    }
+}
+
+/// The map a key names (`hosts`, or `<spec>:<path>` of an override), with its title and
+/// the description its page shows.
+fn map_get(
+    s: &store::Settings,
+    key: &str,
+) -> Option<(
+    std::collections::BTreeMap<String, String>,
+    String,
+    &'static str,
+)> {
+    if key == "hosts" {
+        return Some((s.general.hosts.clone(), "Hosts".into(), ""));
+    }
+    let (spec, state, path) = override_of(s, key)?;
+    let k = spec.key(path)?;
+    let overrides::Kind::Map(desc) = k.kind else {
+        return None;
+    };
+    Some((
+        overrides::pairs(&spec.value(state, path)),
+        k.label.into(),
+        desc,
+    ))
+}
+
+fn map_put(s: &mut store::Settings, key: &str, map: std::collections::BTreeMap<String, String>) {
+    if key == "hosts" {
+        s.general.hosts = map;
+    } else if let Some((spec, state, path)) = override_mut(s, key) {
+        spec.set(state, path, serde_json::json!(map));
+    }
+}
+
+/// The override state a spec id keeps in the settings.
+fn override_state<'a>(s: &'a store::Settings, spec: &str) -> Option<&'a overrides::OverrideState> {
+    match spec {
+        "dns" => Some(&s.dns_override),
         _ => None,
+    }
+}
+
+fn override_state_mut<'a>(
+    s: &'a mut store::Settings,
+    spec: &str,
+) -> Option<&'a mut overrides::OverrideState> {
+    match spec {
+        "dns" => Some(&mut s.dns_override),
+        _ => None,
+    }
+}
+
+fn override_of<'a, 'k>(
+    s: &'a store::Settings,
+    key: &'k str,
+) -> Option<(
+    &'static overrides::Spec,
+    &'a overrides::OverrideState,
+    &'k str,
+)> {
+    let (id, path) = key.split_once(':')?;
+    Some((overrides::spec(id)?, override_state(s, id)?, path))
+}
+
+fn override_mut<'a, 'k>(
+    s: &'a mut store::Settings,
+    key: &'k str,
+) -> Option<(
+    &'static overrides::Spec,
+    &'a mut overrides::OverrideState,
+    &'k str,
+)> {
+    let (id, path) = key.split_once(':')?;
+    Some((overrides::spec(id)?, override_state_mut(s, id)?, path))
+}
+
+/// Points the list and map pages at a list and a map, each with its parent page.
+pub fn set_targets(list: (&str, &str), map: (&str, &str)) {
+    let mut t = targets().lock().unwrap();
+    t.list = (list.0.into(), list.1.into());
+    t.map = (map.0.into(), map.1.into());
+}
+
+/// What the page shell shows for a settings page; `known` false for the pages with their
+/// own layout.
+pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
+    let meta = |title: &str, parent: &str| PageMeta {
+        known: true,
+        title: title.into(),
+        parent: parent.into(),
+        ..Default::default()
+    };
+    let t = targets().lock().unwrap();
+    match page {
+        "general" => meta("常规", ""),
+        "developer" => meta("开发者模式", ""),
+        "backup" => meta("备份与恢复", ""),
+        "advanced" => meta("进阶配置", ""),
+        "network" => meta("网络", "advanced"),
+        "user-agents" => PageMeta {
+            action: "plus".into(),
+            ..meta("用户代理", "general")
+        },
+        "list" | "map" => {
+            let (key, parent) = if page == "list" { &t.list } else { &t.map };
+            let s = settings;
+            let title = if page == "list" {
+                list_get(s, key).map(|l| l.1)
+            } else {
+                map_get(s, key).map(|m| m.1)
+            };
+            PageMeta {
+                fab: true,
+                ..meta(&title.unwrap_or_default(), parent)
+            }
+        }
+        id => match overrides::spec(id) {
+            Some(spec) => PageMeta {
+                action: "add-circle".into(),
+                empty: format!("暂无{}", spec.entries).into(),
+                empty_desc: spec.description.into(),
+                empty_action: spec.add.into(),
+                ..meta(spec.title, "advanced")
+            },
+            None => PageMeta::default(),
+        },
     }
 }
 
@@ -56,8 +216,13 @@ impl App {
         ui.on_set_toggled(move |page, id, on| a.set_toggled(&page, &id, on));
         let a = self.clone();
         ui.on_choice_picked(move |id| a.choice_picked(&id));
+        let a = self.clone();
+        ui.on_page_meta(move |page| {
+            let settings = a.store.lock().unwrap().state.settings.clone();
+            page_meta(&settings, &page)
+        });
         ui.on_input_check(|key, v1, v2| {
-            if key.starts_with("host:") {
+            if key.starts_with("map:") {
                 return if v1.trim().is_empty() {
                     "键不能为空".into()
                 } else if v2.trim().is_empty() {
@@ -94,6 +259,9 @@ impl App {
             if key.starts_with("list:") {
                 a.list_set(&key, None);
             }
+            if key.starts_with("map:") {
+                a.map_set(&key, None);
+            }
             if let Some(i) = key
                 .strip_prefix("ua-edit:")
                 .and_then(|i| i.parse::<usize>().ok())
@@ -105,11 +273,6 @@ impl App {
                             g.global_ua = None;
                         }
                     }
-                });
-            }
-            if let Some(host) = key.strip_prefix("host:") {
-                a.update_general(Effect::Reapply, |g| {
-                    g.hosts.remove(host);
                 });
             }
         });
@@ -135,23 +298,26 @@ impl App {
                 "general" => settings_view::general(&settings),
                 "developer" => settings_view::developer(&settings),
                 "about" => settings_view::about(&settings),
-                "hosts" => settings_view::hosts(&settings),
                 "backup" => app.backup_sections(&settings),
                 "advanced" => settings_view::advanced(&settings),
                 "network" => settings_view::network(&settings),
                 "user-agents" => settings_view::user_agents(&settings),
                 "list" => {
-                    let key = list_target().lock().unwrap().0.clone();
-                    let mut s = settings.clone();
-                    match list_of(&mut s, &key) {
-                        Some((items, title)) => {
-                            ui.set_list_title(title.into());
-                            settings_view::list(items)
-                        }
-                        None => Vec::new(),
-                    }
+                    let key = targets().lock().unwrap().list.0.clone();
+                    list_get(&settings, &key)
+                        .map(|(items, _, desc)| settings_view::list(&items, desc))
+                        .unwrap_or_default()
                 }
-                _ => return,
+                "map" => {
+                    let key = targets().lock().unwrap().map.0.clone();
+                    map_get(&settings, &key)
+                        .map(|(map, _, desc)| settings_view::map(&map, desc))
+                        .unwrap_or_default()
+                }
+                id => match (overrides::spec(id), override_state(&settings, id)) {
+                    (Some(spec), Some(state)) => spec.sections(state),
+                    _ => return,
+                },
             };
             ui.set_page_sections(models(sections));
         });
@@ -311,7 +477,6 @@ impl App {
             ("general", "auth-pass") => {
                 self.open_input("auth-pass", "密码", "", &g.authentication.password)
             }
-            ("general", "hosts") => self.open_page("hosts"),
             ("backup", id) => self.backup_clicked(id),
             ("advanced", "network") => self.open_page("network"),
             ("network", "mtu") => {
@@ -320,12 +485,10 @@ impl App {
             }
             ("network", "congestion") => self.open_choice("congestion", "TCP 拥塞控制"),
             ("network", key @ ("bypass-domain" | "route-address" | "route-exclude")) => {
-                *list_target().lock().unwrap() = (key.to_string(), "network".to_string());
-                self.ui(|ui| ui.set_list_parent("network".into()));
-                self.open_page("list");
+                self.open_list(key, "network")
             }
             ("list", "add") => {
-                let key = list_target().lock().unwrap().0.clone();
+                let key = targets().lock().unwrap().list.0.clone();
                 self.open_input(&format!("list:{key}:new"), "添加", "", "");
             }
             ("list", id) => {
@@ -333,10 +496,10 @@ impl App {
                     .strip_prefix("item:")
                     .and_then(|i| i.parse::<usize>().ok())
                 {
-                    let key = list_target().lock().unwrap().0.clone();
-                    let mut s = self.store.lock().unwrap().state.settings.clone();
-                    let value = list_of(&mut s, &key)
-                        .and_then(|(v, _)| v.get(i).cloned())
+                    let key = targets().lock().unwrap().list.0.clone();
+                    let s = self.store.lock().unwrap().state.settings.clone();
+                    let value = list_get(&s, &key)
+                        .and_then(|(v, _, _)| v.get(i).cloned())
                         .unwrap_or_default();
                     self.open_input_with(
                         &format!("list:{key}:{i}"),
@@ -349,13 +512,31 @@ impl App {
                     );
                 }
             }
-            ("hosts", "add") => self.open_input_with("host:", "添加", "键", "", "值", "", false),
-            ("hosts", id) => {
-                if let Some(host) = id.strip_prefix("host:") {
-                    let value = g.hosts.get(host).cloned().unwrap_or_default();
-                    self.open_input_with(id, "编辑", "键", host, "值", &value, true);
+            ("general", "hosts") => self.open_map("hosts", "general"),
+            ("map", "add") => {
+                let key = targets().lock().unwrap().map.0.clone();
+                self.open_input_with(&format!("map:{key}\t"), "添加", "键", "", "值", "", false)
+            }
+            ("map", id) => {
+                if let Some(name) = id.strip_prefix("entry:") {
+                    let key = targets().lock().unwrap().map.0.clone();
+                    let s = self.store.lock().unwrap().state.settings.clone();
+                    let value = map_get(&s, &key)
+                        .and_then(|(m, _, _)| m.get(name).cloned())
+                        .unwrap_or_default();
+                    self.open_input_with(
+                        &format!("map:{key}\t{name}"),
+                        "编辑",
+                        "键",
+                        name,
+                        "值",
+                        &value,
+                        true,
+                    );
                 }
             }
+            ("advanced", id) if overrides::spec(id).is_some() => self.open_page(id),
+            (page, id) if overrides::spec(page).is_some() => self.override_clicked(page, id),
             ("developer", "message-test") => self.toast("info: 这是一条消息。"),
             ("developer", "logs-test") => self.logs_test(),
             ("developer", "clear-data") => self.confirm(
@@ -446,6 +627,7 @@ impl App {
                 }
             }),
             ("general", "open-logs") => self.update_general(Effect::None, |g| g.open_logs = on),
+            (page, id) if overrides::spec(page).is_some() => self.override_set(page, id, on.into()),
             _ => {}
         }
     }
@@ -472,6 +654,25 @@ impl App {
                 crate::backup::RestoreOption::OnlyProfiles
             }),
             "restore-strategy" => self.set_restore_strategy(value == "override"),
+            "ov" => {
+                if let Some((target, option)) = value.rsplit_once(':') {
+                    if let Some((id, path)) = target.split_once(':') {
+                        self.override_set(id, path, option.into());
+                    }
+                }
+            }
+            "ovadd" => {
+                if let Some((id, path)) = value.split_once(':') {
+                    let (id, path) = (id.to_string(), path.to_string());
+                    self.update_settings(Effect::Reapply, move |s| {
+                        if let (Some(spec), Some(state)) =
+                            (overrides::spec(&id), override_state_mut(s, &id))
+                        {
+                            spec.add(state, &path);
+                        }
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -513,30 +714,29 @@ impl App {
                     });
                 }
             }
-            _ => {
-                if let Some(old) = key.strip_prefix("host:") {
-                    let (host, address) = (value.trim().to_string(), v2.trim().to_string());
-                    let old = old.to_string();
-                    self.update_general(Effect::Reapply, |g| {
-                        if !old.is_empty() {
-                            g.hosts.remove(&old);
-                        }
-                        g.hosts.insert(host, address);
-                    });
+            k if k.starts_with("map:") => {
+                self.map_set(k, Some((value, v2.trim().to_string())));
+            }
+            k if k.starts_with("ov:") => {
+                let (id, path) = k[3..].split_once(':').unwrap_or_default();
+                if let Some(spec) = overrides::spec(id) {
+                    if let Ok(v) = spec.check(path, &value) {
+                        self.override_set(id, path, v);
+                    }
                 }
             }
+            _ => {}
         }
     }
 
     /// A list page's add (`list:<key>:new`), edit (`list:<key>:<i>`) or removal (None).
     fn list_set(self: &Arc<Self>, key: &str, value: Option<String>) {
-        let mut parts = key.splitn(3, ':').skip(1);
-        let (Some(list), Some(at)) = (parts.next(), parts.next()) else {
+        let Some((list, at)) = key.strip_prefix("list:").and_then(|k| k.rsplit_once(':')) else {
             return;
         };
         let (list, at) = (list.to_string(), at.to_string());
         self.update_settings(Effect::Reapply, move |s| {
-            let Some((items, _)) = list_of(s, &list) else {
+            let Some((mut items, _, _)) = list_get(s, &list) else {
                 return;
             };
             match (at.parse::<usize>().ok(), value) {
@@ -551,7 +751,132 @@ impl App {
                 }
                 _ => {}
             }
+            list_put(s, &list, items);
         });
+    }
+
+    /// A map page's add (`map:<key>\t`), edit (`map:<key>\t<name>`) or removal (None).
+    fn map_set(self: &Arc<Self>, key: &str, entry: Option<(String, String)>) {
+        let Some((map, old)) = key.strip_prefix("map:").and_then(|k| k.split_once('\t')) else {
+            return;
+        };
+        let (map, old) = (map.to_string(), old.to_string());
+        self.update_settings(Effect::Reapply, move |s| {
+            let Some((mut entries, _, _)) = map_get(s, &map) else {
+                return;
+            };
+            if !old.is_empty() {
+                entries.remove(&old);
+            }
+            if let Some((name, value)) = entry {
+                entries.insert(name, value);
+            }
+            map_put(s, &map, entries);
+        });
+    }
+
+    fn open_list(self: &Arc<Self>, key: &str, parent: &str) {
+        targets().lock().unwrap().list = (key.to_string(), parent.to_string());
+        self.open_page("list");
+    }
+
+    fn open_map(self: &Arc<Self>, key: &str, parent: &str) {
+        targets().lock().unwrap().map = (key.to_string(), parent.to_string());
+        self.open_page("map");
+    }
+
+    fn override_set(self: &Arc<Self>, id: &str, path: &str, value: Value) {
+        let (id, path) = (id.to_string(), path.to_string());
+        self.update_settings(Effect::Reapply, move |s| {
+            if let (Some(spec), Some(state)) = (overrides::spec(&id), override_state_mut(s, &id)) {
+                spec.set(state, &path, value);
+            }
+        });
+    }
+
+    /// A tap on an override page: the bar's add, a row's remove button, or the row itself.
+    fn override_clicked(self: &Arc<Self>, page: &str, id: &str) {
+        let Some(spec) = overrides::spec(page) else {
+            return;
+        };
+        let settings = self.store.lock().unwrap().state.settings.clone();
+        let Some(state) = override_state(&settings, page) else {
+            return;
+        };
+        if id == "action" {
+            if !spec.can_add(state) {
+                return;
+            }
+            let mut last = "";
+            let items: Vec<ActionItem> = spec
+                .addable(state)
+                .into_iter()
+                .map(|(section, k)| {
+                    let heading = if section != last { section } else { "" };
+                    last = section;
+                    ActionItem {
+                        id: format!("ovadd:{page}:{}", k.path).into(),
+                        heading: heading.into(),
+                        label: k.label.into(),
+                        subtitle: k.desc.into(),
+                        enabled: true,
+                        ..Default::default()
+                    }
+                })
+                .collect();
+            let title: SharedString = spec.add.into();
+            self.ui(move |ui| {
+                ui.set_choice_title(title);
+                ui.set_choice_items(ModelRc::new(VecModel::from(items)));
+                ui.set_choice_open(true);
+            });
+            return;
+        }
+        if let Some(path) = id.strip_prefix("remove:") {
+            let (page, path) = (page.to_string(), path.to_string());
+            self.update_settings(Effect::Reapply, move |s| {
+                if let Some(state) = override_state_mut(s, &page) {
+                    spec.remove(state, &path);
+                }
+            });
+            return;
+        }
+        let Some(k) = spec.key(id) else {
+            return;
+        };
+        let key = format!("{page}:{id}");
+        match k.kind {
+            overrides::Kind::List(..) => self.open_list(&key, page),
+            overrides::Kind::Map(_) => self.open_map(&key, page),
+            overrides::Kind::Options(options) => {
+                let current = spec.text(state, id);
+                let items: Vec<ActionItem> = options
+                    .iter()
+                    .map(|o| ActionItem {
+                        id: format!("ov:{key}:{o}").into(),
+                        label: (*o).into(),
+                        check: true,
+                        checked: *o == current,
+                        enabled: true,
+                        ..Default::default()
+                    })
+                    .collect();
+                let title: SharedString = k.label.into();
+                self.ui(move |ui| {
+                    ui.set_choice_title(title);
+                    ui.set_choice_items(ModelRc::new(VecModel::from(items)));
+                    ui.set_choice_open(true);
+                });
+            }
+            overrides::Kind::Number { .. } | overrides::Kind::Text(_) => {
+                let number = matches!(k.kind, overrides::Kind::Number { .. });
+                self.open_input(&format!("ov:{key}"), k.label, "", &spec.text(state, id));
+                if number {
+                    self.ui(|ui| ui.set_input_number(true));
+                }
+            }
+            overrides::Kind::Toggle => {}
+        }
     }
 
     /// `updateExcludeFromRecents`.

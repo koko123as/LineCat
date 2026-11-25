@@ -419,6 +419,7 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
     if general.append_system_dns {
         dns.insert("append-system".into(), true.into());
     }
+    crate::overrides::DNS.apply(&settings.dns_override, &mut dns);
     set(&mut c, "dns", Value::Object(dns));
     set(&mut c, "rules", json!([]));
     Value::Object(c)

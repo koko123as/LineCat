@@ -29,6 +29,7 @@ fn row(id: &str, kind: &str, title: &str, subtitle: &str) -> SetRow {
         subtitle: subtitle.into(),
         on: false,
         enabled: true,
+        lead: "".into(),
     }
 }
 

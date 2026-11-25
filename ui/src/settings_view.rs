@@ -38,6 +38,7 @@ fn row(id: &str, kind: &str, glyph: &str, title: &str, subtitle: &str) -> SetRow
         subtitle: subtitle.into(),
         on: false,
         enabled: true,
+        lead: "".into(),
     }
 }
 
@@ -215,20 +216,25 @@ pub fn app_icon() -> Option<slint::Image> {
     Some(slint::Image::from_rgba8(pixels))
 }
 
-/// `MapEditView` of the hosts: each name and what it resolves to.
-pub fn hosts(settings: &Settings) -> Vec<SetSection> {
-    let rows = settings
-        .general
-        .hosts
+/// `MapEditView`: each name and its value, tap to edit; the description under them.
+pub fn map(entries: &std::collections::BTreeMap<String, String>, desc: &str) -> Vec<SetSection> {
+    let rows: Vec<SetRow> = entries
         .iter()
-        .map(|(k, v)| value(&format!("host:{k}"), k, v))
+        .map(|(k, v)| value(&format!("entry:{k}"), k, v))
         .collect();
-    vec![section("", "", rows)]
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    vec![section("", desc, rows)]
 }
 
 /// `AdvancedConfigView`: the pages built so far.
 pub fn advanced(_settings: &Settings) -> Vec<SetSection> {
-    vec![section("", "", vec![open("network", "key", "网络")])]
+    vec![section(
+        "",
+        "",
+        vec![open("network", "key", "网络"), open("dns", "dns", "DNS")],
+    )]
 }
 
 fn count(items: &[String]) -> String {
@@ -292,14 +298,17 @@ pub fn network(settings: &Settings) -> Vec<SetSection> {
     ]
 }
 
-/// `ConfigListEditItem`'s page: one row per item, tap to edit.
-pub fn list(items: &[String]) -> Vec<SetSection> {
-    let rows = items
+/// `ConfigListEditItem`'s page: one row per item, tap to edit; the description under them.
+pub fn list(items: &[String], desc: &str) -> Vec<SetSection> {
+    let rows: Vec<SetRow> = items
         .iter()
         .enumerate()
         .map(|(i, v)| row(&format!("item:{i}"), "action", "", v, ""))
         .collect();
-    vec![section("", "", rows)]
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    vec![section("", desc, rows)]
 }
 
 /// `PortForm._validate` on Android (mixed, http and socks): each in 1024..=49151, the
@@ -482,10 +491,23 @@ pub fn check_input(key: &str, value: &str) -> Result<String, String> {
             if value.is_empty() {
                 return Err("值不能为空".into());
             }
-            if (k.contains(":route-") || k.ends_with(":route-address")) && !valid_cidr(value) {
+            let target = k["list:".len()..].rsplit_once(':').map_or("", |(t, _)| t);
+            if target.starts_with("route-") && !valid_cidr(value) {
                 return Err("请输入有效的 CIDR".into());
             }
+            if let Some((id, path)) = target.split_once(':') {
+                if let Some(spec) = crate::overrides::spec(id) {
+                    spec.check(path, value)?;
+                }
+            }
             Ok(value.to_string())
+        }
+        k if k.starts_with("ov:") => {
+            let (id, path) = k[3..].split_once(':').unwrap_or_default();
+            match crate::overrides::spec(id) {
+                Some(spec) => spec.check(path, value).map(|_| value.to_string()),
+                None => Ok(value.to_string()),
+            }
         }
         _ => Ok(value.to_string()),
     }
@@ -574,7 +596,11 @@ mod tests {
         let s = Settings::default();
         let n = network(&s);
         assert_eq!(n.len(), 3);
-        assert_eq!(list(&["a".into(), "b".into()])[0].rows.row_count(), 2);
+        assert_eq!(list(&["a".into(), "b".into()], "")[0].rows.row_count(), 2);
+        assert!(list(&[], "").is_empty());
+        assert!(check_input("list:dns:fallback-filter.ipcidr:new", "1.2.3.4").is_err());
+        assert!(check_input("ov:dns:listen", "1.2.3.4").is_err());
+        assert!(check_input("ov:dns:listen", "0.0.0.0:53").is_ok());
     }
 
     use super::*;

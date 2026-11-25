@@ -235,17 +235,27 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
         "general" => settings_view::general(&s),
         "developer" => settings_view::developer(&s),
         "about" => settings_view::about(&s),
-        "hosts" => settings_view::hosts(&s),
+        "map" => settings_view::map(&s.general.hosts, ""),
+        "dns" => {
+            if overlay != "empty" {
+                for k in ["enhanced-mode", "nameserver", "listen", "ipv6", "fallback"] {
+                    seasoncat_ui::overrides::DNS.add(&mut s.dns_override, k);
+                }
+                seasoncat_ui::overrides::DNS.set(
+                    &mut s.dns_override,
+                    "enhanced-mode",
+                    "fake-ip".into(),
+                );
+            }
+            seasoncat_ui::overrides::DNS.sections(&s.dns_override)
+        }
         "advanced" => settings_view::advanced(&s),
         "network" => settings_view::network(&s),
         "user-agents" => {
             s.general.global_ua = s.general.user_agents.first().cloned();
             settings_view::user_agents(&s)
         }
-        "list" => {
-            ui.set_list_title("排除域名".into());
-            settings_view::list(&s.network.bypass_domain)
-        }
+        "list" => settings_view::list(&s.network.bypass_domain, ""),
         "backup" => {
             if overlay.starts_with("dav") {
                 s.dav = Some(seasoncat_ui::backup::Dav {
@@ -317,6 +327,9 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
         );
         ui.set_acc_count("已选 4".into());
     }
+    seasoncat_ui::set_targets(("bypass-domain", "network"), ("hosts", "general"));
+    let meta = seasoncat_ui::page_meta(&s, page);
+    ui.on_page_meta(move |_| meta.clone());
     ui.set_page_sections(m(sections));
     ui.set_choice_open(overlay.starts_with("choice:"));
     if let Some(key) = overlay.strip_prefix("choice:") {
@@ -709,10 +722,16 @@ fn main() {
         ("set-disclaimer-small", 3, "", "disclaimer", 1, ""),
         ("set-disclaimer-wide", 3, "", "disclaimer", 1, ""),
         ("set-disclaimer-tablet", 3, "", "disclaimer", 1, ""),
-        ("set-hosts", 3, "", "hosts", 1, ""),
-        ("set-hosts-small", 3, "", "hosts", 1, ""),
-        ("set-hosts-wide", 3, "", "hosts", 1, ""),
-        ("set-hosts-tablet", 3, "", "hosts", 1, ""),
+        ("set-hosts", 3, "", "map", 1, ""),
+        ("set-hosts-small", 3, "", "map", 1, ""),
+        ("set-hosts-wide", 3, "", "map", 1, ""),
+        ("set-hosts-tablet", 3, "", "map", 1, ""),
+        ("set-dns", 3, "", "dns", 1, ""),
+        ("set-dns-small", 3, "", "dns", 1, ""),
+        ("set-dns-wide", 3, "", "dns", 1, ""),
+        ("set-dns-tablet", 3, "", "dns", 1, ""),
+        ("set-dns-empty", 3, "", "dns", 1, "empty"),
+        ("set-dns-empty-small", 3, "", "dns", 1, "empty"),
         ("set-theme", 3, "", "theme", 1, ""),
         ("set-theme-small", 3, "", "theme", 1, ""),
         ("set-theme-wide", 3, "", "theme", 1, ""),
