@@ -698,6 +698,11 @@ fn main() {
         ("tools-wide", 3, "", "", 1, ""),
         ("dashboard", 0, "", "", 1, ""),
         ("dashboard-edit", 0, "", "", 1, "edit"),
+        ("dashboard-stopped", 0, "", "", 1, "stopped"),
+        ("dashboard-stopped-small", 0, "", "", 1, "stopped"),
+        ("dashboard-stopped-wide", 0, "", "", 1, "stopped"),
+        ("dashboard-stopped-tablet", 0, "", "", 1, "stopped"),
+        ("dashboard-stopped-dark", 0, "", "", 2, "stopped"),
         ("dashboard-tablet", 0, "", "", 1, ""),
         ("dashboard-wide", 0, "", "", 1, ""),
         ("proxies-wide", 1, "节点选择", "", 1, ""),
@@ -757,10 +762,6 @@ fn main() {
         ("set-about-small", 3, "", "about", 1, ""),
         ("set-about-wide", 3, "", "about", 1, ""),
         ("set-about-tablet", 3, "", "about", 1, ""),
-        ("set-disclaimer", 3, "", "disclaimer", 1, ""),
-        ("set-disclaimer-small", 3, "", "disclaimer", 1, ""),
-        ("set-disclaimer-wide", 3, "", "disclaimer", 1, ""),
-        ("set-disclaimer-tablet", 3, "", "disclaimer", 1, ""),
         ("set-hosts", 3, "", "map", 1, ""),
         ("set-hosts-small", 3, "", "map", 1, ""),
         ("set-hosts-wide", 3, "", "map", 1, ""),
@@ -853,6 +854,14 @@ fn main() {
         };
         window.set_size(slint::PhysicalSize::new(w, h));
         ui.set_dash_editing(*overlay == "edit");
+        ui.set_run_state(
+            if *overlay == "stopped" {
+                "STOPPED"
+            } else {
+                "STARTED"
+            }
+            .into(),
+        );
         // "surface": a floating window's surface, larger than the window on every side.
         let (top, bottom, side) = match *overlay {
             "inset" => (24.0, 24.0, 0.0),

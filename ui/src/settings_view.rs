@@ -97,7 +97,7 @@ pub fn tools(settings: &Settings, mobile: bool, pages: &[&str]) -> Vec<SetSectio
         set.push(open("advanced", "wrench", "进阶配置"));
     }
     set.push(open("general", "settings", "常规"));
-    let mut other = vec![open("disclaimer", "gavel", "免责声明")];
+    let mut other = Vec::new();
     if settings.developer_mode {
         other.push(open("developer", "cpu", "开发者模式"));
     }
@@ -427,20 +427,12 @@ pub fn about(settings: &Settings) -> Vec<SetSection> {
                     "github.com/chen08209/concord",
                 ),
                 row(
-                    "link:https://t.me/FlClash",
+                    "link:https://github.com/chen08209/FlClash",
                     "link",
-                    "send",
-                    "Telegram",
-                    "t.me/FlClash",
+                    "code",
+                    "原项目",
+                    "github.com/chen08209/FlClash",
                 ),
-            ],
-        ),
-        section(
-            "其他贡献者",
-            "",
-            vec![
-                row("contributor", "person", "J", "June2", "应用图标设计"),
-                row("contributor", "person", "A", "Arue", "应用图标设计"),
             ],
         ),
     ]
@@ -629,7 +621,7 @@ mod tests {
             vec![
                 vec!["requests", "resources"],
                 vec!["language", "theme", "general"],
-                vec!["disclaimer", "about"],
+                vec!["about"],
             ]
         );
         s.general.open_logs = true;
@@ -640,7 +632,7 @@ mod tests {
             all[1],
             vec!["language", "theme", "access", "backup", "advanced", "general"]
         );
-        assert_eq!(all[2], vec!["disclaimer", "developer", "about"]);
+        assert_eq!(all[2], vec!["developer", "about"]);
     }
 
     #[test]

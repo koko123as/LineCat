@@ -9,7 +9,10 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.view.SurfaceView
+import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import androidx.core.view.WindowCompat
 
 /**
  * The launcher activity: the Slint UI renders into this NativeActivity from
@@ -44,6 +47,14 @@ class SlintActivity : NativeActivity() {
         UiBridge.activity = this
         SystemFont.export(applicationContext)
         super.onCreate(savedInstanceState)
+        // Draw into a SurfaceView sized by layout, as GameActivity does, instead of the window
+        // surface NativeActivity takes: in Flyme's small window that surface keeps the full
+        // screen's size and is scaled down into the window, shrinking the whole phone layout.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.takeSurface(null)
+        val surface = SurfaceView(this)
+        surface.holder.addCallback(this)
+        addContentView(surface, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         window.decorView.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
     }
 

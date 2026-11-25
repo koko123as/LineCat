@@ -338,7 +338,6 @@ global Icons {
     out property <string> apps: "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z";
     out property <string> cloud-sync: "M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.5 1.5A3.8 3.8 0 0 1 17.5 18z M9.5 13.5l2.5-2.5 2.5 2.5 M12 11v5";
     out property <string> settings: "M12 9a3 3 0 1 0 0.01 0z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M4.9 19.1 7 17 M17 7l2.1-2.1";
-    out property <string> gavel: "M14 4l6 6 M11 7l6 6 M12.5 5.5l-4 4 M15.5 8.5l-4 4 M10 11 3.5 17.5l2 2L12 13 M4 21h9";
     out property <string> code: "M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16";
     out property <string> send: "M21 3 3 10l7 3 3 7z M10 13l11-10";
     out property <string> external: "M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6";
@@ -354,7 +353,7 @@ global Glyphs {
         return k == "requests" ? Icons.requests : k == "resources" ? Icons.resources : k == "logs" ? Icons.logs
             : k == "language" ? Icons.language : k == "palette" ? Icons.palette : k == "apps" ? Icons.apps
             : k == "cloud-sync" ? Icons.cloud-sync : k == "wrench" ? Icons.tools : k == "settings" ? Icons.settings
-            : k == "gavel" ? Icons.gavel : k == "cpu" ? Icons.memory : k == "info" ? Icons.info
+            : k == "cpu" ? Icons.memory : k == "info" ? Icons.info
             : k == "code" ? Icons.code : k == "key" ? Icons.key : k == "send" ? Icons.send : k == "dns" ? Icons.dns
             : k == "plus" ? Icons.plus : k == "add-circle" ? Icons.add-circle : k == "check" ? Icons.check
             : k == "delete" ? Icons.delete : k == "select-all" ? Icons.select-all : k == "bolt" ? Icons.bolt
@@ -649,6 +648,43 @@ component DashHeader inherits HorizontalLayout {
 
 // `CurrentOutboundCard`: where traffic leaves, the kind of address, run time and the
 // organization, with the start button.
+// The start/stop button: the app's cat, filled in the primary color while running and
+// drawn as a grey outline while stopped. Paths from android/service/res/drawable/ic.xml.
+component CatButton inherits Rectangle {
+    in property <length> size: 76px;
+    in property <bool> on;
+    in property <bool> busy;
+    callback clicked();
+    width: size;
+    height: size;
+    opacity: root.busy ? 0.5 : 1;
+    Path {
+        visible: root.on;
+        width: root.size;
+        height: root.size;
+        commands: "M333.0,536.9C282.4,531.2 242.0,516.0 215.2,492.7L208.8,487.1L201.2,491.8C194.7,495.9 192.9,496.5 188.5,496.5C180.1,496.4 174.0,490.3 174.0,481.9C174.0,475.7 176.9,471.5 184.8,466.5C189.0,463.8 190.9,462.0 190.5,461.0C190.3,460.2 188.7,455.6 187.1,450.8C184.5,443.3 183.5,439.7 183.1,435.8C183.0,435.0 172.8,439.1 164.8,443.1C158.0,446.5 154.3,446.7 149.0,444.0C141.6,440.2 138.7,429.7 143.3,422.9C146.4,418.3 153.0,414.5 168.4,408.4L181.5,403.1L182.1,387.3C182.9,367.9 185.5,354.4 190.6,343.7C192.3,340.1 192.3,340.0 189.8,335.3C186.8,329.8 184.2,321.2 183.2,313.7C182.3,307.0 182.3,254.9 183.2,249.0C187.3,222.2 208.9,203.4 236.7,202.4C250.3,201.9 260.2,205.5 287.8,221.4C310.8,234.6 309.7,234.3 323.7,232.8C338.9,231.1 381.1,231.1 396.3,232.8C408.1,234.0 408.2,234.0 413.5,231.6C416.4,230.3 424.7,225.8 431.9,221.5C458.7,205.9 469.8,201.8 483.9,202.4C498.6,203.1 511.2,208.3 521.1,218.0C529.2,225.9 532.6,232.3 536.8,247.5C537.9,251.8 538.2,303.5 537.0,311.4C535.8,321.2 533.2,329.8 530.2,335.3C527.7,340.0 527.7,340.1 529.4,343.7C534.5,354.4 537.1,367.9 537.9,387.3L538.5,403.1L551.6,408.4L572.7,418.6C579.1,423.5 580.7,430.7 577.0,438.0C574.7,442.5 569.0,446.0 564.0,446.0C562.3,446.0 558.4,444.7 555.2,443.1C547.2,439.1 537.0,435.0 536.9,435.8C536.5,439.7 535.5,443.3 532.9,450.8C531.3,455.6 529.7,460.2 529.5,461.0C529.1,462.0 531.0,463.8 535.2,466.5C543.1,471.5 546.0,475.7 546.0,481.9C546.0,490.3 539.9,496.4 531.5,496.5C527.1,496.5 525.3,495.9 518.8,491.9L511.3,487.2L504.9,492.7C480.8,513.2 449.1,526.6 407.0,534.1C386.6,537.7 351.8,539.0 333.0,536.9ZM346.3,461.1C331.5,456.0 325.4,445.0 331.1,433.3C339.1,416.7 377.6,415.3 388.7,431.2C394.7,439.9 392.0,451.6 382.8,457.3C373.6,463.0 356.9,464.8 346.3,461.1ZM295.5,423.0C287.3,421.7 281.7,417.0 277.4,407.6C268.5,388.0 278.8,363.9 297.1,361.4C306.0,360.2 316.5,367.2 321.2,377.5C324.5,384.7 324.5,400.3 321.2,407.5C316.0,418.8 306.4,424.6 295.5,423.0ZM417.3,423.0C409.5,421.9 401.9,414.7 398.5,405.1C396.2,398.5 396.5,385.4 399.1,378.4C402.7,368.8 412.8,361.0 421.5,361.0C426.1,361.0 433.5,364.4 437.6,368.5C443.4,374.3 446.0,381.7 446.0,392.4C446.0,412.8 434.2,425.3 417.3,423.0Z";
+        fill: Theme.s.primary;
+        fill-rule: evenodd;
+        viewbox-x: 97.3;
+        viewbox-y: 107.3;
+        viewbox-width: 524.4;
+        viewbox-height: 524.4;
+    }
+    Path {
+        visible: !root.on;
+        width: root.size;
+        height: root.size;
+        commands: "M333.0,536.9C282.4,531.2 242.0,516.0 215.2,492.7L208.8,487.1L201.2,491.8C194.7,495.9 192.9,496.5 188.5,496.5C180.1,496.4 174.0,490.3 174.0,481.9C174.0,475.7 176.9,471.5 184.8,466.5C189.0,463.8 190.9,462.0 190.5,461.0C190.3,460.2 188.7,455.6 187.1,450.8C184.5,443.3 183.5,439.7 183.1,435.8C183.0,435.0 172.8,439.1 164.8,443.1C158.0,446.5 154.3,446.7 149.0,444.0C141.6,440.2 138.7,429.7 143.3,422.9C146.4,418.3 153.0,414.5 168.4,408.4L181.5,403.1L182.1,387.3C182.9,367.9 185.5,354.4 190.6,343.7C192.3,340.1 192.3,340.0 189.8,335.3C186.8,329.8 184.2,321.2 183.2,313.7C182.3,307.0 182.3,254.9 183.2,249.0C187.3,222.2 208.9,203.4 236.7,202.4C250.3,201.9 260.2,205.5 287.8,221.4C310.8,234.6 309.7,234.3 323.7,232.8C338.9,231.1 381.1,231.1 396.3,232.8C408.1,234.0 408.2,234.0 413.5,231.6C416.4,230.3 424.7,225.8 431.9,221.5C458.7,205.9 469.8,201.8 483.9,202.4C498.6,203.1 511.2,208.3 521.1,218.0C529.2,225.9 532.6,232.3 536.8,247.5C537.9,251.8 538.2,303.5 537.0,311.4C534.5,328.9 529.6,339.6 521.2,345.4C515.9,349.1 506.7,350.1 500.7,347.6C496.8,345.9 478.4,329.4 476.3,325.7C472.9,319.6 476.4,309.4 483.0,306.0C489.9,302.5 494.2,303.3 502.8,309.7C505.6,311.8 505.8,311.9 506.6,310.2C507.9,307.2 508.3,264.0 507.1,255.9C504.9,241.5 496.9,233.8 483.6,233.2C477.2,232.9 475.7,233.2 469.0,236.2C464.9,238.1 455.1,243.3 447.3,247.8C420.0,263.4 417.7,264.3 403.7,263.7C398.1,263.5 386.0,262.8 376.7,262.1C363.5,261.1 356.5,261.1 343.2,262.1C334.0,262.8 321.9,263.5 316.3,263.7C302.3,264.3 300.0,263.4 272.7,247.8C251.5,235.7 245.2,233.0 237.6,233.0C224.4,233.0 215.3,241.1 213.0,255.1C211.7,262.8 212.0,307.1 213.4,310.2C214.1,311.8 214.9,311.5 219.8,308.0C226.2,303.3 230.8,302.8 237.0,306.0C243.6,309.4 247.1,319.6 243.7,325.7C243.0,326.8 238.4,331.6 233.4,336.3C224.4,344.9 220.0,351.2 216.4,361.2C214.5,366.6 212.0,381.8 212.0,388.7L212.0,394.0L220.8,393.7C228.3,393.5 230.0,393.8 233.0,395.7C237.9,398.7 240.0,402.8 240.0,409.0C240.0,413.9 239.7,414.6 235.8,418.5C231.7,422.6 231.1,422.8 222.1,424.0L212.7,425.3L213.3,431.0C214.1,438.6 217.9,448.3 219.7,447.6C223.3,446.2 234.5,444.0 237.8,444.0C239.8,444.0 243.3,445.0 245.4,446.3C256.0,452.3 255.8,467.4 245.0,472.8L241.0,474.8L247.2,478.8C274.1,496.1 319.9,508.0 360.0,508.0C400.1,508.0 445.9,496.1 472.8,478.8L479.0,474.8L475.0,472.8C464.2,467.4 463.9,452.3 474.6,446.3C476.7,445.0 480.2,444.0 482.2,444.0C485.5,444.0 496.7,446.2 500.3,447.6C502.1,448.3 505.7,439.1 506.6,431.2L507.2,425.3L497.9,424.0C488.9,422.8 488.3,422.6 484.2,418.5C480.3,414.6 480.0,413.9 480.0,409.0C480.0,402.2 482.7,397.8 488.5,395.0C492.3,393.2 494.0,392.9 499.7,393.5C518.0,395.3 562.1,410.5 572.7,418.6C579.1,423.5 580.7,430.7 577.0,438.0C574.7,442.5 569.0,446.0 564.0,446.0C562.3,446.0 558.4,444.7 555.2,443.1C547.2,439.1 537.0,435.0 536.9,435.8C536.5,439.7 535.5,443.3 532.9,450.8C531.3,455.6 529.7,460.2 529.5,461.0C529.1,462.0 531.0,463.8 535.2,466.5C543.1,471.5 546.0,475.7 546.0,481.9C546.0,490.3 539.9,496.4 531.5,496.5C527.1,496.5 525.3,495.9 518.8,491.9L511.3,487.2L504.9,492.7C480.8,513.2 449.1,526.6 407.0,534.1C386.6,537.7 351.8,539.0 333.0,536.9ZM346.3,461.1C331.5,456.0 325.4,445.0 331.1,433.3C339.1,416.7 377.6,415.3 388.7,431.2C394.7,439.9 392.0,451.6 382.8,457.3C373.6,463.0 356.9,464.8 346.3,461.1ZM295.5,423.0C287.3,421.7 281.7,417.0 277.4,407.6C268.5,388.0 278.8,363.9 297.1,361.4C306.0,360.2 316.5,367.2 321.2,377.5C324.5,384.7 324.5,400.3 321.2,407.5C316.0,418.8 306.4,424.6 295.5,423.0ZM417.3,423.0C409.5,421.9 401.9,414.7 398.5,405.1C396.2,398.5 396.5,385.4 399.1,378.4C402.7,368.8 412.8,361.0 421.5,361.0C426.1,361.0 433.5,364.4 437.6,368.5C443.4,374.3 446.0,381.7 446.0,392.4C446.0,412.8 434.2,425.3 417.3,423.0Z";
+        fill: Theme.s.on-surface-variant;
+        fill-rule: evenodd;
+        viewbox-x: 97.3;
+        viewbox-y: 107.3;
+        viewbox-width: 524.4;
+        viewbox-height: 524.4;
+    }
+    TouchArea { enabled: !root.busy; clicked => { root.clicked(); } }
+}
+
 component StatusCard inherits DashCard {
     in property <DashStatus> status;
     in property <string> run-state;
@@ -725,20 +761,11 @@ component StatusCard inherits DashCard {
         }
         VerticalLayout {
             alignment: center;
-            Rectangle {
-                width: root.compact ? 64px : 76px;
-                height: self.width;
-                border-radius: self.width / 2;
-                background: root.on ? Theme.s.primary : Theme.s.primary-container;
-                opacity: root.busy ? 0.6 : 1;
-                VerticalLayout {
-                    alignment: center;
-                    HorizontalLayout {
-                        alignment: center;
-                        FilledIcon { glyph: root.on ? Icons.pause : Icons.play; tint: root.on ? Theme.s.on-primary : Theme.s.on-primary-container; }
-                    }
-                }
-                TouchArea { enabled: !root.busy; clicked => { root.toggle(); } }
+            CatButton {
+                size: root.compact ? 64px : 76px;
+                on: root.on;
+                busy: root.busy;
+                clicked => { root.toggle(); }
             }
         }
     }
@@ -2394,68 +2421,6 @@ component AboutPage inherits Rectangle {
                         Text { text: "检查更新"; font-size: 15px; color: Theme.s.on-primary-container; vertical-alignment: center; }
                     }
                     uta := TouchArea { enabled: !root.checking; clicked => { root.check-update(); } }
-                }
-            }
-        }
-    }
-}
-
-// lib/views/disclaimer.dart, read from the tools page (no consent bar).
-component DisclaimerPage inherits Rectangle {
-    callback back();
-    property <[{title: string, content: string}]> terms: [
-        { title: "软件性质", content: "本软件是基于 Concord 内核的开源网络代理客户端，仅提供配置管理、规则分流与流量转发等本地工具功能。\n\n本软件自身不提供任何代理服务器、节点、订阅、机场或网络接入服务，也不与任何此类服务的提供者存在合作、代理或担保关系。" },
-        { title: "使用说明", content: "任何人基于本软件开展的商业活动，包括付费分发、捆绑销售或作为商业服务的组成部分，均与本软件的开发者无关，开发者不为其提供背书、支持或担保。\n\n你须自行遵守所在国家或地区的法律法规，因违法使用本软件产生的后果由你自行承担。" },
-        { title: "用户责任", content: "你应自行确认使用本软件在你所在国家或地区是合法的，并对使用本软件的全部行为及其后果独立承担法律责任。\n\n你导入的订阅、节点与配置由你自行选择和判断，其来源是否合法、内容是否安全、服务是否稳定，均由你与相关提供者自行负责。" },
-        { title: "第三方内容", content: "订阅链接、配置文件、规则集、脚本、外部资源及外部链接均由第三方提供，开发者无法也不会对其合法性、准确性、安全性和可用性进行审查或担保。\n\n因使用第三方内容导致的数据泄露、财产损失、账号封禁或其他任何损失，由你与第三方自行解决，开发者不承担任何责任。" },
-        { title: "无担保声明", content: "本软件按“现状”和“可用”的原则提供，不附带任何明示或默示的担保，包括但不限于适销性、特定用途适用性、不侵权以及持续可用、无错误、无安全漏洞的担保。\n\n开发者不保证本软件能满足你的需求，也不保证本软件的运行不会中断或不会出现错误。" },
-        { title: "责任限制", content: "在适用法律允许的最大范围内，开发者及所有贡献者均不对因使用或无法使用本软件而产生的任何直接、间接、偶然、特殊、惩罚性或后果性损害承担责任，包括但不限于数据丢失、设备损坏、网络异常、业务中断、利润损失或因此引起的任何法律纠纷，即使已被告知发生此类损害的可能性。" },
-        { title: "数据收集与隐私", content: "本软件不会收集或上传你的订阅地址、节点信息、配置内容、访问的网站、连接记录、流量内容和日志，这些数据仅保存在你的设备本地，开发者无法获取。\n\n本软件只会在你使用相应功能时访问外部网络，例如更新订阅时访问你提供的订阅地址、检查更新时访问 GitHub。\n\n本软件在所有平台上均未集成任何数据统计或崩溃上报服务。" },
-        { title: "开源协议", content: "本软件以 GPL-3.0 协议开源，你可以依该协议运行、研究、修改和分发本软件；分发本软件或其修改版本时，须同样以 GPL-3.0 协议提供源代码并保留原有的版权声明。\n\n本软件包含的第三方组件（包括 Concord 内核）分别遵循其各自的开源协议。基于本软件修改或分发的版本所产生的任何问题，与原作者无关。" },
-        { title: "声明变更", content: "本声明可能随版本更新而修订，以每个版本附带的内容为准。" },
-        { title: "与开源协议的关系", content: "本声明是对软件性质、风险与责任的说明，不是 GPL-3.0 之外的附加条款，也不限制该协议授予你的运行、复制、修改和分发等任何权利；两者不一致时，以 GPL-3.0 为准。" },
-    ];
-    VerticalLayout {
-        AppBar { title: "免责声明"; can-back: true; back => { root.back(); } }
-        Flickable {
-            content-height: dcol.preferred-height;
-            dcol := VerticalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                padding-top: 8px;
-                padding-bottom: 32px;
-                Rectangle {
-                    background: Theme.s.card;
-                    border-radius: 20px;
-                    height: intro.preferred-height;
-                    intro := HorizontalLayout {
-                        padding: 20px;
-                        spacing: 16px;
-                        VerticalLayout { alignment: start; Icon { glyph: Icons.gavel; size: 28px; tint: Theme.s.primary; } }
-                        Text {
-                            horizontal-stretch: 1;
-                            text: "在使用 FlClash（以下简称“本软件”）前，请仔细阅读并充分理解本声明。点击“同意”表示你已阅读并理解以下内容；如不想继续，可点击“退出”。";
-                            font-size: 15px;
-                            color: Theme.s.on-surface-variant;
-                            wrap: word-wrap;
-                        }
-                    }
-                }
-                for t[i] in root.terms: VerticalLayout {
-                    padding-top: 28px;
-                    spacing: 10px;
-                    HorizontalLayout {
-                        spacing: 12px;
-                        Rectangle {
-                            width: 28px;
-                            height: 28px;
-                            border-radius: 14px;
-                            background: Theme.s.primary-container;
-                            Text { text: i + 1; font-size: 13px; font-weight: 600; color: Theme.s.on-primary-container; }
-                        }
-                        Text { text: t.title; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
-                    }
-                    Text { text: t.content; font-size: 15px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
                 }
             }
         }
@@ -4359,11 +4324,6 @@ export component AppWindow inherits Window {
                     toggled(id, on) => { root.set-toggled("about", id, on); }
                     check-update => { root.check-update(); }
                     logo-tapped => { root.about-logo-tapped(); }
-                }
-                if root.tab == 3 && root.tools-page == "disclaimer": DisclaimerPage {
-                    width: parent.width;
-                    height: parent.height;
-                    back => { root.tools-page = ""; }
                 }
                 if root.req-visible: RequestsPage {
                     width: parent.width;
