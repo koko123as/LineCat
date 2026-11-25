@@ -5,6 +5,7 @@
 pub mod bridge;
 pub mod dashboard;
 pub mod dns_queries;
+pub mod edges;
 pub mod http_capture;
 pub mod profile;
 pub mod proxies;
@@ -94,6 +95,7 @@ struct App {
     /// Geo files being fetched, by `GeoResource` name, and those a tap asked for.
     geo_busy: Mutex<HashSet<String>>,
     geo_manual: Mutex<HashSet<String>>,
+    edges: Mutex<Option<edges::Report>>,
 }
 
 /// Why a profile file could not be taken in.
@@ -450,28 +452,26 @@ impl App {
         Ok(())
     }
 
-    /// `WindowEdges.kt`; a decor size the Slint window missed is dispatched as a resize.
+    /// `WindowEdges.kt`: the padding is worked out again whenever Slint resizes the window.
     fn set_edges(self: &Arc<Self>, edges: Value) {
-        self.ui(move |ui| {
-            let px = |k: &str| edges.get(k).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-            let window = ui.window();
-            let scale = window.scale_factor().max(0.1);
-            let (width, height) = (px("width"), px("height"));
-            if width >= 1.0 && height >= 1.0 {
-                let size = window.size();
-                if (size.width as f32 - width).abs() >= 1.0
-                    || (size.height as f32 - height).abs() >= 1.0
-                {
-                    let _ =
-                        window.dispatch_event_with_result(slint::platform::WindowEvent::Resized {
-                            size: slint::LogicalSize::new(width / scale, height / scale),
-                        });
-                }
-            }
-            ui.set_inset_top(px("top") / scale);
-            ui.set_inset_bottom(px("bottom") / scale);
-            ui.set_insets_known(true);
-        });
+        *self.edges.lock().unwrap() = Some(edges::Report::from_json(&edges));
+        let app = self.clone();
+        self.ui(move |ui| app.fit_edges(&ui));
+    }
+
+    fn fit_edges(&self, ui: &AppWindow) {
+        let Some(report) = *self.edges.lock().unwrap() else {
+            return;
+        };
+        let window = ui.window();
+        let size = window.size();
+        let pad = edges::fit((size.width as f32, size.height as f32), &report);
+        let scale = window.scale_factor().max(0.1);
+        ui.set_inset_top(pad.top / scale);
+        ui.set_inset_bottom(pad.bottom / scale);
+        ui.set_inset_left(pad.left / scale);
+        ui.set_inset_right(pad.right / scale);
+        ui.set_insets_known(true);
     }
 
     fn push_log(self: &Arc<Self>, entry: &Value) {
@@ -2185,6 +2185,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         core_home: Mutex::new(PathBuf::new()),
         geo_busy: Mutex::new(HashSet::new()),
         geo_manual: Mutex::new(HashSet::new()),
+        edges: Mutex::new(None),
     });
 
     let apply_theme = |ui: &AppWindow, accent: usize| {
@@ -2204,6 +2205,13 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     ui.set_logs(ModelRc::new(VecModel::<LogItem>::default()));
     app.refresh_profiles();
 
+    let a = app.clone();
+    let w = ui.as_weak();
+    ui.on_window_resized(move || {
+        if let Some(ui) = w.upgrade() {
+            a.fit_edges(&ui);
+        }
+    });
     let a = app.clone();
     ui.on_toggle_vpn(move || a.toggle_vpn());
     let a = app.clone();

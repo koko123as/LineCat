@@ -3426,6 +3426,11 @@ export component AppWindow inherits Window {
     in property <bool> insets-known;
     in property <length> inset-top;
     in property <length> inset-bottom;
+    in property <length> inset-left;
+    in property <length> inset-right;
+    callback window-resized();
+    changed width => { root.window-resized(); }
+    changed height => { root.window-resized(); }
     property <length> top-inset: root.insets-known ? root.inset-top : max(root.safe-area-insets.top, 0px);
     property <length> bottom-inset: root.insets-known ? root.inset-bottom : max(root.safe-area-insets.bottom, 0px);
     property <length> keyboard: root.virtual-keyboard-size.height > 0 ? root.virtual-keyboard-size.height : 0px;
@@ -3473,6 +3478,8 @@ export component AppWindow inherits Window {
             width: root.width;
             height: root.height;
             padding-top: root.top-inset;
+            padding-left: root.insets-known ? root.inset-left : 0px;
+            padding-right: root.insets-known ? root.inset-right : 0px;
             // `ViewMode`: past 600 the bar moves to the side, a rail up to 840 and a
             // labelled side bar beyond.
             if root.wide: Rectangle {

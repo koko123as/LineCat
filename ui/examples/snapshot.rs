@@ -531,10 +531,30 @@ fn main() {
         ("dashboard-tiny", 0, "", "", 1, ""),
         ("profiles-tiny", 2, "", "", 1, ""),
         ("dashboard-inset-small", 0, "", "", 1, "inset"),
+        ("dashboard-260x450", 0, "", "", 1, ""),
+        ("dashboard-inset-260x450", 0, "", "", 1, "inset"),
+        ("proxies-260x450", 1, "节点选择", "", 1, ""),
+        ("profiles-260x450", 2, "", "", 1, ""),
+        ("tools-260x450", 3, "", "", 1, ""),
+        ("dashboard-300x500", 0, "", "", 1, ""),
+        ("dashboard-inset-300x500", 0, "", "", 1, "inset"),
+        ("tools-300x500", 3, "", "", 1, ""),
+        ("dashboard-surface-260x450", 0, "", "", 1, "surface"),
     ];
+    let only = std::env::args().nth(2).unwrap_or_default();
     ui.show().unwrap();
     for (name, tab, group, page, mode, overlay) in shots {
-        let (w, h) = if name.ends_with("-tablet") {
+        if !only.is_empty() && !only.split(',').any(|p| name.contains(p)) {
+            continue;
+        }
+        let sized = name
+            .rsplit('-')
+            .next()
+            .and_then(|s| s.split_once('x'))
+            .and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)));
+        let (w, h) = if let Some(size) = sized {
+            size
+        } else if name.ends_with("-tablet") {
             (800u32, 1280u32)
         } else if name.ends_with("-wide") {
             (1280u32, 800u32)
@@ -547,9 +567,17 @@ fn main() {
         };
         window.set_size(slint::PhysicalSize::new(w, h));
         ui.set_dash_editing(*overlay == "edit");
-        ui.set_insets_known(*overlay == "inset");
-        ui.set_inset_top(if *overlay == "inset" { 24.0 } else { 0.0 });
-        ui.set_inset_bottom(if *overlay == "inset" { 24.0 } else { 0.0 });
+        // "surface": a floating window's surface, larger than the window on every side.
+        let (top, bottom, side) = match *overlay {
+            "inset" => (24.0, 24.0, 0.0),
+            "surface" => (16.0, 16.0, 16.0),
+            _ => (0.0, 0.0, 0.0),
+        };
+        ui.set_insets_known(matches!(*overlay, "inset" | "surface"));
+        ui.set_inset_top(top);
+        ui.set_inset_bottom(bottom);
+        ui.set_inset_left(side);
+        ui.set_inset_right(side);
         ui.set_tab(*tab);
         ui.set_current_group((*group).into());
         ui.set_req_sheet_open(false);
