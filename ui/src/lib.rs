@@ -16,6 +16,9 @@ pub mod overrides;
 pub mod profile;
 pub mod proxies;
 pub mod requests;
+pub mod rules;
+mod rules_app;
+pub use rules_app::sections as rules_sections;
 mod requests_app;
 pub mod requests_view;
 pub mod resources;
@@ -573,6 +576,19 @@ impl App {
             "options": profile::options(&settings, http_capture::capturing(&settings.mitm)),
         });
         let mut params = params;
+        if !settings.added_rules.is_empty() {
+            let match_rules: Vec<String> = inspect
+                .get("matchRules")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            params["overlay"]["rules"] =
+                json!(rules::overlay_rules(&settings.added_rules, &match_rules));
+        }
         if let Some(host) = profile::host_settings(&settings.general) {
             params["host"] = host;
         }
@@ -1912,6 +1928,7 @@ impl App {
             ("delete", true) => self.delete_profile(arg),
             ("close-active", true) => self.close_active(),
             ("clear-data", true) => self.clear_data(),
+            ("rules-delete", true) => self.delete_selected_rules(),
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings", true) => self.open_app_settings(),
             ("edit-save", _) => self.save_edit(form, yes),

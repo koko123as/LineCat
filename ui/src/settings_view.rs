@@ -233,7 +233,11 @@ pub fn advanced(_settings: &Settings) -> Vec<SetSection> {
     vec![section(
         "",
         "",
-        vec![open("network", "key", "网络"), open("dns", "dns", "DNS")],
+        vec![
+            open("network", "key", "网络"),
+            open("dns", "dns", "DNS"),
+            open("rules", "rules", "附加规则"),
+        ],
     )]
 }
 

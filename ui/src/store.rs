@@ -41,6 +41,8 @@ pub struct Settings {
     /// `PatchClashConfig.dns` with `dnsOverrideKeys`: what the DNS page writes over
     /// every URL and file profile.
     pub dns_override: crate::overrides::OverrideState,
+    /// The added rules (`globalRulesProvider`), put before every profile's rules.
+    pub added_rules: Vec<crate::rules::Rule>,
 }
 
 /// The network page's settings: `VpnProps`, `NetworkProps` and the TUN part of
@@ -188,6 +190,7 @@ impl Default for Settings {
             restore_override: false,
             network: Network::default(),
             dns_override: Default::default(),
+            added_rules: Vec::new(),
         }
     }
 }

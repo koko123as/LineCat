@@ -250,10 +250,13 @@ export struct PageMeta {
     title: string,
     parent: string,
     action: string,
+    // A second bar action, left of the first.
+    action2: string,
     fab: bool,
     empty: string,
     empty-desc: string,
     empty-action: string,
+    long-press: bool,
 }
 
 // An installed app on the access control page (`PackageListItem`).
@@ -284,6 +287,8 @@ global Icons {
     out property <string> bolt: "M13 2 4 14h7l-1 8 9-12h-7z";
     out property <string> plus: "M12 5v14 M5 12h14";
     out property <string> add-circle: "M12 3a9 9 0 1 0 0.01 0z M12 8v8 M8 12h8";
+    out property <string> photos: "M4 5h16v14H4z M4 16l5-5 4 4 3-3 4 4 M15 9a1 1 0 1 0 0.01 0z";
+    out property <string> sliders: "M4 7h10 M18 7h2 M4 17h4 M12 17h8 M14 5v4 M8 15v4";
     out property <string> dns: "M4 5h16v5H4z M4 14h16v5H4z M7 7.5h.01 M7 16.5h.01";
     out property <string> more: "M12 4.2a1.3 1.3 0 1 0 0.01 0z M12 10.7a1.3 1.3 0 1 0 0.01 0z M12 17.2a1.3 1.3 0 1 0 0.01 0z";
     out property <string> back: "M15 5l-7 7 7 7";
@@ -350,7 +355,11 @@ global Glyphs {
             : k == "language" ? Icons.language : k == "palette" ? Icons.palette : k == "apps" ? Icons.apps
             : k == "cloud-sync" ? Icons.cloud-sync : k == "wrench" ? Icons.tools : k == "settings" ? Icons.settings
             : k == "gavel" ? Icons.gavel : k == "cpu" ? Icons.memory : k == "info" ? Icons.info
-            : k == "code" ? Icons.code : k == "key" ? Icons.key : k == "send" ? Icons.send : k == "dns" ? Icons.dns : "";
+            : k == "code" ? Icons.code : k == "key" ? Icons.key : k == "send" ? Icons.send : k == "dns" ? Icons.dns
+            : k == "plus" ? Icons.plus : k == "add-circle" ? Icons.add-circle : k == "check" ? Icons.check
+            : k == "delete" ? Icons.delete : k == "select-all" ? Icons.select-all : k == "bolt" ? Icons.bolt
+            : k == "rules" ? Icons.rule : k == "filter" ? Icons.filter : k == "proxies" ? Icons.proxies
+            : k == "photos" ? Icons.photos : k == "sliders" ? Icons.sliders : k == "shield" ? Icons.shield : "";
     }
 }
 
@@ -2062,6 +2071,9 @@ component Dialog inherits Rectangle {
 component SetRowView inherits Rectangle {
     in property <SetRow> item;
     in property <bool> divider;
+    // A long press sends `long:<id>` (starts selecting, as FlClash's lists do).
+    in property <bool> long-press;
+    property <bool> long-fired;
     callback clicked(string);
     callback toggled(string, bool);
     property <bool> leading: root.item.glyph != "" && root.item.kind != "value" && root.item.kind != "check";
@@ -2140,12 +2152,24 @@ component SetRowView inherits Rectangle {
         width: root.item.kind == "check" && root.item.glyph == "edit" ? parent.width - 56px : parent.width - self.x;
         x: root.item.lead == "remove" ? 48px : 0;
         enabled: root.item.enabled && root.item.kind != "person";
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { root.long-fired = false; }
+        }
         clicked => {
+            if (root.long-fired) { return; }
             if (root.item.kind == "toggle") {
                 root.toggled(root.item.id, !root.item.on);
             } else {
                 root.clicked(root.item.id);
             }
+        }
+    }
+    Timer {
+        interval: 500ms;
+        running: root.long-press && ta.pressed && !root.long-fired;
+        triggered => {
+            root.long-fired = true;
+            root.clicked("long:" + root.item.id);
         }
     }
     if root.item.lead == "remove": Rectangle {
@@ -2169,6 +2193,7 @@ component SetRowView inherits Rectangle {
 // `generateSection`s one under the other.
 component Sections inherits VerticalLayout {
     in property <[SetSection]> sections;
+    in property <bool> long-press;
     callback clicked(string);
     callback toggled(string, bool);
     padding-left: 16px;
@@ -2187,6 +2212,7 @@ component Sections inherits VerticalLayout {
             VerticalLayout {
                 for r[i] in sec.rows: SetRowView {
                     item: r;
+                    long-press: root.long-press;
                     divider: i < sec.rows.length - 1;
                     clicked(id) => { root.clicked(id); }
                     toggled(id, on) => { root.toggled(id, on); }
@@ -2242,6 +2268,8 @@ component SettingsPage inherits Rectangle {
     in property <[SetSection]> sections;
     in property <length> bottom-gap: 24px;
     in property <string> action-glyph;
+    in property <string> action2-glyph;
+    in property <bool> long-press;
     // `NullStatus` in place of the list while there are no sections, when given.
     in property <string> empty;
     in property <string> empty-desc;
@@ -2249,6 +2277,7 @@ component SettingsPage inherits Rectangle {
     property <bool> is-empty: root.empty != "" && root.sections.length == 0;
     callback back();
     callback action();
+    callback action2();
     callback clicked(string);
     callback toggled(string, bool);
     VerticalLayout {
@@ -2256,6 +2285,7 @@ component SettingsPage inherits Rectangle {
             title: root.title;
             can-back: root.can-back;
             back => { root.back(); }
+            if root.action2-glyph != "": VerticalLayout { alignment: center; IconButton { glyph: root.action2-glyph; tint: Theme.s.on-surface; clicked => { root.action2(); } } }
             if root.action-glyph != "" && !root.is-empty: VerticalLayout { alignment: center; IconButton { glyph: root.action-glyph; tint: Theme.s.on-surface; clicked => { root.action(); } } }
         }
         Flickable {
@@ -2267,6 +2297,7 @@ component SettingsPage inherits Rectangle {
                 @children
                 Sections {
                     sections: root.sections;
+                    long-press: root.long-press;
                     clicked(id) => { root.clicked(id); }
                     toggled(id, on) => { root.toggled(id, on); }
                 }
@@ -3961,8 +3992,10 @@ export component AppWindow inherits Window {
     in property <[SetSection]> tools-sections;
     in property <[SetSection]> page-sections;
     // The settings pages Rust builds (`page-meta` names them).
-    pure callback page-meta(string) -> PageMeta;
-    property <PageMeta> meta: root.page-meta(root.tools-page);
+    pure callback page-meta(string, int) -> PageMeta;
+    // Bumped when the open page's bar changes without the page changing.
+    in property <int> meta-rev;
+    property <PageMeta> meta: root.page-meta(root.tools-page, root.meta-rev);
     // The port form (`PortForm`)
     in-out property <bool> ports-open;
     in-out property <string> port-mixed;
@@ -4253,8 +4286,11 @@ export component AppWindow inherits Window {
                     open(p) => { root.tools-clicked(p); }
                 }
                 if root.tab == 3 && root.meta.known: SettingsPage {
-                    action-glyph: root.meta.action == "plus" ? Icons.plus : root.meta.action == "add-circle" ? Icons.add-circle : "";
+                    action-glyph: Glyphs.of(root.meta.action);
+                    action2-glyph: Glyphs.of(root.meta.action2);
+                    long-press: root.meta.long-press;
                     action => { root.set-clicked(root.tools-page, "action"); }
+                    action2 => { root.set-clicked(root.tools-page, "action2"); }
                     width: parent.width;
                     height: parent.height;
                     title: root.meta.title;

@@ -256,6 +256,22 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             settings_view::user_agents(&s)
         }
         "list" => settings_view::list(&s.network.bypass_domain, ""),
+        "rules" | "rule-form" | "rule-presets" => {
+            if overlay != "empty" {
+                for (i, line) in [
+                    "DOMAIN-SUFFIX,google.com,GLOBAL",
+                    "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+                    "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT-DROP",
+                    "PROCESS-NAME-REGEX,(?i)^(qbittorrent|transmission.*|deluge.*|aria2c|motrix)(\\.exe)?$,DIRECT",
+                ]
+                .iter()
+                .enumerate()
+                {
+                    s.added_rules.push(seasoncat_ui::rules::parse(line, i as u64 + 1));
+                }
+            }
+            seasoncat_ui::rules_sections(&s, page).unwrap_or_default()
+        }
         "backup" => {
             if overlay.starts_with("dav") {
                 s.dav = Some(seasoncat_ui::backup::Dav {
@@ -329,7 +345,7 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
     }
     seasoncat_ui::set_targets(("bypass-domain", "network"), ("hosts", "general"));
     let meta = seasoncat_ui::page_meta(&s, page);
-    ui.on_page_meta(move |_| meta.clone());
+    ui.on_page_meta(move |_, _| meta.clone());
     ui.set_page_sections(m(sections));
     ui.set_choice_open(overlay.starts_with("choice:"));
     if let Some(key) = overlay.strip_prefix("choice:") {
@@ -726,6 +742,15 @@ fn main() {
         ("set-hosts-small", 3, "", "map", 1, ""),
         ("set-hosts-wide", 3, "", "map", 1, ""),
         ("set-hosts-tablet", 3, "", "map", 1, ""),
+        ("set-rules", 3, "", "rules", 1, ""),
+        ("set-rules-small", 3, "", "rules", 1, ""),
+        ("set-rules-wide", 3, "", "rules", 1, ""),
+        ("set-rules-tablet", 3, "", "rules", 1, ""),
+        ("set-rules-empty", 3, "", "rules", 1, "empty"),
+        ("set-rule-form", 3, "", "rule-form", 1, ""),
+        ("set-rule-form-small", 3, "", "rule-form", 1, ""),
+        ("set-rule-presets", 3, "", "rule-presets", 1, ""),
+        ("set-rule-presets-small", 3, "", "rule-presets", 1, ""),
         ("set-dns", 3, "", "dns", 1, ""),
         ("set-dns-small", 3, "", "dns", 1, ""),
         ("set-dns-wide", 3, "", "dns", 1, ""),

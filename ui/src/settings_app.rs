@@ -155,6 +155,9 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
         parent: parent.into(),
         ..Default::default()
     };
+    if let Some(meta) = crate::rules_app::page_meta(settings, page) {
+        return meta;
+    }
     let t = targets().lock().unwrap();
     match page {
         "general" => meta("常规", ""),
@@ -209,7 +212,13 @@ impl App {
         let a = self.clone();
         ui.on_tools_clicked(move |id| a.tools_clicked(&id));
         let a = self.clone();
-        ui.on_tools_page_changed(move || a.publish_settings());
+        let w = ui.as_weak();
+        ui.on_tools_page_changed(move || {
+            if let Some(ui) = w.upgrade() {
+                a.rules_page_shown(&ui.get_tools_page());
+            }
+            a.publish_settings();
+        });
         let a = self.clone();
         ui.on_set_clicked(move |page, id| a.set_clicked(&page, &id));
         let a = self.clone();
@@ -217,7 +226,7 @@ impl App {
         let a = self.clone();
         ui.on_choice_picked(move |id| a.choice_picked(&id));
         let a = self.clone();
-        ui.on_page_meta(move |page| {
+        ui.on_page_meta(move |page, _| {
             let settings = a.store.lock().unwrap().state.settings.clone();
             page_meta(&settings, &page)
         });
@@ -316,7 +325,10 @@ impl App {
                 }
                 id => match (overrides::spec(id), override_state(&settings, id)) {
                     (Some(spec), Some(state)) => spec.sections(state),
-                    _ => return,
+                    _ => match crate::rules_app::sections(&settings, id) {
+                        Some(s) => s,
+                        None => return,
+                    },
                 },
             };
             ui.set_page_sections(models(sections));
@@ -431,6 +443,9 @@ impl App {
     }
 
     fn set_clicked(self: &Arc<Self>, page: &str, id: &str) {
+        if self.rules_clicked(page, id) {
+            return;
+        }
         let g = self.store.lock().unwrap().state.settings.general.clone();
         match (page, id) {
             ("general", "user-agent") => self.open_page("user-agents"),
@@ -535,7 +550,9 @@ impl App {
                     );
                 }
             }
-            ("advanced", id) if overrides::spec(id).is_some() => self.open_page(id),
+            ("advanced", id) if overrides::spec(id).is_some() || id == "rules" => {
+                self.open_page(id)
+            }
             (page, id) if overrides::spec(page).is_some() => self.override_clicked(page, id),
             ("developer", "message-test") => self.toast("info: 这是一条消息。"),
             ("developer", "logs-test") => self.logs_test(),
@@ -564,6 +581,9 @@ impl App {
     }
 
     fn set_toggled(self: &Arc<Self>, page: &str, id: &str, on: bool) {
+        if self.rules_toggled(page, id, on) {
+            return;
+        }
         match (page, id) {
             ("developer", "developer-mode") => {
                 self.update_settings(Effect::None, |s| s.developer_mode = on)
@@ -635,6 +655,9 @@ impl App {
     fn choice_picked(self: &Arc<Self>, id: &str) {
         let (key, value) = id.split_once(':').unwrap_or((id, ""));
         let value = value.to_string();
+        if self.rules_picked(key, &value) {
+            return;
+        }
         match key {
             "language" => self.update_settings(Effect::None, |s| {
                 s.locale = (!value.is_empty()).then_some(value)
@@ -681,6 +704,9 @@ impl App {
         let Ok(value) = settings_view::check_input(key, v1) else {
             return;
         };
+        if self.rules_input(key, &value) {
+            return;
+        }
         match key {
             "secret" => self.update_general(Effect::Reapply, |g| g.secret = value),
             "dav-file" => self.set_dav_file(&value),
