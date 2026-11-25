@@ -5,8 +5,176 @@ use std::collections::VecDeque;
 
 /// The cards a dashboard can hold, by the names settings keep (`DashboardWidget`).
 pub const WIDGETS: &[&str] = &[
-    "status", "speed", "mode", "vpn", "profile", "groups", "ip", "memory",
+    "status", "speed", "mode", "vpn", "service", "profile", "groups", "stats", "ip", "memory",
 ];
+
+/// `DashboardWidgetView.label`.
+pub fn widget_label(w: &str) -> &'static str {
+    match w {
+        "status" => "状态",
+        "speed" => "网络速度",
+        "mode" => "出站模式",
+        "vpn" => "VPN",
+        "service" => "服务状态",
+        "profile" => "配置",
+        "groups" => "策略组",
+        "stats" => "连接统计",
+        "ip" => "内网 IP",
+        "memory" => "内存信息",
+        _ => "",
+    }
+}
+
+/// `DashboardWidgetView.description`.
+pub fn widget_description(w: &str) -> &'static str {
+    match w {
+        "status" => "含启动键，不可移除",
+        "stats" => "实时连接、最近请求、DNS查询",
+        "memory" => "应用与内核占用的内存",
+        _ => "",
+    }
+}
+
+/// `removable`: the status card holds the start button.
+pub fn removable(w: &str) -> bool {
+    w != "status"
+}
+
+/// The saved cards as the dashboard shows them: known ones once each, the status card
+/// always there (first when it was missing).
+pub fn normalize(list: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for w in list {
+        if WIDGETS.contains(&w.as_str()) && !out.contains(w) {
+            out.push(w.clone());
+        }
+    }
+    if !out.iter().any(|w| w == "status") {
+        out.insert(0, "status".into());
+    }
+    out
+}
+
+/// `copyAndReorder`: the card at `from` lands at `to`.
+pub fn reorder(list: &mut Vec<String>, from: usize, to: usize) {
+    if from >= list.len() {
+        return;
+    }
+    let item = list.remove(from);
+    list.insert(to.min(list.len()), item);
+}
+
+/// `ServiceTarget`: the Core's checker name and its label, in the default order.
+pub const SERVICES: &[(&str, &str)] = &[
+    ("google", "Google"),
+    ("github", "GitHub"),
+    ("youtube", "YouTube"),
+    ("chatgpt", "ChatGPT"),
+    ("claude", "Claude"),
+    ("gemini", "Gemini"),
+    ("netflix", "Netflix"),
+    ("disney-plus", "Disney+"),
+    ("prime-video", "Prime Video"),
+    ("spotify", "Spotify"),
+    ("tiktok", "TikTok"),
+    ("discord", "Discord"),
+    ("bilibili", "Bilibili"),
+];
+
+/// `shownCount`: a row of the service card's columns on a phone, two rows on a wide
+/// dashboard (at most four, what the Core checks at once).
+pub fn service_shown(wide: bool, columns: i32) -> usize {
+    (if wide { 2 } else { 1 }) * columns.clamp(1, 2) as usize
+}
+
+/// How a service check reads on the card: the text and its tone (0 muted, 1 ok,
+/// 2 warning, 3 error). `None` is a check not answered yet.
+pub fn service_status(
+    status: Option<&str>,
+    delay: i64,
+    probing: bool,
+    failed: bool,
+) -> (String, i32) {
+    let Some(status) = status else {
+        return if probing {
+            ("加载中…".into(), 0)
+        } else if failed {
+            ("检测失败".into(), 3)
+        } else {
+            ("待检测".into(), 0)
+        };
+    };
+    match status {
+        "available" if delay > 0 => (format!("{delay} ms"), 0),
+        "available" => ("可用".into(), 1),
+        "restricted" => ("访问受限".into(), 2),
+        "disallowed-isp" => ("不允许的 ISP".into(), 2),
+        "blocked" => ("已被封禁".into(), 2),
+        "unsupported-region" => ("地区不支持".into(), 2),
+        "originals-only" => ("仅限自制内容".into(), 2),
+        "coming-soon" => ("即将上线".into(), 2),
+        "unavailable" => ("不可用".into(), 3),
+        "timeout" => ("超时".into(), 3),
+        _ => ("检测失败".into(), 3),
+    }
+}
+
+/// The dot beside a service: the status tone, none while unanswered.
+pub fn service_dot(status: Option<&str>, failed: bool) -> i32 {
+    match status {
+        Some("available") => 1,
+        Some(
+            "restricted" | "disallowed-isp" | "blocked" | "unsupported-region" | "originals-only"
+            | "coming-soon",
+        ) => 2,
+        Some(_) => 3,
+        None if failed => 3,
+        None => 0,
+    }
+}
+
+/// The card's verdict chip: "N 项异常", "全部可用" once every service answered, else none.
+pub fn service_verdict(checks: &[(Option<String>, bool)]) -> String {
+    let problems = checks
+        .iter()
+        .filter(|(s, failed)| match s {
+            Some(s) => s != "available",
+            None => *failed,
+        })
+        .count();
+    if problems > 0 {
+        format!("{problems} 项异常")
+    } else if !checks.is_empty() && checks.iter().all(|(s, _)| s.is_some()) {
+        "全部可用".into()
+    } else {
+        String::new()
+    }
+}
+
+/// `dashboardCount`: grouped digits under 100000, compact above.
+pub fn count(n: usize) -> String {
+    if n >= 100_000 {
+        let (v, unit) = if n >= 1_000_000 {
+            (n as f64 / 1e6, "M")
+        } else {
+            (n as f64 / 1e3, "K")
+        };
+        let text = format!("{v:.1}");
+        return format!("{}{unit}", text.trim_end_matches(".0"));
+    }
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// `_ipMask`.
+pub const IP_MASK: &str = "*****";
 
 /// `platformDefaultDashboardWidgets` on Android.
 pub fn default_widgets() -> Vec<String> {
@@ -497,5 +665,70 @@ mod tests {
         let (line, fill) = sparkline(&s);
         assert!(line.starts_with("M96.6 19.0 L100.0 3.0"));
         assert!(fill.ends_with("Z"));
+    }
+
+    #[test]
+    fn widgets_keep_the_status_card() {
+        let l = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            normalize(&l(&["speed", "x", "speed"])),
+            l(&["status", "speed"])
+        );
+        assert_eq!(normalize(&l(&["ip", "status"])), l(&["ip", "status"]));
+        assert!(!removable("status") && removable("ip"));
+        let mut v = l(&["a", "b", "c", "d"]);
+        reorder(&mut v, 0, 2);
+        assert_eq!(v, l(&["b", "c", "a", "d"]));
+        reorder(&mut v, 3, 0);
+        assert_eq!(v, l(&["d", "b", "c", "a"]));
+        reorder(&mut v, 9, 0);
+        assert_eq!(v.len(), 4);
+        assert_eq!(widget_label("stats"), "连接统计");
+        assert_eq!(widget_description("status"), "含启动键，不可移除");
+        assert_eq!(widget_description("speed"), "");
+    }
+
+    #[test]
+    fn service_checks_read_as_the_card_shows_them() {
+        assert_eq!(
+            service_status(Some("available"), 120, false, false),
+            ("120 ms".into(), 0)
+        );
+        assert_eq!(
+            service_status(Some("available"), 0, false, false),
+            ("可用".into(), 1)
+        );
+        assert_eq!(service_status(Some("blocked"), 0, false, false).1, 2);
+        assert_eq!(
+            service_status(Some("timeout"), 0, false, false),
+            ("超时".into(), 3)
+        );
+        assert_eq!(service_status(None, 0, true, false).0, "加载中…");
+        assert_eq!(service_status(None, 0, false, true).0, "检测失败");
+        assert_eq!(service_status(None, 0, false, false).0, "待检测");
+        assert_eq!(service_dot(Some("coming-soon"), false), 2);
+        assert_eq!(service_dot(None, false), 0);
+        assert_eq!(service_shown(false, 2), 2);
+        assert_eq!(service_shown(true, 1), 2);
+        assert_eq!(service_shown(true, 2), 4);
+        let ok = |s: &str| (Some(s.to_string()), false);
+        assert_eq!(
+            service_verdict(&[ok("available"), ok("blocked"), (None, true)]),
+            "2 项异常"
+        );
+        assert_eq!(
+            service_verdict(&[ok("available"), ok("available")]),
+            "全部可用"
+        );
+        assert_eq!(service_verdict(&[ok("available"), (None, false)]), "");
+    }
+
+    #[test]
+    fn counts_group_then_compact() {
+        assert_eq!(count(0), "0");
+        assert_eq!(count(1234), "1,234");
+        assert_eq!(count(99_999), "99,999");
+        assert_eq!(count(123_400), "123.4K");
+        assert_eq!(count(2_000_000), "2M");
     }
 }

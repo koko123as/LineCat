@@ -53,6 +53,8 @@ pub struct Settings {
     pub filters: Vec<crate::items::Filter>,
     /// The scripts (`scriptsProvider`); each one's content is `scripts/<id>.js`.
     pub scripts: Vec<crate::items::Script>,
+    /// `AppSettingProps.hideIp`: the outbound IP shown masked.
+    pub hide_ip: bool,
 }
 
 /// The network page's settings: `VpnProps`, `NetworkProps` and the TUN part of
@@ -219,6 +221,7 @@ impl Default for Settings {
             added_rules: Vec::new(),
             filters: Vec::new(),
             scripts: Vec::new(),
+            hide_ip: false,
         }
     }
 }

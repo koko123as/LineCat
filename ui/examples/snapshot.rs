@@ -431,6 +431,7 @@ fn main() {
         quality: 1,
         org: "Example Broadband".into(),
         probing: false,
+        failed: false,
     });
     let mut up = std::collections::VecDeque::new();
     let mut down = std::collections::VecDeque::new();
@@ -473,12 +474,51 @@ fn main() {
             .map(slint::SharedString::from)
             .collect::<Vec<_>>(),
     )));
-    ui.set_dash_hidden(ModelRc::new(VecModel::from(
-        ["vpn", "ip", "memory"]
+    let shown = dashboard::default_widgets();
+    ui.set_dash_addable(ModelRc::new(VecModel::from(
+        dashboard::WIDGETS
             .iter()
-            .map(|s| slint::SharedString::from(*s))
+            .filter(|w| !shown.iter().any(|s| s == *w))
+            .map(|w| DashAdd {
+                id: (*w).into(),
+                label: dashboard::widget_label(w).into(),
+                desc: dashboard::widget_description(w).into(),
+            })
             .collect::<Vec<_>>(),
     )));
+    let services = [
+        ("available", 132),
+        ("available", 88),
+        ("blocked", 0),
+        ("timeout", 0),
+        ("available", 0),
+        ("unavailable", 0),
+        ("available", 410),
+        ("available", 95),
+    ];
+    ui.set_dash_services(ModelRc::new(VecModel::from(
+        dashboard::SERVICES
+            .iter()
+            .zip(services)
+            .take(2)
+            .map(|((_, label), (st, delay))| {
+                let (text, tone) = dashboard::service_status(Some(st), delay, false, false);
+                DashService {
+                    label: (*label).into(),
+                    status: text.into(),
+                    tone,
+                    dot: dashboard::service_dot(Some(st), false),
+                }
+            })
+            .collect::<Vec<_>>(),
+    )));
+    ui.set_dash_service_verdict("3 项异常".into());
+    ui.set_dash_service_warn(true);
+    ui.set_dash_stats(DashStats {
+        connections: dashboard::count(23).into(),
+        requests: dashboard::count(1482).into(),
+        dns: dashboard::count(310).into(),
+    });
     ui.set_dash_local_ip("192.168.1.10".into());
     ui.set_dash_memory("228.8 MB".into());
     ui.set_profile_name("我的机场".into());
@@ -709,6 +749,14 @@ fn main() {
         ("resources-tablet", 3, "", "resources", 1, ""),
         ("tools-wide", 3, "", "", 1, ""),
         ("dashboard", 0, "", "", 1, ""),
+        ("speed0-412x892", 0, "", "", 1, "speed:0:0"),
+        ("speed1-412x892", 0, "", "", 1, "speed:1.2:39"),
+        ("speed2-412x892", 0, "", "", 1, "speed:123.4:1.2"),
+        ("speed3-412x892", 0, "", "", 1, "speed:1023.9:888.8"),
+        ("speed0-360x640", 0, "", "", 1, "speed:0:0"),
+        ("speed1-360x640", 0, "", "", 1, "speed:1.2:39"),
+        ("speed2-360x640", 0, "", "", 1, "speed:123.4:1.2"),
+        ("speed3-360x640", 0, "", "", 1, "speed:1023.9:888.8"),
         ("dashboard-edit", 0, "", "", 1, "edit"),
         ("dashboard-stopped", 0, "", "", 1, "stopped"),
         ("dashboard-stopped-small", 0, "", "", 1, "stopped"),
@@ -717,6 +765,19 @@ fn main() {
         ("dashboard-stopped-dark", 0, "", "", 2, "stopped"),
         ("dashboard-tablet", 0, "", "", 1, ""),
         ("dashboard-wide", 0, "", "", 1, ""),
+        ("dashboard-cards", 0, "", "", 1, "cards"),
+        ("dashboard-cards-small", 0, "", "", 1, "cards"),
+        ("dashboard-cards-wide", 0, "", "", 1, "cards"),
+        ("dashboard-cards-tablet", 0, "", "", 1, "cards"),
+        ("dashboard-cards-tiny", 0, "", "", 1, "cards"),
+        ("dashboard-ipsheet", 0, "", "", 1, "ipsheet"),
+        ("dashboard-ipsheet-small", 0, "", "", 1, "ipsheet"),
+        ("dashboard-ipsheet-wide", 0, "", "", 1, "ipsheet"),
+        ("dashboard-failed-small", 0, "", "", 1, "failed"),
+        ("dashboard-1280x700", 0, "", "", 1, ""),
+        ("dashboard-1000x900", 0, "", "", 1, ""),
+        ("dashboard-edit", 0, "", "", 1, "edit"),
+        ("dashboard-edit-small", 0, "", "", 1, "edit"),
         ("proxies-wide", 1, "节点选择", "", 1, ""),
         ("profiles-tablet", 2, "", "", 1, ""),
         ("proxies", 1, "节点选择", "", 1, ""),
@@ -883,6 +944,7 @@ fn main() {
     let only = std::env::args().nth(2).unwrap_or_default();
     ui.show().unwrap();
     let mut saved_logs: Option<ModelRc<LogItem>> = None;
+    let base_traffic = ui.get_dash_traffic();
     for (name, tab, group, page, mode, overlay) in shots {
         if !only.is_empty() && !only.split(',').any(|p| name.contains(p)) {
             continue;
@@ -907,6 +969,30 @@ fn main() {
         };
         window.set_size(slint::PhysicalSize::new(w, h));
         ui.set_dash_editing(*overlay == "edit");
+        ui.set_ip_sheet_open(*overlay == "ipsheet");
+        let mut st = ui.get_dash_status();
+        st.failed = *overlay == "failed";
+        ui.set_dash_status(st);
+        let cards: Vec<&str> = if *overlay == "cards" {
+            vec!["status", "service", "stats", "ip", "memory", "vpn"]
+        } else {
+            dashboard::default_widgets().iter().map(|_| "").collect()
+        };
+        if *overlay == "cards" {
+            ui.set_dash_widgets(ModelRc::new(VecModel::from(
+                cards
+                    .iter()
+                    .map(|s| slint::SharedString::from(*s))
+                    .collect::<Vec<_>>(),
+            )));
+        } else {
+            ui.set_dash_widgets(ModelRc::new(VecModel::from(
+                dashboard::default_widgets()
+                    .into_iter()
+                    .map(slint::SharedString::from)
+                    .collect::<Vec<_>>(),
+            )));
+        }
         ui.set_run_state(
             if *overlay == "stopped" {
                 "STOPPED"
@@ -988,6 +1074,17 @@ fn main() {
         ui.set_confirm_text("确定删除当前配置吗？".into());
         ui.set_confirm_action("delete".into());
         ui.set_confirm_open(*overlay == "confirm");
+        // "speed:<up>:<down>": the speed tiles with changing values, rendered in order
+        // to catch a value width that stays at an older, shorter text.
+        let mut traffic = base_traffic.clone();
+        if let Some(v) = overlay.strip_prefix("speed:") {
+            let (up, down) = v.split_once(':').unwrap_or((v, v));
+            traffic.up_value = up.into();
+            traffic.up_unit = "KB/s".into();
+            traffic.down_value = down.into();
+            traffic.down_unit = "B/s".into();
+        }
+        ui.set_dash_traffic(traffic);
         ui.global::<Theme>().set_mode(*mode);
         ui.set_theme_mode(*mode);
         slint::platform::update_timers_and_animations();

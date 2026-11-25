@@ -440,7 +440,11 @@ impl App {
         });
     }
 
-    fn update_settings(self: &Arc<Self>, effect: Effect, f: impl FnOnce(&mut store::Settings)) {
+    pub(crate) fn update_settings(
+        self: &Arc<Self>,
+        effect: Effect,
+        f: impl FnOnce(&mut store::Settings),
+    ) {
         {
             let mut store = self.store.lock().unwrap();
             f(&mut store.state.settings);

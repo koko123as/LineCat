@@ -8,6 +8,7 @@ pub mod backup;
 mod backup_app;
 pub use backup_app::sections as backup_app_sections;
 pub mod bridge;
+mod dash_app;
 pub mod dashboard;
 pub mod dns_queries;
 pub mod edges;
@@ -106,6 +107,9 @@ struct App {
     busy: Mutex<HashSet<String>>,
     pending_logs: Mutex<Vec<logs::Record>>,
     logs: Mutex<logs_app::LogsState>,
+    services: Mutex<dash_app::Services>,
+    /// The dashboard as laid out: wide, its columns, and whether it shows the service card.
+    dash_layout: Mutex<(bool, i32, bool)>,
     logs_scheduled: AtomicBool,
     toast_seq: AtomicU64,
     last_id: Mutex<u64>,
@@ -379,11 +383,13 @@ impl App {
             "STARTED" => {
                 *self.started_at.lock().unwrap() = Some(std::time::Instant::now());
                 self.probe_ip();
+                self.probe_services();
             }
             "STOPPED" => {
                 *self.started_at.lock().unwrap() = None;
                 self.ui(|ui| ui.set_dash_run_time("00:00:00".into()));
                 self.probe_ip();
+                self.probe_services();
             }
             _ => {}
         }
@@ -546,6 +552,7 @@ impl App {
         self.sorted_delays.lock().unwrap().clear();
         self.refresh_groups();
         self.probe_ip();
+        self.probe_services();
         Ok(())
     }
 
@@ -601,6 +608,7 @@ impl App {
             }
             ui.set_dash_memory(memory.into());
         });
+        self.publish_stats();
     }
 
     /// `OutboundIpProbe`: where traffic leaves right now, through the rules while running
@@ -636,7 +644,7 @@ impl App {
             let Some((ip, cc)) = found else {
                 app.ui(|ui| {
                     ui.set_dash_status(DashStatus {
-                        ip: "获取失败".into(),
+                        failed: true,
                         ..Default::default()
                     });
                 });
@@ -666,33 +674,32 @@ impl App {
                     quality: level,
                     org: org.into(),
                     probing: false,
+                    failed: false,
                 });
             });
         });
     }
 
     fn publish_dashboard_widgets(self: &Arc<Self>) {
-        let list = self
-            .store
-            .lock()
-            .unwrap()
-            .state
-            .settings
-            .dashboard
-            .clone()
-            .unwrap_or_else(dashboard::default_widgets);
-        let hidden: Vec<SharedString> = dashboard::WIDGETS
-            .iter()
-            .filter(|w| !list.iter().any(|l| l == *w))
-            .map(|w| (*w).into())
-            .collect();
+        let list = dashboard::normalize(
+            &self
+                .store
+                .lock()
+                .unwrap()
+                .state
+                .settings
+                .dashboard
+                .clone()
+                .unwrap_or_else(dashboard::default_widgets),
+        );
+        let addable = Self::dash_addable(&list);
+        let has_service = list.iter().any(|w| w == "service");
         let list: Vec<SharedString> = list.into_iter().map(Into::into).collect();
-        let ip = dashboard::local_ip().unwrap_or_else(|| "未知".into());
-        let has_start = list.iter().any(|w| w == "status" || w == "vpn");
+        let ip = dashboard::local_ip().unwrap_or_default();
         self.ui(move |ui| {
-            ui.set_dash_has_start(has_start);
             ui.set_dash_widgets(ModelRc::new(VecModel::from(list)));
-            ui.set_dash_hidden(ModelRc::new(VecModel::from(hidden)));
+            ui.set_dash_addable(ModelRc::new(VecModel::from(addable)));
+            ui.set_dash_has_service(has_service);
             ui.set_dash_local_ip(ip.into());
         });
     }
@@ -701,23 +708,24 @@ impl App {
     fn edit_dashboard(self: &Arc<Self>, action: &str, widget: &str) {
         {
             let mut store = self.store.lock().unwrap();
-            let mut list = store
-                .state
-                .settings
-                .dashboard
-                .clone()
-                .unwrap_or_else(dashboard::default_widgets);
+            let mut list = dashboard::normalize(
+                &store
+                    .state
+                    .settings
+                    .dashboard
+                    .clone()
+                    .unwrap_or_else(dashboard::default_widgets),
+            );
             let at = list.iter().position(|w| w == widget);
             match (action, at) {
                 ("add", None) if dashboard::WIDGETS.contains(&widget) => {
                     list.push(widget.to_string())
                 }
-                ("remove", Some(i)) => {
+                ("remove", Some(i)) if dashboard::removable(widget) => {
                     list.remove(i);
                 }
                 ("up", Some(i)) if i > 0 => list.swap(i, i - 1),
                 ("down", Some(i)) if i + 1 < list.len() => list.swap(i, i + 1),
-                ("reset", _) => list = dashboard::default_widgets(),
                 _ => return,
             }
             store.state.settings.dashboard = Some(list);
@@ -2217,6 +2225,8 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         busy: Mutex::new(HashSet::new()),
         pending_logs: Mutex::new(Vec::new()),
         logs: Mutex::new(logs_app::LogsState::default()),
+        services: Mutex::new(dash_app::Services::default()),
+        dash_layout: Mutex::new((false, 2, false)),
         logs_scheduled: AtomicBool::new(false),
         toast_seq: AtomicU64::new(0),
         last_id: Mutex::new(0),
@@ -2354,6 +2364,9 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         }
     });
     app.bind_logs(&ui);
+    app.bind_dashboard(&ui);
+    let a = app.clone();
+    ui.on_dash_layout(move |wide, columns, shown| a.dash_layout_changed(wide, columns, shown));
     app.bind_theme(&ui);
     app.bind_requests(&ui);
     app.bind_settings(&ui);

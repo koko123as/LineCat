@@ -96,6 +96,30 @@ export struct DashStatus {
     quality: int,
     org: string,
     probing: bool,
+    // `probe.outboundIp` failed: "检测失败", and a tap on the badge retries.
+    failed: bool,
+}
+
+// A service of the service status card (`_ServiceView`): tone 0 muted 1 ok 2 warning 3 error.
+export struct DashService {
+    label: string,
+    status: string,
+    tone: int,
+    dot: int,
+}
+
+// `ConnectionStatsCard`'s counts.
+export struct DashStats {
+    connections: string,
+    requests: string,
+    dns: string,
+}
+
+// A card the editor can add (`_AddRow`).
+export struct DashAdd {
+    id: string,
+    label: string,
+    desc: string,
 }
 
 export struct DashProfile {
@@ -660,13 +684,16 @@ component StatusCard inherits DashCard {
     in property <string> run-state;
     in property <string> run-time;
     in property <bool> compact;
+    // A phone narrower than 400px: the address steps down so a full IPv4 fits.
+    in property <bool> narrow;
+    in property <bool> hide-ip;
     callback toggle();
     callback refresh();
+    callback open-ip();
     property <bool> on: run-state == "STARTED";
     property <bool> busy: run-state == "STARTING" || run-state == "STOPPING" || run-state == "OFFLINE";
     glyph: Icons.status;
     title: "状态";
-    tapped => { root.refresh(); }
     HorizontalLayout {
         padding: 16px;
         spacing: 12px;
@@ -690,20 +717,26 @@ component StatusCard inherits DashCard {
                         width: 40px;
                         height: 40px;
                         border-radius: 20px;
-                        background: Theme.s.block;
+                        background: badge-ta.pressed ? Theme.s.inset : Theme.s.block;
                         Text { text: root.status.country == "" ? "—" : root.status.country; font-size: 13px; font-weight: 700; color: Theme.s.on-surface; }
+                        badge-ta := TouchArea { clicked => { root.refresh(); } }
                     }
                 }
                 VerticalLayout {
                     spacing: 4px;
                     Text {
-                        text: root.status.ip == "" ? (root.status.probing ? "检测中…" : "—") : root.status.ip;
-                        font-size: root.compact ? 18px : 22px;
+                        text: root.status.failed ? "检测失败" : root.status.ip == "" ? (root.status.probing ? "检测中…" : "—") : root.hide-ip ? "*****" : root.status.ip;
+                        font-size: root.compact || root.narrow ? 18px : 22px;
                         font-weight: 700;
-                        color: Theme.s.on-surface;
+                        color: root.status.failed ? Theme.s.error : Theme.s.on-surface;
                         overflow: elide;
+                        TouchArea {
+                            enabled: root.status.ip != "" && !root.status.failed;
+                            clicked => { root.open-ip(); }
+                        }
                     }
-                    HorizontalLayout {
+                    if root.status.failed: Text { text: "点击图标重试"; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                    if !root.status.failed: HorizontalLayout {
                         spacing: 6px;
                         alignment: start;
                         if root.status.kind != "": Chip { text: root.status.kind; }
@@ -751,6 +784,11 @@ component SpeedTile inherits Rectangle {
     border-radius: header ? 20px : 14px;
     clip: true;
     property <color> tint: root.upload ? Theme.s.primary : Theme.success;
+    property <string> figure: root.upload ? root.traffic.up-value : root.traffic.down-value;
+    property <string> unit: root.upload ? root.traffic.up-unit : root.traffic.down-unit;
+    property <length> unit-w: max(unit-text.preferred-width, root.unit.character-count * 12px * 0.62) * 1.1;
+    property <length> room: root.width - (root.header ? 32px : 24px) - root.unit-w - 4px;
+    property <length> fig-size: clamp(root.room / max(1, root.figure.character-count * 0.62 * 1.1), 16px, 28px);
     Path {
         y: parent.height - self.height;
         width: parent.width;
@@ -783,16 +821,30 @@ component SpeedTile inherits Rectangle {
             Rectangle { horizontal-stretch: 1; }
             if root.peak: Text { text: root.upload ? root.traffic.up-peak : root.traffic.down-peak; font-size: 11px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
         }
-        HorizontalLayout {
-            spacing: 4px;
-            // Device fonts can draw bold digits wider than they measure, so
-            // the value gets slack and the unit takes the rest of the row.
-            Text { text: root.upload ? root.traffic.up-value : root.traffic.down-value; font-size: 28px; font-weight: 700; color: Theme.s.on-surface; min-width: self.preferred-width + 12px; }
-            VerticalLayout {
-                alignment: end;
-                padding-bottom: 5px;
-                horizontal-stretch: 1;
-                Text { text: root.upload ? root.traffic.up-unit : root.traffic.down-unit; font-size: 12px; font-weight: 600; color: Theme.s.on-surface-variant; min-width: self.preferred-width + 6px; }
+        // The figure's width comes from its character count as well as its measured width,
+        // so a device font that draws bold digits wider than it measures, or a width measured
+        // for an older, shorter value, cannot clip it. A narrow tile shrinks the figure
+        // instead of overflowing. Placed by hand so the tile's width never waits on it.
+        Rectangle {
+            height: 36px;
+            fig := Text {
+                x: 0;
+                y: parent.height - self.height;
+                text: root.figure;
+                font-size: root.fig-size;
+                font-weight: 700;
+                color: Theme.s.on-surface;
+                vertical-alignment: bottom;
+                width: max(self.preferred-width, root.figure.character-count * root.fig-size * 0.62) * 1.1;
+            }
+            unit-text := Text {
+                x: fig.width + 4px;
+                y: parent.height - self.height - 5px;
+                width: root.unit-w;
+                text: root.unit;
+                font-size: 12px;
+                font-weight: 600;
+                color: Theme.s.on-surface-variant;
             }
         }
         Text { text: root.upload ? root.traffic.up-total : root.traffic.down-total; font-size: 12px; color: Theme.s.on-surface-variant; }
@@ -959,7 +1011,7 @@ component ProfileDashCard inherits DashCard {
             padding-top: 4px;
             HorizontalLayout {
                 spacing: 4px;
-                Text { text: root.profile.percent; font-size: 20px; font-weight: 700; color: Theme.s.on-surface; }
+                Text { text: root.profile.percent; font-size: 20px; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 20px * 0.62) * 1.1; }
                 VerticalLayout { alignment: end; padding-bottom: 3px; Text { text: "已用"; font-size: 12px; color: Theme.s.on-surface-variant; } }
                 Rectangle { horizontal-stretch: 1; }
                 VerticalLayout { alignment: end; padding-bottom: 3px; Text { text: root.profile.used; font-size: 12px; color: Theme.s.on-surface-variant; } }
@@ -1045,20 +1097,123 @@ component GroupsDashCard inherits DashCard {
 }
 
 // `IntranetIpCard`: this device's address on its network.
+// `IntranetIpCard`: the device's address (with the port while the LAN may connect), or
+// 无网络, then the LAN proxy switch.
 component IpDashCard inherits DashCard {
     in property <string> ip;
-    callback copy();
-    height: 120px;
-    VerticalLayout {
+    in property <bool> allow-lan;
+    in property <string> port;
+    in property <bool> fill;
+    callback copy(string);
+    callback set-lan(bool);
+    property <string> address: root.ip == "" ? "" : root.allow-lan ? root.ip + ":" + root.port : root.ip;
+    height: root.fill ? 176px : ipc-col.preferred-height;
+    ipc-col := VerticalLayout {
         padding: 16px;
         spacing: 10px;
-        alignment: start;
         DashHeader {
             glyph: Icons.devices;
-            title: "局域网 IP";
-            VerticalLayout { alignment: center; IconButton { width: 30px; height: 30px; glyph: Icons.copy; clicked => { root.copy(); } } }
+            title: "内网 IP";
+            VerticalLayout { alignment: center; IconButton { width: 30px; height: 30px; glyph: Icons.copy; enabled: root.address != ""; clicked => { root.copy(root.address); } } }
         }
-        Text { text: root.ip; font-size: 22px; font-weight: 700; color: Theme.s.on-surface; overflow: elide; }
+        Text {
+            text: root.address == "" ? "无网络" : root.address;
+            font-size: 22px;
+            font-weight: 700;
+            color: root.address == "" ? Theme.s.on-surface-variant : Theme.s.on-surface;
+            overflow: elide;
+        }
+        if root.fill: Rectangle { vertical-stretch: 1; }
+        Rectangle {
+            height: 48px;
+            border-radius: 16px;
+            background: Theme.s.block;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 10px;
+                spacing: 8px;
+                Text { text: "局域网代理"; font-size: 14px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                VerticalLayout { alignment: center; Switch { checked: root.allow-lan; toggled(v) => { root.set-lan(v); } } }
+            }
+        }
+    }
+}
+
+// `ServiceStatusCard`: the first services' checks in a grid with a verdict chip; a tap
+// checks them again.
+component ServiceDashCard inherits DashCard {
+    in property <[DashService]> services;
+    in property <string> verdict;
+    in property <bool> warn;
+    in property <int> columns: 2;
+    in property <bool> fill;
+    callback retry();
+    tapped => { root.retry(); }
+    property <length> cell-w: (self.width - 32px - (root.columns - 1) * 8px) / root.columns;
+    height: root.fill ? 176px : svc-col.preferred-height;
+    svc-col := VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        DashHeader {
+            glyph: Icons.status;
+            title: "服务状态";
+            if root.verdict != "": Chip { text: root.verdict; tone: root.warn ? Theme.warning : Theme.success; }
+        }
+        svc-cells := Rectangle {
+            property <int> rows: max(1, ceil(root.services.length / root.columns));
+            property <length> cell-h: root.fill ? min(46px, (self.height - 6px * (self.rows - 1)) / self.rows) : 44px;
+            property <length> row-gap: root.fill ? 6px : 8px;
+            vertical-stretch: root.fill ? 1 : 0;
+            clip: true;
+            min-height: root.fill ? 0px : ceil(root.services.length / root.columns) * 52px - 8px;
+            for sv[si] in root.services: Rectangle {
+                x: mod(si, root.columns) * (root.cell-w + 8px);
+                y: floor(si / root.columns) * (svc-cells.cell-h + svc-cells.row-gap);
+                width: root.cell-w;
+                height: svc-cells.cell-h;
+                border-radius: 14px;
+                background: Theme.s.block;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 10px;
+                    spacing: 6px;
+                    if sv.dot > 0: VerticalLayout {
+                        alignment: center;
+                        Rectangle { width: 6px; height: 6px; border-radius: 3px; background: sv.dot == 1 ? Theme.success : sv.dot == 2 ? Theme.warning : Theme.s.error; }
+                    }
+                    Text { text: sv.label; font-size: 13px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                    Text { text: sv.status; font-size: 12px; color: sv.tone == 1 ? Theme.success : sv.tone == 2 ? Theme.warning : sv.tone == 3 ? Theme.s.error : Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; max-width: root.cell-w * 0.5; }
+                }
+            }
+        }
+    }
+}
+
+// `ConnectionStatsCard`: live connections, recent requests and DNS queries, each opening
+// its list.
+component StatsDashCard inherits DashCard {
+    in property <DashStats> stats;
+    in property <bool> fill;
+    callback open(int);
+    height: root.fill ? 120px : 84px;
+    HorizontalLayout {
+        padding: 8px;
+        for cell[ci] in [
+            { n: root.stats.connections, l: "实时连接" },
+            { n: root.stats.requests, l: "最近请求" },
+            { n: root.stats.dns, l: "DNS" },
+        ]: Rectangle {
+            horizontal-stretch: 1;
+            border-radius: 12px;
+            background: st-ta.pressed ? Theme.s.inset : transparent;
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                Text { text: cell.n == "" ? "0" : cell.n; font-size: 22px; font-weight: 700; color: Theme.s.on-surface; horizontal-alignment: center; overflow: elide; }
+                Text { text: cell.l; font-size: 12px; color: Theme.s.on-surface-variant; horizontal-alignment: center; overflow: elide; }
+            }
+            st-ta := TouchArea { clicked => { root.open(ci); } }
+        }
     }
 }
 
@@ -1076,20 +1231,48 @@ component MemoryDashCard inherits DashCard {
     }
 }
 
-// The editor's frame around a card: move it, or take it off the dashboard.
+// A card in the editor (`_EditableCard`): dragged by a hold anywhere on it, with a remove
+// button on its corner unless it holds the start button.
 component EditFrame inherits Rectangle {
-    in property <bool> first;
-    in property <bool> last;
-    callback up();
-    callback down();
+    in property <bool> removable;
+    in property <int> index;
+    in property <int> count;
     callback remove();
-    height: 40px;
-    HorizontalLayout {
-        spacing: 4px;
-        alignment: end;
-        IconButton { glyph: Icons.up; enabled: !root.first; clicked => { root.up(); } }
-        IconButton { glyph: Icons.down; enabled: !root.last; clicked => { root.down(); } }
-        IconButton { glyph: Icons.delete; tint: Theme.s.error; clicked => { root.remove(); } }
+    callback moved(int, int);
+    // The drag: how far the finger went since the card last changed places.
+    property <length> base;
+    property <bool> dragging: ef-ta.pressed;
+    property <length> shift: root.dragging ? ef-ta.mouse-y - root.base : 0px;
+    @children
+    ef-ta := TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) { root.base = self.mouse-y; }
+        }
+        moved => {
+            if (root.shift > root.height * 0.6 && root.index < root.count - 1) {
+                root.moved(root.index, root.index + 1);
+                root.base = self.mouse-y + root.height;
+            } else if (root.shift < -root.height * 0.6 && root.index > 0) {
+                root.moved(root.index, root.index - 1);
+                root.base = self.mouse-y - root.height;
+            }
+        }
+    }
+    Rectangle {
+        visible: root.dragging;
+        border-radius: 20px;
+        border-width: 2px;
+        border-color: Theme.s.primary;
+    }
+    if root.removable: Rectangle {
+        x: parent.width - 34px;
+        y: 6px;
+        width: 28px;
+        height: 28px;
+        border-radius: 14px;
+        background: Theme.s.error;
+        Icon { glyph: "M7 12h10"; size: 16px; tint: Theme.s.on-primary; }
+        TouchArea { clicked => { root.remove(); } }
     }
 }
 
@@ -1101,10 +1284,17 @@ component Dashboard inherits Rectangle {
     in property <DashProfile> profile;
     in property <[ProxyGroup]> groups;
     in property <[string]> widgets;
-    in property <[string]> hidden;
+    in property <[DashAdd]> addable;
     in property <string> local-ip;
     in property <string> memory;
     in property <int> mode;
+    in property <[DashService]> services;
+    in property <string> service-verdict;
+    in property <bool> service-warn;
+    in property <DashStats> stats;
+    in property <bool> allow-lan;
+    in property <string> port;
+    in property <bool> hide-ip;
     in-out property <bool> editing;
     callback toggle-vpn();
     callback set-mode(int);
@@ -1112,17 +1302,36 @@ component Dashboard inherits Rectangle {
     callback sync-profile(string);
     callback open-group(string);
     callback refresh-ip();
-    callback copy-ip();
+    callback open-ip();
+    callback copy-ip(string);
+    callback set-lan(bool);
+    callback retry-services();
+    callback open-stats(int);
     callback edit(string, string);
-    // `DashboardDensity`: a phone column under 640, else the fixed grid of 2 or 4 columns.
+    callback move(int, int);
+    callback layout(bool, int, bool);
+    // `DashboardDensity`: a phone column under 640, else the fixed grid of 2 or 4 columns,
+    // compact under 1040 with four columns or under 824 high.
     property <bool> wide: self.width >= 640px;
     property <int> columns: self.width < 860px ? 2 : 4;
+    property <bool> compact: (root.columns == 4 && self.width < 1040px) || self.height < 824px;
     property <length> gap: self.width < 600px ? 8px : self.width < 840px ? 12px : 16px;
     property <length> side: max(16px, (self.width - 560px) / 2);
-    in property <bool> has-start: true;
     property <length> cw: min((self.width - 40px - gap * (columns - 1)) / columns, 440px);
     property <length> inset: (self.width - 40px - gap * (columns - 1) - cw * columns) / 2;
-
+    // `_DesktopDashboard`'s rows: 208/64/176, compact 176/56/152; the summaries 120/112.
+    property <length> top-h: root.compact ? 176px : 208px;
+    property <length> control-h: root.compact ? 56px : 64px;
+    property <length> middle-h: root.compact ? 152px : 176px;
+    property <length> summary-h: root.compact ? 112px : 120px;
+    in property <bool> widgets-has-service;
+    property <bool> shows-service: root.wide || root.widgets-has-service;
+    // `ServiceStatusCard.columns`: one beside another card, two when a column is wide enough.
+    property <int> service-columns: !root.wide ? 2 : root.columns == 4 && root.cw >= 290px ? 2 : 1;
+    changed wide => { root.layout(root.wide, root.service-columns, root.shows-service); }
+    changed service-columns => { root.layout(root.wide, root.service-columns, root.shows-service); }
+    changed shows-service => { root.layout(root.wide, root.service-columns, root.shows-service); }
+    init => { root.layout(root.wide, root.service-columns, root.shows-service); }
     function span(n: int) -> length { return root.cw * n + root.gap * (n - 1); }
 
     VerticalLayout {
@@ -1145,70 +1354,112 @@ component Dashboard inherits Rectangle {
                 padding-top: 4px;
                 padding-bottom: 24px;
                 spacing: root.gap;
-                for w[i] in root.widgets: VerticalLayout {
-                    if root.editing: EditFrame {
-                        first: i == 0;
-                        last: i == root.widgets.length - 1;
-                        up => { root.edit("up", w); }
-                        down => { root.edit("down", w); }
-                        remove => { root.edit("remove", w); }
+                for w[i] in root.widgets: EditFrame {
+                    height: card.preferred-height;
+                    removable: root.editing && w != "status";
+                    index: i;
+                    count: root.widgets.length;
+                    remove => { root.edit("remove", w); }
+                    moved(from, to) => { root.move(from, to); }
+                    card := VerticalLayout {
+                        if w == "status": StatusCard {
+                            height: 200px;
+                            narrow: root.width < 400px;
+                            status: root.status;
+                            run-state: root.run-state;
+                            run-time: root.run-time;
+                            hide-ip: root.hide-ip;
+                            toggle => { root.toggle-vpn(); }
+                            refresh => { root.refresh-ip(); }
+                            open-ip => { root.open-ip(); }
+                        }
+                        if w == "speed": SpeedCard { traffic: root.traffic; }
+                        if w == "mode": ModeCard { mode: root.mode; set-mode(m) => { root.set-mode(m); } }
+                        if w == "vpn": VpnCard { run-state: root.run-state; toggle => { root.toggle-vpn(); } }
+                        if w == "service": ServiceDashCard {
+                            services: root.services;
+                            verdict: root.service-verdict;
+                            warn: root.service-warn;
+                            columns: 2;
+                            retry => { root.retry-services(); }
+                        }
+                        if w == "profile": ProfileDashCard {
+                            height: self.preferred-height;
+                            profile: root.profile;
+                            tapped => { root.open-profiles(); }
+                            sync => { root.sync-profile(root.profile.id); }
+                        }
+                        if w == "groups": GroupsDashCard {
+                            groups: root.groups;
+                            running: root.run-state == "STARTED";
+                            tapped => { root.open-group(""); }
+                            open(g) => { root.open-group(g); }
+                        }
+                        if w == "stats": StatsDashCard { stats: root.stats; open(i) => { root.open-stats(i); } }
+                        if w == "ip": IpDashCard {
+                            ip: root.local-ip;
+                            allow-lan: root.allow-lan;
+                            port: root.port;
+                            copy(a) => { root.copy-ip(a); }
+                            set-lan(on) => { root.set-lan(on); }
+                        }
+                        if w == "memory": MemoryDashCard { memory: root.memory; }
                     }
-                    if w == "status": StatusCard {
-                        height: 200px;
-                        status: root.status;
-                        run-state: root.run-state;
-                        run-time: root.run-time;
-                        toggle => { root.toggle-vpn(); }
-                        refresh => { root.refresh-ip(); }
-                    }
-                    if w == "speed": SpeedCard { traffic: root.traffic; }
-                    if w == "mode": ModeCard { mode: root.mode; set-mode(m) => { root.set-mode(m); } }
-                    if w == "vpn": VpnCard { run-state: root.run-state; toggle => { root.toggle-vpn(); } }
-                    if w == "profile": ProfileDashCard {
-                        height: self.preferred-height;
-                        profile: root.profile;
-                        tapped => { root.open-profiles(); }
-                        sync => { root.sync-profile(root.profile.id); }
-                    }
-                    if w == "groups": GroupsDashCard {
-                        groups: root.groups;
-                        running: root.run-state == "STARTED";
-                        tapped => { root.open-group(""); }
-                        open(g) => { root.open-group(g); }
-                    }
-                    if w == "ip": IpDashCard { ip: root.local-ip; copy => { root.copy-ip(); } }
-                    if w == "memory": MemoryDashCard { memory: root.memory; }
                 }
-                if root.editing && root.hidden.length > 0: VerticalLayout {
+                // `_AddRow`s under 可添加.
+                if root.editing && root.addable.length > 0: VerticalLayout {
                     spacing: 8px;
-                    padding-top: 8px;
-                    Text { text: "添加卡片"; font-size: 13px; color: Theme.s.on-surface-variant; }
-                    for h in root.hidden: Rectangle {
-                        height: 48px;
-                        border-radius: 14px;
-                        background: Theme.s.card;
+                    padding-top: 6px;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        Text { text: "可添加"; font-size: 13px; font-weight: 600; color: Theme.s.on-surface-variant; }
+                    }
+                    for h in root.addable: Rectangle {
+                        height: 60px;
+                        border-radius: 18px;
+                        background: Theme.s.card.with-alpha(0.55);
                         HorizontalLayout {
-                            padding-left: 16px;
-                            padding-right: 4px;
-                            Text {
-                                horizontal-stretch: 1;
-                                vertical-alignment: center;
-                                font-size: 15px;
-                                color: Theme.s.on-surface;
-                                text: h == "status" ? "状态" : h == "speed" ? "网络速度" : h == "mode" ? "出站模式" : h == "vpn" ? "VPN" : h == "profile" ? "配置" : h == "groups" ? "策略组" : h == "ip" ? "局域网 IP" : "内存信息";
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 28px;
+                                    height: 28px;
+                                    border-radius: 14px;
+                                    background: add-ta.pressed ? Theme.s.primary.darker(0.15) : Theme.s.primary;
+                                    Icon { glyph: Icons.plus; size: 16px; tint: Theme.s.on-primary; }
+                                    add-ta := TouchArea { clicked => { root.edit("add", h.id); } }
+                                }
                             }
-                            IconButton { glyph: Icons.plus; tint: Theme.s.primary; clicked => { root.edit("add", h); } }
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 40px;
+                                    height: 40px;
+                                    border-radius: 12px;
+                                    background: Theme.s.card;
+                                    Icon {
+                                        size: 20px;
+                                        tint: Theme.s.on-surface-variant;
+                                        glyph: h.id == "speed" ? Icons.speed : h.id == "mode" ? Icons.route : h.id == "vpn" ? Icons.shield : h.id == "service" ? Icons.status : h.id == "profile" ? Icons.profiles : h.id == "groups" ? Icons.group : h.id == "stats" ? Icons.requests : h.id == "ip" ? Icons.devices : h.id == "memory" ? Icons.memory : Icons.status;
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text { text: h.label; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+                                if h.desc != "": Text { text: h.desc; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                            }
                         }
                     }
-                }
-                if root.editing: HorizontalLayout {
-                    alignment: center;
-                    TextButton { text: "恢复默认"; clicked => { root.edit("reset", ""); } }
                 }
             }
         }
         // The wide dashboard (`_DesktopDashboard`): rows of fixed height across 2 or 4
-        // columns.
+        // columns, then the summaries.
         if root.wide: Flickable {
             content-height: grid.preferred-height;
             grid := VerticalLayout {
@@ -1218,75 +1469,104 @@ component Dashboard inherits Rectangle {
                 padding-bottom: 24px;
                 spacing: root.gap;
                 if root.columns == 2: StatusCard {
-                    height: 200px;
+                    height: root.top-h;
                     status: root.status;
                     run-state: root.run-state;
                     run-time: root.run-time;
+                    hide-ip: root.hide-ip;
+                    compact: root.compact;
                     toggle => { root.toggle-vpn(); }
                     refresh => { root.refresh-ip(); }
+                    open-ip => { root.open-ip(); }
                 }
                 HorizontalLayout {
-                    height: 200px;
+                    height: root.top-h;
                     spacing: root.gap;
                     if root.columns == 4: StatusCard {
                         width: root.span(2);
                         status: root.status;
                         run-state: root.run-state;
                         run-time: root.run-time;
+                        hide-ip: root.hide-ip;
                         compact: true;
                         toggle => { root.toggle-vpn(); }
                         refresh => { root.refresh-ip(); }
+                        open-ip => { root.open-ip(); }
                     }
                     SpeedTile { width: root.cw; header: true; peak: true; upload: true; traffic: root.traffic; }
                     SpeedTile { width: root.cw; header: true; peak: true; upload: false; traffic: root.traffic; }
                 }
-                if root.columns == 2: ModeBar { height: 60px; mode: root.mode; set-mode(m) => { root.set-mode(m); } }
-                if root.columns == 2: VpnCard { slim: true; run-state: root.run-state; toggle => { root.toggle-vpn(); } }
+                if root.columns == 2: ModeBar { height: root.control-h; mode: root.mode; set-mode(m) => { root.set-mode(m); } }
+                if root.columns == 2: VpnCard { height: root.control-h; slim: true; run-state: root.run-state; toggle => { root.toggle-vpn(); } }
                 if root.columns == 4: HorizontalLayout {
-                    height: 60px;
+                    height: root.control-h;
                     spacing: root.gap;
                     ModeBar { width: root.span(2); mode: root.mode; set-mode(m) => { root.set-mode(m); } }
-                    VpnCard { width: root.span(2); slim: true; run-state: root.run-state; toggle => { root.toggle-vpn(); } }
+                    VpnCard { width: root.span(2); height: root.control-h; slim: true; run-state: root.run-state; toggle => { root.toggle-vpn(); } }
                 }
                 HorizontalLayout {
-                    height: 170px;
+                    height: root.middle-h;
                     spacing: root.gap;
-                    IpDashCard { width: root.cw; height: 170px; ip: root.local-ip; copy => { root.copy-ip(); } }
+                    IpDashCard {
+                        width: root.cw;
+                        fill: true;
+                        height: root.middle-h;
+                        ip: root.local-ip;
+                        allow-lan: root.allow-lan;
+                        port: root.port;
+                        copy(a) => { root.copy-ip(a); }
+                        set-lan(on) => { root.set-lan(on); }
+                    }
                     ProfileDashCard {
-                        width: root.columns == 4 ? root.span(2) : root.cw;
+                        width: root.cw;
                         wide: true;
                         profile: root.profile;
                         tapped => { root.open-profiles(); }
                         sync => { root.sync-profile(root.profile.id); }
                     }
-                    if root.columns == 4: MemoryDashCard { width: root.cw; height: 170px; memory: root.memory; }
+                    if root.columns == 4: ServiceDashCard {
+                        width: root.cw;
+                        fill: true;
+                        height: root.middle-h;
+                        services: root.services;
+                        verdict: root.service-verdict;
+                        warn: root.service-warn;
+                        columns: root.service-columns;
+                        retry => { root.retry-services(); }
+                    }
+                    if root.columns == 4: MemoryDashCard { width: root.cw; height: root.middle-h; memory: root.memory; }
                 }
                 if root.columns == 2: HorizontalLayout {
-                    height: 120px;
+                    height: root.middle-h;
                     spacing: root.gap;
-                    MemoryDashCard { width: root.cw; memory: root.memory; }
-                    Rectangle { width: root.cw; }
+                    ServiceDashCard {
+                        width: root.cw;
+                        fill: true;
+                        height: root.middle-h;
+                        services: root.services;
+                        verdict: root.service-verdict;
+                        warn: root.service-warn;
+                        columns: 1;
+                        retry => { root.retry-services(); }
+                    }
+                    MemoryDashCard { width: root.cw; height: root.middle-h; memory: root.memory; }
                 }
-                GroupsDashCard {
-                    groups: root.groups;
-                    limit: root.columns == 4 ? 8 : 6;
-                    running: root.run-state == "STARTED";
-                    tapped => { root.open-group(""); }
-                    open(g) => { root.open-group(g); }
+                HorizontalLayout {
+                    height: root.summary-h;
+                    spacing: root.gap;
+                    StatsDashCard { width: root.span(root.columns / 2); fill: true; height: root.summary-h; stats: root.stats; open(i) => { root.open-stats(i); } }
+                    GroupsDashCard {
+                        width: root.span(root.columns / 2);
+                        height: root.summary-h;
+                        limit: root.columns == 4 ? 2 : 1;
+                        groups: root.groups;
+                        running: root.run-state == "STARTED";
+                        tapped => { root.open-group(""); }
+                        open(g) => { root.open-group(g); }
+                    }
                 }
             }
         }
-    }
-
-    // Neither the status card nor the VPN switch on a phone dashboard: the start button
-    // stays reachable.
-    if !root.wide && !root.has-start: Fab {
-        x: parent.width - self.width - 16px;
-        y: parent.height - self.height - 16px;
-        glyph: root.run-state == "STARTED" ? Icons.pause : Icons.play;
-        filled-glyph: true;
-        enabled: root.run-state == "STARTED" || root.run-state == "STOPPED";
-        clicked => { root.toggle-vpn(); }
     }
 }
 
@@ -3817,7 +4097,7 @@ component DetailRowView inherits Rectangle {
                         Icon { glyph: cell.glyph; size: 16px; tint: Theme.s.primary; }
                         Text { text: cell.label; font-size: 13px; color: root.muted; vertical-alignment: center; }
                     }
-                    Text { text: cell.figure; font-size: 20px; font-weight: 700; color: Theme.s.on-surface; min-width: self.preferred-width * 1.1; }
+                    Text { text: cell.figure; font-size: 20px; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 20px * 0.62) * 1.1; }
                     if cell.speed != "": Text { text: cell.speed + "/s"; font-size: 12px; color: root.muted; }
                 }
             }
@@ -4665,8 +4945,21 @@ export component AppWindow inherits Window {
     in property <DashProfile> dash-profile;
     in property <[ProxyGroup]> dash-groups;
     in property <[string]> dash-widgets;
-    in property <[string]> dash-hidden;
-    in property <bool> dash-has-start: true;
+    in property <[DashAdd]> dash-addable;
+    in property <bool> dash-has-service;
+    in property <[DashService]> dash-services;
+    in property <string> dash-service-verdict;
+    in property <bool> dash-service-warn;
+    in property <DashStats> dash-stats;
+    in property <bool> dash-allow-lan;
+    in property <string> dash-port: "7890";
+    in property <bool> dash-hide-ip;
+    in-out property <bool> ip-sheet-open;
+    callback dash-move(int, int);
+    callback dash-probe-services();
+    callback dash-set-lan(bool);
+    callback dash-set-hide-ip(bool);
+    callback dash-layout(bool, int, bool);
     in property <string> dash-local-ip;
     in property <string> dash-memory;
     in property <string> dash-run-time: "00:00:00";
@@ -5020,6 +5313,7 @@ export component AppWindow inherits Window {
                 if (root.res-dialog != "") { root.res-dialog = ""; return accept; }
                 if (root.req-actions-open) { root.req-actions-open = false; return accept; }
                 if (root.log-detail-open) { root.log-detail-open = false; return accept; }
+                if (root.ip-sheet-open) { root.ip-sheet-open = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "logs" && root.log-searching) { root.log-searching = false; root.log-query = ""; return accept; }
                 if (root.req-sheet-open) { root.req-sheet-open = false; root.req-sheet-closed(); return accept; }
                 if (root.req-visible && root.req-searching) { root.req-searching = false; root.req-query = ""; return accept; }
@@ -5097,9 +5391,16 @@ export component AppWindow inherits Window {
                     profile: root.dash-profile;
                     groups: root.dash-groups;
                     widgets: root.dash-widgets;
-                    hidden: root.dash-hidden;
-                    has-start: root.dash-has-start;
+                    addable: root.dash-addable;
+                    widgets-has-service: root.dash-has-service;
                     local-ip: root.dash-local-ip;
+                    services: root.dash-services;
+                    service-verdict: root.dash-service-verdict;
+                    service-warn: root.dash-service-warn;
+                    stats: root.dash-stats;
+                    allow-lan: root.dash-allow-lan;
+                    port: root.dash-port;
+                    hide-ip: root.dash-hide-ip;
                     memory: root.dash-memory;
                     mode: root.mode;
                     editing <=> root.dash-editing;
@@ -5113,8 +5414,17 @@ export component AppWindow inherits Window {
                         root.open-group(root.current-group);
                     }
                     refresh-ip => { root.refresh-ip(); }
-                    copy-ip => { root.copy-text(root.dash-local-ip); }
+                    copy-ip(a) => { root.copy-text(a); }
+                    open-ip => { root.ip-sheet-open = true; }
+                    set-lan(on) => { root.dash-set-lan(on); }
+                    retry-services => { root.dash-probe-services(); }
+                    open-stats(i) => {
+                        if (root.wide) { root.go(4); } else { root.go(3); root.tools-page = "requests"; }
+                        root.req-set-segment(i == 2 ? 2 : 0);
+                    }
                     edit(a, w) => { root.edit-dashboard(a, w); }
+                    move(f, t) => { root.dash-move(f, t); }
+                    layout(w, c, sv) => { root.dash-layout(w, c, sv); }
                 }
                 // Kept in the tree so its measures stay readable and its scroll stays put.
                 proxies-page := Proxies {
@@ -5551,6 +5861,120 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 alignment: end;
                 TextButton { text: "确定"; clicked => { root.qr-open = false; } }
+            }
+        }
+
+        // `showIpQualitySheet`: the outbound address, its kind and network, and hide IP.
+        if root.ip-sheet-open && root.tab == 0: Rectangle {
+            background: #00000066;
+            TouchArea { clicked => { root.ip-sheet-open = false; } }
+            Rectangle {
+                width: min(parent.width, 640px);
+                x: (parent.width - self.width) / 2;
+                y: max(root.top-inset + 24px, parent.height - ipq-col.preferred-height - 60px);
+                height: parent.height - self.y;
+                background: Theme.s.page;
+                border-top-left-radius: 24px;
+                border-top-right-radius: 24px;
+                clip: true;
+                TouchArea { }
+                VerticalLayout {
+                    Rectangle {
+                        height: 16px;
+                        Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+                    }
+                    HorizontalLayout {
+                        height: 44px;
+                        padding-left: 20px;
+                        padding-right: 8px;
+                        Text { text: "出站 IP详情"; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                        VerticalLayout { alignment: center; IconButton { glyph: Icons.close; clicked => { root.ip-sheet-open = false; } } }
+                    }
+                    Flickable {
+                        vertical-stretch: 1;
+                        content-height: ipq-col.preferred-height;
+                        ipq-col := VerticalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            padding-top: 4px;
+                            padding-bottom: 20px + root.bottom-inset;
+                            spacing: 8px;
+                            Text { text: "依赖第三方api，仅供参考"; font-size: 14px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                            Rectangle { height: 4px; }
+                            Text { text: "基础信息"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Rectangle {
+                                background: Theme.s.card;
+                                border-radius: 16px;
+                                height: self.preferred-height;
+                                VerticalLayout {
+                                    padding-left: 16px;
+                                    padding-right: 16px;
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "IP 地址"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.dash-hide-ip ? "*****" : root.dash-status.ip; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                    Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "类型"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.dash-status.kind == "" ? "—" : root.dash-status.kind; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                    Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "等级"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.dash-status.quality == 1 ? "优" : root.dash-status.quality == 2 ? "普通" : root.dash-status.quality == 3 ? "风险" : "—"; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                }
+                            }
+                            Rectangle { height: 4px; }
+                            Text { text: "网络"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Rectangle {
+                                background: Theme.s.card;
+                                border-radius: 16px;
+                                height: self.preferred-height;
+                                VerticalLayout {
+                                    padding-left: 16px;
+                                    padding-right: 16px;
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "区域"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.dash-status.country == "" ? "—" : root.dash-status.country; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                    Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "组织"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.dash-status.org == "" ? "—" : root.dash-status.org; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                }
+                            }
+                            Rectangle { height: 4px; }
+                            Text { text: "其他"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Rectangle {
+                                background: Theme.s.card;
+                                border-radius: 16px;
+                                height: self.preferred-height;
+                                VerticalLayout {
+                                    padding-left: 16px;
+                                    padding-right: 16px;
+                                    HorizontalLayout {
+                                        height: 52px;
+                                        spacing: 12px;
+                                        Text { text: "隐藏 IP"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                                        VerticalLayout { alignment: center; Switch { checked: root.dash-hide-ip; toggled(v) => { root.dash-set-hide-ip(v); } } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
