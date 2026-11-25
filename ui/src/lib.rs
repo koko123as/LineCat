@@ -12,6 +12,7 @@ pub mod bridge;
 mod dash_app;
 pub mod dashboard;
 pub mod dns_queries;
+pub mod drag;
 pub mod edges;
 pub mod http_capture;
 pub mod items;
@@ -109,6 +110,8 @@ struct App {
     services: Mutex<dash_app::Services>,
     /// The dashboard as laid out: wide, its columns, and whether it shows the service card.
     dash_layout: Mutex<(bool, i32, bool)>,
+    /// The editor column's card heights, by index, for the drag.
+    dash_heights: Mutex<Vec<f32>>,
     logs_scheduled: AtomicBool,
     toast_seq: AtomicU64,
     last_id: Mutex<u64>,
@@ -120,7 +123,7 @@ struct App {
     /// Geo files being fetched, by `GeoResource` name, and those a tap asked for.
     geo_busy: Mutex<HashSet<String>>,
     geo_manual: Mutex<HashSet<String>>,
-    edges: Mutex<Option<edges::Report>>,
+    edges: Mutex<Option<edges::Insets>>,
     /// The installed version (`versionName`), from the shell.
     app_version: Mutex<String>,
     /// The about page's logo taps: how many, and when the last was.
@@ -541,25 +544,22 @@ impl App {
         Ok(())
     }
 
-    /// `WindowEdges.kt`: the padding is worked out again whenever Slint resizes the window.
+    /// `WindowEdges.kt`: the window's insets, scaled again whenever Slint resizes the window.
     fn set_edges(self: &Arc<Self>, edges: Value) {
-        *self.edges.lock().unwrap() = Some(edges::Report::from_json(&edges));
+        *self.edges.lock().unwrap() = Some(edges::Insets::from_json(&edges));
         let app = self.clone();
         self.ui(move |ui| app.fit_edges(&ui));
     }
 
     fn fit_edges(&self, ui: &AppWindow) {
-        let Some(report) = *self.edges.lock().unwrap() else {
+        let Some(insets) = *self.edges.lock().unwrap() else {
             return;
         };
-        let window = ui.window();
-        let size = window.size();
-        let pad = edges::fit((size.width as f32, size.height as f32), &report);
-        let scale = window.scale_factor().max(0.1);
-        ui.set_inset_top(pad.top / scale);
-        ui.set_inset_bottom(pad.bottom / scale);
-        ui.set_inset_left(pad.left / scale);
-        ui.set_inset_right(pad.right / scale);
+        let pad = insets.scaled(ui.window().scale_factor());
+        ui.set_inset_top(pad.top);
+        ui.set_inset_bottom(pad.bottom);
+        ui.set_inset_left(pad.left);
+        ui.set_inset_right(pad.right);
         ui.set_insets_known(true);
     }
 
@@ -2297,6 +2297,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         logs: Mutex::new(logs_app::LogsState::default()),
         services: Mutex::new(dash_app::Services::default()),
         dash_layout: Mutex::new((false, 2, false)),
+        dash_heights: Mutex::new(Vec::new()),
         logs_scheduled: AtomicBool::new(false),
         toast_seq: AtomicU64::new(0),
         last_id: Mutex::new(0),

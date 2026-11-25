@@ -476,6 +476,31 @@ fn main() {
     slint::platform::set_platform(Box::new(Headless(window.clone()))).unwrap();
     let ui = AppWindow::new().unwrap();
     window.set_size(slint::PhysicalSize::new(w, h));
+    let heights = Rc::new(std::cell::RefCell::new(Vec::<f32>::new()));
+    let hs = heights.clone();
+    ui.on_dash_card_height(move |i, h| {
+        let mut v = hs.borrow_mut();
+        if v.len() <= i as usize {
+            v.resize(i as usize + 1, 0.0);
+        }
+        v[i as usize] = h;
+    });
+    let hs = heights.clone();
+    ui.on_dash_drag_target(move |from, shift, gap, count| {
+        let mut v = hs.borrow().clone();
+        v.resize(count.max(0) as usize, 0.0);
+        drag::target(&v, gap, from.max(0) as usize, shift) as i32
+    });
+    let hs = heights.clone();
+    ui.on_dash_drag_offset(move |from, to, i, gap| {
+        drag::offset(
+            &hs.borrow(),
+            gap,
+            from.max(0) as usize,
+            to.max(0) as usize,
+            i.max(0) as usize,
+        )
+    });
 
     apply_theme(&ui, &store::Settings::default());
     ui.set_run_state("STARTED".into());
@@ -895,6 +920,11 @@ fn main() {
         ("dashboard-1000x900", 0, "", "", 1, ""),
         ("dashboard-edit", 0, "", "", 1, "edit"),
         ("dashboard-edit-small", 0, "", "", 1, "edit"),
+        ("dashboard-edit-412x2300", 0, "", "", 1, "edit"),
+        ("dashboard-edit-360x2300", 0, "", "", 1, "edit"),
+        ("dashboard-drag-down", 0, "", "", 1, "drag:300:140"),
+        ("dashboard-drag-down-more", 0, "", "", 1, "drag:300:260"),
+        ("dashboard-drag-up", 0, "", "", 1, "drag:560:-120"),
         ("proxies-wide", 1, "节点选择", "", 1, ""),
         ("pmenu-node", 1, "节点选择", "", 1, "nodemenu"),
         ("pmenu-node-small", 1, "节点选择", "", 1, "nodemenu"),
@@ -1115,7 +1145,7 @@ fn main() {
             (412u32, 892u32)
         };
         window.set_size(slint::PhysicalSize::new(w, h));
-        ui.set_dash_editing(*overlay == "edit");
+        ui.set_dash_editing(*overlay == "edit" || overlay.starts_with("drag:"));
         ui.set_ip_sheet_open(*overlay == "ipsheet");
         ui.set_mem_sheet_open(*overlay == "memsheet");
         ui.set_svc_sheet_open(overlay.starts_with("svcsheet"));
@@ -1356,6 +1386,37 @@ fn main() {
         ui.global::<Theme>().set_mode(*mode);
         ui.set_theme_mode(*mode);
         slint::platform::update_timers_and_animations();
+        // "drag:<y>:<dy>": hold a card at y past the long press, then move the finger by dy.
+        let drag = overlay.strip_prefix("drag:").and_then(|v| {
+            let (y, dy) = v.split_once(':')?;
+            Some((y.parse::<f32>().ok()?, dy.parse::<f32>().ok()?))
+        });
+        if let Some((y, dy)) = drag {
+            use slint::platform::{PointerEventButton, WindowEvent};
+            let mut scratch = vec![Rgb8Pixel::default(); (w * h) as usize];
+            window.request_redraw();
+            window.draw_if_needed(|r| {
+                r.render(&mut scratch, w as usize);
+            });
+            let at = |y: f32| slint::LogicalPosition::new(w as f32 / 2.0, y);
+            window.dispatch_event(WindowEvent::PointerPressed {
+                position: at(y),
+                button: PointerEventButton::Left,
+            });
+            // Once for the Flickable's delayed press, once for the long press.
+            for _ in 0..2 {
+                std::thread::sleep(std::time::Duration::from_millis(450));
+                slint::platform::update_timers_and_animations();
+            }
+            for step in 1..=12 {
+                window.dispatch_event(WindowEvent::PointerMoved {
+                    position: at(y + dy * step as f32 / 12.0),
+                });
+                slint::platform::update_timers_and_animations();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            slint::platform::update_timers_and_animations();
+        }
         let mut buffer = vec![Rgb8Pixel::default(); (w * h) as usize];
         window.request_redraw();
         window.draw_if_needed(|r| {
@@ -1371,5 +1432,12 @@ fn main() {
             .write_image_data(&bytes)
             .unwrap();
         println!("{out}/{name}.png");
+        if let Some((y, dy)) = drag {
+            window.dispatch_event(slint::platform::WindowEvent::PointerReleased {
+                position: slint::LogicalPosition::new(w as f32 / 2.0, y + dy),
+                button: slint::platform::PointerEventButton::Left,
+            });
+            slint::platform::update_timers_and_animations();
+        }
     }
 }

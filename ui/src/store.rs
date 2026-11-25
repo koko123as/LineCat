@@ -167,7 +167,7 @@ impl Default for General {
             hosts: BTreeMap::new(),
             append_system_dns: false,
             open_logs: false,
-            log_level: "info".into(),
+            log_level: "error".into(),
         }
     }
 }

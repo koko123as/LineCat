@@ -70,12 +70,18 @@ class SlintActivity : NativeActivity() {
     }
 
     private fun reportEdges() {
-        WindowEdges.of(this, window.decorView)?.let(UiBridge::reportEdges)
+        WindowEdges.of(window.decorView)?.let(UiBridge::reportEdges)
     }
 
     override fun onResume() {
         super.onResume()
         UiBridge.activity = this
+        window.decorView.post { reportEdges() }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) window.decorView.post { reportEdges() }
     }
 
     override fun onDestroy() {

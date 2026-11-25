@@ -2,6 +2,7 @@
 //! stats, the intranet IP card's LAN switch, the IP quality sheet and the card editor.
 
 use crate::dashboard;
+use crate::drag;
 use crate::settings_app::Effect;
 use crate::{
     App, AppWindow, DashAdd, DashProfileDetail, DashService, DashStats, ProviderRow,
@@ -38,6 +39,31 @@ impl App {
     pub(crate) fn bind_dashboard(self: &Arc<Self>, ui: &AppWindow) {
         let a = self.clone();
         ui.on_dash_move(move |from, to| a.move_dashboard(from as usize, to as usize));
+        let a = self.clone();
+        ui.on_dash_card_height(move |i, h| {
+            let Ok(i) = usize::try_from(i) else { return };
+            let mut heights = a.dash_heights.lock().unwrap();
+            if heights.len() <= i {
+                heights.resize(i + 1, 0.0);
+            }
+            heights[i] = h;
+        });
+        let a = self.clone();
+        ui.on_dash_drag_target(move |from, shift, gap, count| {
+            let heights = a.dash_column(count);
+            drag::target(&heights, gap, from.max(0) as usize, shift) as i32
+        });
+        let a = self.clone();
+        ui.on_dash_drag_offset(move |from, to, i, gap| {
+            let heights = a.dash_heights.lock().unwrap();
+            drag::offset(
+                &heights,
+                gap,
+                from.max(0) as usize,
+                to.max(0) as usize,
+                i.max(0) as usize,
+            )
+        });
         let a = self.clone();
         ui.on_dash_probe_services(move || a.probe_services());
         let a = self.clone();
@@ -231,6 +257,13 @@ impl App {
                 ui.set_profile_providers(ModelRc::new(VecModel::from(rows)));
             });
         });
+    }
+
+    /// The editor column's card heights, as many as it shows.
+    fn dash_column(&self, count: i32) -> Vec<f32> {
+        let mut heights = self.dash_heights.lock().unwrap().clone();
+        heights.resize(count.max(0) as usize, 0.0);
+        heights
     }
 
     /// `_reorder` in the card editor.

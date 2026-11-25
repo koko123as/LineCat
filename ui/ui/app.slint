@@ -1412,64 +1412,57 @@ component MemoryDashCard inherits DashCard {
     }
 }
 
-// A card in the editor (`_EditableCard`): dragged by a hold anywhere on it, with a remove
-// button on its corner unless it holds the start button.
+// A card in the editor (`_EditableCard`): lifted by a hold anywhere on it, with a remove
+// button on its corner unless it holds the start button. The column owns the drag: the
+// lifted card follows the finger and the others make way as it passes their middles.
 component EditFrame inherits Rectangle {
-    // Only while editing does the frame take touches, and only a long press lifts the card
-    // (`_EditableCard`): outside editing every touch reaches the card itself.
+    // Only while editing does the frame take touches, and only a long press lifts the card:
+    // outside editing every touch reaches the card itself.
     in property <bool> editing;
     in property <bool> removable;
-    in property <int> index;
-    in property <int> count;
+    in property <bool> lifted;
+    in property <bool> dragging;
+    in property <length> shift;
+    in property <length> offset;
     callback remove();
-    callback moved(int, int);
-    // The drag: how far the finger went since the card last changed places.
-    property <length> base;
-    property <bool> lifted;
-    property <length> shift: root.lifted && ef-ta.pressed ? ef-ta.mouse-y - root.base : 0px;
+    // The finger's height in the window while it holds the card.
+    callback lift(length);
+    callback drag(length);
+    callback drop();
     Rectangle {
-        y: root.shift;
+        y: root.lifted ? root.shift : root.offset;
+        animate y { duration: root.dragging && !root.lifted ? 160ms : 0ms; easing: ease-out; }
         width: parent.width;
         height: parent.height;
+        z: root.lifted ? 1 : 0;
         border-radius: 20px;
         background: root.lifted ? Theme.s.card : transparent;
         drop-shadow-offset-y: root.lifted ? 6px : 0px;
         drop-shadow-blur: root.lifted ? 16px : 0px;
         drop-shadow-color: root.lifted ? #00000033 : transparent;
         @children
+        Rectangle {
+            visible: root.lifted;
+            border-radius: 20px;
+            border-width: 2px;
+            border-color: Theme.s.primary;
+        }
     }
     hold := Timer {
         interval: 400ms;
-        running: root.editing && ef-ta.pressed && !root.lifted;
-        triggered => {
-            root.lifted = true;
-            root.base = ef-ta.mouse-y;
-        }
+        running: root.editing && ef-ta.pressed && !root.dragging;
+        triggered => { root.lift(root.absolute-position.y + ef-ta.mouse-y); }
     }
     ef-ta := TouchArea {
         enabled: root.editing;
         changed pressed => {
-            if (!self.pressed) { root.lifted = false; }
+            if (!self.pressed && root.lifted) { root.drop(); }
         }
         moved => {
-            if (!root.lifted) { return; }
-            if (root.shift > root.height * 0.6 && root.index < root.count - 1) {
-                root.moved(root.index, root.index + 1);
-                root.base = self.mouse-y + root.height;
-            } else if (root.shift < -root.height * 0.6 && root.index > 0) {
-                root.moved(root.index, root.index - 1);
-                root.base = self.mouse-y - root.height;
-            }
+            if (root.lifted) { root.drag(root.absolute-position.y + self.mouse-y); }
         }
     }
-    Rectangle {
-        visible: root.lifted;
-        y: root.shift;
-        border-radius: 20px;
-        border-width: 2px;
-        border-color: Theme.s.primary;
-    }
-    if root.removable: Rectangle {
+    if root.removable && !root.dragging: Rectangle {
         x: parent.width - 34px;
         y: 6px;
         width: 28px;
@@ -1611,6 +1604,18 @@ component Dashboard inherits Rectangle {
     callback open-stats(int);
     callback edit(string, string);
     callback move(int, int);
+    // The editor's drag (`drag.rs`): the cards' heights, where the lifted one lands and how
+    // far the others move aside.
+    callback card-height(int, length);
+    pure callback drag-target(int, length, length, int) -> int;
+    pure callback drag-offset(int, int, int, length) -> length;
+    property <int> drag-from: -1;
+    property <length> drag-y0;
+    property <length> drag-y;
+    property <length> drag-vy0;
+    property <length> scroll-y;
+    property <length> drag-shift: root.drag-y - root.drag-y0 + root.drag-vy0 - root.scroll-y;
+    property <int> drag-to: root.drag-from < 0 ? -1 : root.drag-target(root.drag-from, root.drag-shift, root.gap, root.widgets.length);
     callback layout(bool, int, bool);
     // `DashboardDensity`: a phone column under 640, else the fixed grid of 2 or 4 columns,
     // compact under 1040 with four columns or under 824 high.
@@ -1664,9 +1669,26 @@ component Dashboard inherits Rectangle {
                 }
             }
         }
-        if !root.wide: Flickable {
+        if !root.wide: mflick := Flickable {
             content-height: mobile.preferred-height + Dock.pad;
+            interactive: root.drag-from < 0;
+            init => { root.scroll-y = self.content-y; }
+            changed content-y => { root.scroll-y = self.content-y; }
+            // Scrolls while the lifted card is held near the top or above the dock.
+            Timer {
+                interval: 16ms;
+                running: root.drag-from >= 0;
+                triggered => {
+                    let top = mflick.absolute-position.y;
+                    if (root.drag-y > top + mflick.height - Dock.pad - 48px) {
+                        mflick.content-y = max(mflick.content-y - 8px, min(0px, mflick.height - mflick.content-height));
+                    } else if (root.drag-y < top + 48px) {
+                        mflick.content-y = min(0px, mflick.content-y + 8px);
+                    }
+                }
+            }
             mobile := VerticalLayout {
+                alignment: start;
                 padding-left: root.side;
                 padding-right: root.side;
                 padding-top: 4px;
@@ -1674,12 +1696,29 @@ component Dashboard inherits Rectangle {
                 spacing: root.gap;
                 for w[i] in root.widgets: EditFrame {
                     height: card.preferred-height;
+                    z: i == root.drag-from ? 1 : 0;
                     editing: root.editing;
                     removable: root.editing && w != "status";
-                    index: i;
-                    count: root.widgets.length;
+                    lifted: i == root.drag-from;
+                    dragging: root.drag-from >= 0;
+                    shift: root.drag-shift;
+                    offset: root.drag-from < 0 ? 0px : root.drag-offset(root.drag-from, root.drag-to, i, root.gap);
+                    init => { root.card-height(i, self.height); }
+                    changed height => { root.card-height(i, self.height); }
                     remove => { root.edit("remove", w); }
-                    moved(from, to) => { root.move(from, to); }
+                    lift(y) => {
+                        root.drag-y0 = y;
+                        root.drag-y = y;
+                        root.drag-vy0 = root.scroll-y;
+                        root.drag-from = i;
+                    }
+                    drag(y) => { root.drag-y = y; }
+                    drop => {
+                        let from = root.drag-from;
+                        let to = root.drag-to;
+                        root.drag-from = -1;
+                        if (to >= 0 && to != from) { root.move(from, to); }
+                    }
                     card := VerticalLayout {
                         if w == "status": StatusCard {
                             height: 200px;
@@ -1787,6 +1826,7 @@ component Dashboard inherits Rectangle {
         if root.wide: Flickable {
             content-height: grid.preferred-height + Dock.pad;
             grid := VerticalLayout {
+                alignment: start;
                 padding-left: 16px + root.inset;
                 padding-right: 24px + root.inset;
                 padding-top: 4px;
@@ -2557,6 +2597,7 @@ component EditProfilePage inherits Rectangle {
         Flickable {
             content-height: form.preferred-height + Dock.pad;
             form := VerticalLayout {
+                alignment: start;
                 padding: 16px;
                 spacing: 14px;
                 Field { label: "名称"; placeholder: "必填"; text <=> root.name; }
@@ -5600,6 +5641,9 @@ export component AppWindow inherits Window {
     in property <[ProviderRow]> profile-providers;
     callback open-profile-detail();
     callback dash-move(int, int);
+    callback dash-card-height(int, length);
+    pure callback dash-drag-target(int, length, length, int) -> int;
+    pure callback dash-drag-offset(int, int, int, length) -> length;
     callback dash-probe-services();
     callback dash-set-lan(bool);
     callback dash-set-hide-ip(bool);
@@ -6135,6 +6179,9 @@ export component AppWindow inherits Window {
                     }
                     edit(a, w) => { root.edit-dashboard(a, w); }
                     move(f, t) => { root.dash-move(f, t); }
+                    card-height(i, h) => { root.dash-card-height(i, h); }
+                    drag-target(f, d, g, n) => { return root.dash-drag-target(f, d, g, n); }
+                    drag-offset(f, t, i, g) => { return root.dash-drag-offset(f, t, i, g); }
                     layout(w, c, sv) => { root.dash-layout(w, c, sv); }
                 }
                 // Kept in the tree so its measures stay readable and its scroll stays put.
