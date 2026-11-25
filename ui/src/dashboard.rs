@@ -576,6 +576,85 @@ pub fn usage(used: i64, total: i64) -> Option<(String, String, f32)> {
     ))
 }
 
+/// `ServiceFaultL10n`: "混合端口 127.0.0.1:7890" over the reason, for each fault in an
+/// `engine.state` answer.
+pub fn service_faults(engine: &serde_json::Value) -> Vec<String> {
+    let Some(faults) = engine.get("faults").and_then(|f| f.as_array()) else {
+        return Vec::new();
+    };
+    faults
+        .iter()
+        .map(|f| {
+            let get = |k: &str| f.get(k).and_then(|v| v.as_str()).unwrap_or("");
+            let name = match get("service") {
+                "mixed" => "混合端口",
+                "http" => "HTTP端口",
+                "socks" => "Socks端口",
+                "redir" => "Redir端口",
+                "tproxy" => "Tproxy端口",
+                "tun" => "虚拟网卡",
+                "dns" => "DNS 服务器",
+                _ => "其他",
+            };
+            let label = match get("address") {
+                "" => name.to_string(),
+                address => format!("{name} {address}"),
+            };
+            let reason = match get("reason") {
+                "addressInUse" => "地址已被占用。",
+                "addressNotAvailable" => "本机没有这个地址。",
+                "permissionDenied" => "没有权限。",
+                _ => get("message"),
+            };
+            format!("{label}\n{reason}")
+        })
+        .collect()
+}
+
+/// `profileStatsOf`: groups, proxies (with those the proxy providers bring), rules and
+/// providers, from `profile.inspect` and `provider.list`.
+pub fn profile_stats(inspect: &serde_json::Value, providers: &[serde_json::Value]) -> [i64; 4] {
+    let n = |k: &str| inspect.get(k).and_then(|v| v.as_i64()).unwrap_or(0);
+    let provided: i64 = providers
+        .iter()
+        .filter(|p| p.get("type").and_then(|t| t.as_str()) != Some("rule"))
+        .map(|p| p.get("count").and_then(|c| c.as_i64()).unwrap_or(0))
+        .sum();
+    [
+        n("proxyGroups"),
+        n("proxies") + provided,
+        n("rules"),
+        providers.len() as i64,
+    ]
+}
+
+/// A provider's row under 外部资源: its name over "代理 · http · 12" (kind, vehicle, count).
+pub fn provider_row(p: &serde_json::Value) -> (String, String) {
+    let get = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    let kind = if get("type") == "rule" {
+        "规则"
+    } else {
+        "代理"
+    };
+    let count = p.get("count").and_then(|c| c.as_i64()).unwrap_or(0);
+    let mut parts = vec![kind.to_string()];
+    if !get("vehicleType").is_empty() {
+        parts.push(get("vehicleType").to_string());
+    }
+    parts.push(count.to_string());
+    (get("name").to_string(), parts.join(" · "))
+}
+
+/// `_handleRelease`'s banner: what was freed, else that memory was released.
+pub fn released_text(before: i64, after: i64) -> String {
+    let freed = (before - after).max(0);
+    if freed > 0 {
+        format!("已释放 {}", crate::size(freed))
+    } else {
+        "内存已释放".into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -730,5 +809,38 @@ mod tests {
         assert_eq!(count(99_999), "99,999");
         assert_eq!(count(123_400), "123.4K");
         assert_eq!(count(2_000_000), "2M");
+    }
+
+    #[test]
+    fn faults_name_the_service_and_reason() {
+        let v = serde_json::json!({"state": "running", "faults": [
+            {"service": "mixed", "address": "127.0.0.1:7890", "reason": "addressInUse", "message": "x"},
+            {"service": "tun", "reason": "other", "message": "no fd"},
+        ]});
+        assert_eq!(
+            service_faults(&v),
+            vec!["混合端口 127.0.0.1:7890\n地址已被占用。", "虚拟网卡\nno fd"]
+        );
+        assert!(service_faults(&serde_json::json!({"state": "running"})).is_empty());
+    }
+
+    #[test]
+    fn profile_stats_count_provided_proxies() {
+        let inspect = serde_json::json!({"proxyGroups": 3, "proxies": 10, "rules": 120});
+        let providers = vec![
+            serde_json::json!({"name": "a", "type": "proxy", "vehicleType": "HTTP", "count": 5}),
+            serde_json::json!({"name": "r", "type": "rule", "vehicleType": "File", "count": 900}),
+        ];
+        assert_eq!(profile_stats(&inspect, &providers), [3, 15, 120, 2]);
+        assert_eq!(
+            provider_row(&providers[0]),
+            ("a".to_string(), "代理 · HTTP · 5".to_string())
+        );
+    }
+
+    #[test]
+    fn release_reports_what_was_freed() {
+        assert_eq!(released_text(100, 200), "内存已释放");
+        assert!(released_text(3 << 20, 1 << 20).starts_with("已释放 2"));
     }
 }

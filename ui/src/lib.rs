@@ -464,6 +464,7 @@ impl App {
             }),
         )?;
         self.watch_requests(bridge)?;
+        self.watch_engine(bridge)?;
         if engine == "configured" || engine == "running" {
             self.configured.store(true, Ordering::SeqCst);
             self.refresh_groups();
@@ -608,6 +609,7 @@ impl App {
             }
             ui.set_dash_memory(memory.into());
         });
+        self.publish_memory();
         self.publish_stats();
     }
 

@@ -521,6 +521,30 @@ fn main() {
     });
     ui.set_dash_local_ip("192.168.1.10".into());
     ui.set_dash_memory("228.8 MB".into());
+    ui.set_dash_mem(DashMemory {
+        total: "228.8 MB".into(),
+        app: "228.8 MB".into(),
+        shared: true,
+    });
+    ui.set_profile_detail(DashProfileDetail {
+        groups: "12".into(),
+        proxies: "86".into(),
+        rules: "1532".into(),
+        providers: "2".into(),
+        updated: "3 分钟前".into(),
+        script: "无".into(),
+        remote: true,
+    });
+    ui.set_profile_providers(ModelRc::new(VecModel::from(vec![
+        ProviderRow {
+            name: "机场节点".into(),
+            subtitle: "代理 · HTTP · 42".into(),
+        },
+        ProviderRow {
+            name: "reject-list".into(),
+            subtitle: "规则 · HTTP · 18230".into(),
+        },
+    ])));
     ui.set_profile_name("我的机场".into());
     ui.set_up_speed("12.3 KB/s".into());
     ui.set_down_speed("1.4 MB/s".into());
@@ -749,6 +773,22 @@ fn main() {
         ("resources-tablet", 3, "", "resources", 1, ""),
         ("tools-wide", 3, "", "", 1, ""),
         ("dashboard", 0, "", "", 1, ""),
+        ("dash-memsheet", 0, "", "", 1, "memsheet"),
+        ("dash-memsheet-small", 0, "", "", 1, "memsheet"),
+        ("dash-memsheet-wide", 0, "", "", 1, "memsheet"),
+        ("dash-memsheet-tablet", 0, "", "", 1, "memsheet"),
+        ("dash-profsheet", 0, "", "", 1, "profsheet"),
+        ("dash-profsheet-small", 0, "", "", 1, "profsheet"),
+        ("dash-profsheet-wide", 0, "", "", 1, "profsheet"),
+        ("dash-profsheet-tablet", 0, "", "", 1, "profsheet"),
+        ("dash-picker", 0, "", "", 1, "picker"),
+        ("dash-picker-small", 0, "", "", 1, "picker"),
+        ("dash-picker-wide", 0, "", "", 1, "picker"),
+        ("dash-picker-tablet", 0, "", "", 1, "picker"),
+        ("dash-faults", 0, "", "", 1, "faults"),
+        ("dash-faults-small", 0, "", "", 1, "faults"),
+        ("dash-faults-wide", 0, "", "", 1, "faults"),
+        ("dash-faults-tablet", 0, "", "", 1, "faults"),
         ("speed0-412x892", 0, "", "", 1, "speed:0:0"),
         ("speed1-412x892", 0, "", "", 1, "speed:1.2:39"),
         ("speed2-412x892", 0, "", "", 1, "speed:123.4:1.2"),
@@ -970,6 +1010,10 @@ fn main() {
         window.set_size(slint::PhysicalSize::new(w, h));
         ui.set_dash_editing(*overlay == "edit");
         ui.set_ip_sheet_open(*overlay == "ipsheet");
+        ui.set_mem_sheet_open(*overlay == "memsheet");
+        ui.set_profile_sheet_open(*overlay == "profsheet");
+        ui.set_picker_open(*overlay == "picker");
+        ui.set_dash_fault_count(if *overlay == "faults" { 2 } else { 0 });
         let mut st = ui.get_dash_status();
         st.failed = *overlay == "failed";
         ui.set_dash_status(st);

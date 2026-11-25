@@ -122,6 +122,29 @@ export struct DashAdd {
     desc: string,
 }
 
+// `MemoryDetailSheet`'s figures, formatted.
+export struct DashMemory {
+    total: string,
+    app: string,
+    shared: bool,
+}
+
+// `ProfileDetailSheet`: the counts are empty until the profile is read, "-" when it fails.
+export struct DashProfileDetail {
+    groups: string,
+    proxies: string,
+    rules: string,
+    providers: string,
+    updated: string,
+    script: string,
+    remote: bool,
+}
+
+export struct ProviderRow {
+    name: string,
+    subtitle: string,
+}
+
 export struct DashProfile {
     id: string,
     name: string,
@@ -357,6 +380,8 @@ global Icons {
     out property <string> sort: "M7 4v16 M3 16l4 4 4-4 M17 20V4 M13 8l4-4 4 4";
     out property <string> check: "M5 12.5l4.5 4.5L19 7.5";
     out property <string> edit: "M4 20h4L19 9l-4-4L4 16z M13.5 6.5l4 4";
+    out property <string> swap: "M7 4L3 8l4 4 M3 8h14 M17 12l4 4-4 4 M21 16H7";
+    out property <string> broom: "M19 3l-6.5 6.5 M10 8l6 6 M10 8c-2.5 0-4.5 1-5.5 3L3 21l10-1.5c2-1 3-3 3-5.5z M7 14l-2 4";
     out property <string> eye: "M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z M12 9a3 3 0 1 0 0.01 0z";
     out property <string> copy: "M8 8h11v12H8z M5 16V4h11";
     out property <string> qr: "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h2v2h-2z M18 18h2v2h-2z M14 18h2 M18 14h2";
@@ -971,7 +996,10 @@ component VpnCard inherits DashCard {
 component ProfileDashCard inherits DashCard {
     in property <DashProfile> profile;
     in property <bool> wide;
+    // More than one profile: a swap button beside the name opens the picker.
+    in property <bool> switchable;
     callback sync();
+    callback switch();
     glyph: Icons.profiles;
     title: "配置";
     VerticalLayout {
@@ -994,12 +1022,24 @@ component ProfileDashCard inherits DashCard {
                 }
             }
         }
-        Text {
-            text: root.profile.name == "" ? "添加配置" : root.profile.name;
-            font-size: 17px;
-            font-weight: 600;
-            color: Theme.s.on-surface;
-            overflow: elide;
+        HorizontalLayout {
+            spacing: 4px;
+            Text {
+                text: root.profile.name == "" ? "添加配置" : root.profile.name;
+                font-size: 17px;
+                font-weight: 600;
+                color: Theme.s.on-surface;
+                overflow: elide;
+                vertical-alignment: center;
+                max-width: self.preferred-width * 1.1;
+            }
+            if root.profile.name != "" && root.switchable: IconButton {
+                width: 28px;
+                height: 28px;
+                glyph: Icons.swap;
+                clicked => { root.switch(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
         }
         if root.profile.name != "": HorizontalLayout {
             spacing: 12px;
@@ -1220,6 +1260,7 @@ component StatsDashCard inherits DashCard {
 // `MemoryInfo`: what the app and its Core hold in memory.
 component MemoryDashCard inherits DashCard {
     in property <string> memory;
+    chevron: true;
     height: 120px;
     VerticalLayout {
         padding: 16px;
@@ -1276,7 +1317,94 @@ component EditFrame inherits Rectangle {
     }
 }
 
+// A sheet over the page: a grabber, a title with up to two actions, and its body.
+component DashSheet inherits Rectangle {
+    in property <string> title;
+    in property <length> top-inset;
+    in property <length> bottom-inset;
+    in property <string> action-glyph;
+    in property <bool> action-enabled: true;
+    in property <string> action2-glyph;
+    callback close();
+    callback action();
+    callback action2();
+    background: #00000066;
+    TouchArea { clicked => { root.close(); } }
+    Rectangle {
+        width: min(parent.width, 640px);
+        x: (parent.width - self.width) / 2;
+        y: max(root.top-inset + 24px, parent.height - body.preferred-height - 60px - root.bottom-inset - 20px);
+        height: parent.height - self.y;
+        background: Theme.s.page;
+        border-top-left-radius: 24px;
+        border-top-right-radius: 24px;
+        clip: true;
+        TouchArea { }
+        VerticalLayout {
+            Rectangle {
+                height: 16px;
+                Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+            }
+            HorizontalLayout {
+                height: 44px;
+                padding-left: 20px;
+                padding-right: 8px;
+                Text { text: root.title; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                if root.action2-glyph != "": VerticalLayout { alignment: center; IconButton { glyph: root.action2-glyph; tint: Theme.s.on-surface; clicked => { root.action2(); } } }
+                if root.action-glyph != "": VerticalLayout { alignment: center; IconButton { glyph: root.action-glyph; tint: Theme.s.on-surface; enabled: root.action-enabled; clicked => { root.action(); } } }
+                VerticalLayout { alignment: center; IconButton { glyph: Icons.close; clicked => { root.close(); } } }
+            }
+            Flickable {
+                vertical-stretch: 1;
+                content-height: body.preferred-height;
+                body := VerticalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 4px;
+                    padding-bottom: 20px + root.bottom-inset;
+                    spacing: 8px;
+                    @children
+                }
+            }
+        }
+    }
+}
+
+// A label and value row in a sheet's section.
+component SheetRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    height: 48px;
+    spacing: 12px;
+    Text { text: root.label; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
+    Text { text: root.value; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+}
+
+// `_StatTile`: a count over its label.
+component StatTile inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    height: 72px;
+    horizontal-stretch: 1;
+    background: Theme.s.card;
+    border-radius: 16px;
+    VerticalLayout {
+        padding-left: 16px;
+        alignment: center;
+        spacing: 2px;
+        Text { text: root.value == "" ? "…" : root.value; font-size: 22px; font-weight: 700; color: Theme.s.on-surface; overflow: elide; }
+        Text { text: root.label; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+    }
+}
+
 component Dashboard inherits Rectangle {
+    // `ServiceFaultsButton`: services that did not start, a badge in the bar.
+    in property <int> fault-count;
+    in property <bool> switchable;
+    callback open-faults();
+    callback open-profile();
+    callback switch-profile();
+    callback open-memory();
     in property <string> run-state;
     in property <string> run-time;
     in property <DashStatus> status;
@@ -1337,6 +1465,22 @@ component Dashboard inherits Rectangle {
     VerticalLayout {
         AppBar {
             title: root.editing ? "编辑仪表盘" : "仪表盘";
+            if !root.editing && root.fault-count > 0: VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    height: 32px;
+                    width: fault-row.preferred-width * 1.1 + 20px;
+                    border-radius: 16px;
+                    background: fault-ta.pressed ? Theme.s.error.with-alpha(0.24) : Theme.s.error.with-alpha(0.14);
+                    fault-row := HorizontalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        VerticalLayout { alignment: center; Icon { glyph: Icons.error; size: 16px; tint: Theme.s.error; } }
+                        Text { text: root.fault-count; font-size: 13px; font-weight: 700; color: Theme.s.error; vertical-alignment: center; }
+                    }
+                    fault-ta := TouchArea { clicked => { root.open-faults(); } }
+                }
+            }
             if !root.wide: VerticalLayout {
                 alignment: center;
                 IconButton {
@@ -1386,7 +1530,9 @@ component Dashboard inherits Rectangle {
                         if w == "profile": ProfileDashCard {
                             height: self.preferred-height;
                             profile: root.profile;
-                            tapped => { root.open-profiles(); }
+                            switchable: root.switchable;
+                            switch => { root.switch-profile(); }
+                            tapped => { if (root.profile.name == "") { root.open-profiles(); } else { root.open-profile(); } }
                             sync => { root.sync-profile(root.profile.id); }
                         }
                         if w == "groups": GroupsDashCard {
@@ -1403,7 +1549,7 @@ component Dashboard inherits Rectangle {
                             copy(a) => { root.copy-ip(a); }
                             set-lan(on) => { root.set-lan(on); }
                         }
-                        if w == "memory": MemoryDashCard { memory: root.memory; }
+                        if w == "memory": MemoryDashCard { memory: root.memory; tapped => { root.open-memory(); } }
                     }
                 }
                 // `_AddRow`s under 可添加.
@@ -1521,7 +1667,9 @@ component Dashboard inherits Rectangle {
                         width: root.cw;
                         wide: true;
                         profile: root.profile;
-                        tapped => { root.open-profiles(); }
+                        switchable: root.switchable;
+                        switch => { root.switch-profile(); }
+                        tapped => { if (root.profile.name == "") { root.open-profiles(); } else { root.open-profile(); } }
                         sync => { root.sync-profile(root.profile.id); }
                     }
                     if root.columns == 4: ServiceDashCard {
@@ -1534,7 +1682,7 @@ component Dashboard inherits Rectangle {
                         columns: root.service-columns;
                         retry => { root.retry-services(); }
                     }
-                    if root.columns == 4: MemoryDashCard { width: root.cw; height: root.middle-h; memory: root.memory; }
+                    if root.columns == 4: MemoryDashCard { width: root.cw; height: root.middle-h; memory: root.memory; tapped => { root.open-memory(); } }
                 }
                 if root.columns == 2: HorizontalLayout {
                     height: root.middle-h;
@@ -1549,7 +1697,7 @@ component Dashboard inherits Rectangle {
                         columns: 1;
                         retry => { root.retry-services(); }
                     }
-                    MemoryDashCard { width: root.cw; height: root.middle-h; memory: root.memory; }
+                    MemoryDashCard { width: root.cw; height: root.middle-h; memory: root.memory; tapped => { root.open-memory(); } }
                 }
                 HorizontalLayout {
                     height: root.summary-h;
@@ -4955,6 +5103,18 @@ export component AppWindow inherits Window {
     in property <string> dash-port: "7890";
     in property <bool> dash-hide-ip;
     in-out property <bool> ip-sheet-open;
+    in property <int> dash-fault-count;
+    in property <string> dash-faults-text;
+    in-out property <bool> mem-sheet-open;
+    in property <DashMemory> dash-mem;
+    in property <bool> mem-releasing;
+    callback open-memory();
+    callback release-memory();
+    in-out property <bool> profile-sheet-open;
+    in-out property <bool> picker-open;
+    in property <DashProfileDetail> profile-detail;
+    in property <[ProviderRow]> profile-providers;
+    callback open-profile-detail();
     callback dash-move(int, int);
     callback dash-probe-services();
     callback dash-set-lan(bool);
@@ -5314,6 +5474,9 @@ export component AppWindow inherits Window {
                 if (root.req-actions-open) { root.req-actions-open = false; return accept; }
                 if (root.log-detail-open) { root.log-detail-open = false; return accept; }
                 if (root.ip-sheet-open) { root.ip-sheet-open = false; return accept; }
+                if (root.mem-sheet-open) { root.mem-sheet-open = false; return accept; }
+                if (root.picker-open) { root.picker-open = false; return accept; }
+                if (root.profile-sheet-open) { root.profile-sheet-open = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "logs" && root.log-searching) { root.log-searching = false; root.log-query = ""; return accept; }
                 if (root.req-sheet-open) { root.req-sheet-open = false; root.req-sheet-closed(); return accept; }
                 if (root.req-visible && root.req-searching) { root.req-searching = false; root.req-query = ""; return accept; }
@@ -5416,6 +5579,16 @@ export component AppWindow inherits Window {
                     refresh-ip => { root.refresh-ip(); }
                     copy-ip(a) => { root.copy-text(a); }
                     open-ip => { root.ip-sheet-open = true; }
+                    fault-count: root.dash-fault-count;
+                    switchable: root.profiles.length > 1;
+                    open-faults => {
+                        root.alert-title = "未能启动的服务";
+                        root.alert-text = root.dash-faults-text;
+                        root.alert-open = true;
+                    }
+                    open-memory => { root.mem-sheet-open = true; root.open-memory(); }
+                    open-profile => { root.profile-sheet-open = true; root.open-profile-detail(); }
+                    switch-profile => { root.picker-open = true; }
                     set-lan(on) => { root.dash-set-lan(on); }
                     retry-services => { root.dash-probe-services(); }
                     open-stats(i) => {
@@ -5861,6 +6034,177 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 alignment: end;
                 TextButton { text: "确定"; clicked => { root.qr-open = false; } }
+            }
+        }
+
+        // `MemoryDetailSheet`: the total, what the app holds, and release memory.
+        if root.mem-sheet-open && root.tab == 0: DashSheet {
+            title: "内存信息";
+            top-inset: root.top-inset;
+            bottom-inset: root.bottom-inset;
+            action-glyph: root.mem-releasing ? Icons.clock : Icons.broom;
+            action-enabled: !root.mem-releasing;
+            close => { root.mem-sheet-open = false; }
+            action => { root.release-memory(); }
+            VerticalLayout {
+                padding-left: 4px;
+                padding-top: 8px;
+                spacing: 6px;
+                Text { text: "总计"; font-size: 15px; color: Theme.s.on-surface-variant; }
+                Text { text: root.dash-mem.total == "" ? "—" : root.dash-mem.total; font-size: 28px; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 28px * 0.62) * 1.1; }
+                Rectangle { height: 8px; border-radius: 4px; background: Theme.s.primary; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    VerticalLayout { alignment: center; Rectangle { width: 8px; height: 8px; border-radius: 4px; background: Theme.s.primary; } }
+                    Text { text: root.dash-mem.shared ? "应用及共享" : "应用"; font-size: 12px; color: Theme.s.on-surface-variant; }
+                    Text { text: root.dash-mem.app; font-size: 12px; font-weight: 600; color: Theme.s.on-surface; }
+                }
+                Text { text: "基于进程常驻内存估算，可能与系统显示的数值不同。"; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+            }
+            Rectangle { height: 4px; }
+            HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 4px;
+                Text { text: root.dash-mem.shared ? "应用及共享" : "应用"; font-size: 13px; color: Theme.s.on-surface-variant; horizontal-stretch: 1; }
+                Text { text: root.dash-mem.app; font-size: 13px; color: Theme.s.on-surface-variant; }
+            }
+            Rectangle {
+                background: Theme.s.card;
+                border-radius: 16px;
+                height: self.preferred-height;
+                VerticalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-bottom: 12px;
+                    SheetRow { label: "常驻内存"; value: root.dash-mem.app; }
+                    Rectangle { height: 4px; border-radius: 2px; background: Theme.s.primary; }
+                }
+            }
+        }
+
+        // `ProfileDetailSheet`: counts, subscription, update time, script and providers.
+        if root.profile-sheet-open && root.tab == 0: DashSheet {
+            title: root.dash-profile.name;
+            top-inset: root.top-inset;
+            bottom-inset: root.bottom-inset;
+            action-glyph: root.dash-profile.syncable ? (root.dash-profile.busy ? Icons.clock : Icons.sync) : "";
+            action-enabled: !root.dash-profile.busy;
+            close => { root.profile-sheet-open = false; }
+            action => { root.update-profile(root.dash-profile.id); }
+            HorizontalLayout {
+                spacing: 8px;
+                padding-top: 8px;
+                StatTile { label: "策略组"; value: root.profile-detail.groups; }
+                StatTile { label: "代理"; value: root.profile-detail.proxies; }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                StatTile { label: "规则"; value: root.profile-detail.rules; }
+                StatTile { label: "外部资源"; value: root.profile-detail.providers; }
+            }
+            if root.dash-profile.usage: VerticalLayout {
+                spacing: 8px;
+                Rectangle { height: 4px; }
+                Text { text: "订阅信息"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 16px;
+                    height: self.preferred-height;
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 8px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: root.dash-profile.used; font-size: 15px; color: Theme.s.on-surface; horizontal-stretch: 1; overflow: elide; }
+                            Text { text: root.dash-profile.end; font-size: 13px; color: root.dash-profile.warn ? Theme.warning : Theme.s.on-surface-variant; }
+                        }
+                        Rectangle {
+                            height: 6px;
+                            border-radius: 3px;
+                            background: Theme.s.block;
+                            Rectangle { x: 0; width: parent.width * root.dash-profile.ratio; border-radius: 3px; background: root.dash-profile.ratio >= 0.9 ? Theme.warning : Theme.s.primary; }
+                        }
+                    }
+                }
+            }
+            Rectangle { height: 4px; }
+            Text { text: "配置"; font-size: 13px; color: Theme.s.on-surface-variant; }
+            Rectangle {
+                background: Theme.s.card;
+                border-radius: 16px;
+                height: self.preferred-height;
+                VerticalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    SheetRow { label: "上次更新"; value: root.profile-detail.updated; }
+                    Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                    SheetRow { label: "扩展脚本"; value: root.profile-detail.script; }
+                }
+            }
+            if root.profile-providers.length > 0: VerticalLayout {
+                spacing: 8px;
+                Rectangle { height: 4px; }
+                Text { text: "外部资源"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 16px;
+                    height: self.preferred-height;
+                    VerticalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        for pr[pi] in root.profile-providers: VerticalLayout {
+                            if pi > 0: Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                            VerticalLayout {
+                                padding-top: 10px;
+                                padding-bottom: 10px;
+                                spacing: 2px;
+                                Text { text: pr.name; font-size: 15px; color: Theme.s.on-surface; overflow: elide; }
+                                Text { text: pr.subtitle; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // `showProfilesSheet`: the profiles as a picker; a tap makes one current.
+        if root.picker-open && root.tab == 0: DashSheet {
+            title: "切换配置";
+            top-inset: root.top-inset;
+            bottom-inset: root.bottom-inset;
+            close => { root.picker-open = false; }
+            Rectangle {
+                background: Theme.s.card;
+                border-radius: 16px;
+                height: self.preferred-height;
+                VerticalLayout {
+                    for pp[ppi] in root.profiles: Rectangle {
+                        height: 60px;
+                        background: pk-ta.pressed ? Theme.s.inset : transparent;
+                        border-radius: 16px;
+                        if ppi > 0: Rectangle { y: 0; x: 16px; width: parent.width - 32px; height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text { text: pp.name; font-size: 15px; font-weight: pp.active ? 600 : 400; color: Theme.s.on-surface; overflow: elide; }
+                                Text { text: pp.subtitle; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                            }
+                            if pp.active: VerticalLayout { alignment: center; Icon { glyph: Icons.check; size: 20px; tint: Theme.s.primary; } }
+                        }
+                        pk-ta := TouchArea {
+                            clicked => {
+                                root.picker-open = false;
+                                if (!pp.active) { root.select-profile(pp.id); }
+                            }
+                        }
+                    }
+                }
             }
         }
 

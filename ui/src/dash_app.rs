@@ -3,7 +3,7 @@
 
 use crate::dashboard;
 use crate::settings_app::Effect;
-use crate::{App, AppWindow, DashAdd, DashService, DashStats};
+use crate::{App, AppWindow, DashAdd, DashProfileDetail, DashService, DashStats, ProviderRow};
 use serde_json::{json, Value};
 use slint::{ModelRc, VecModel};
 use std::sync::atomic::Ordering;
@@ -42,8 +42,148 @@ impl App {
             a.update_settings(Effect::None, |s| s.hide_ip = on);
             a.publish_dash_flags();
         });
+        let a = self.clone();
+        ui.on_release_memory(move || a.release_memory());
+        let a = self.clone();
+        ui.on_open_memory(move || a.publish_memory());
+        let a = self.clone();
+        ui.on_open_profile_detail(move || a.load_profile_detail());
         self.publish_dash_flags();
         self.publish_services();
+    }
+
+    /// `watchEngineStatus`: the services that did not start, for the bar's badge.
+    pub(crate) fn watch_engine(
+        self: &Arc<Self>,
+        bridge: &crate::bridge::Bridge,
+    ) -> Result<(), String> {
+        let weak = Arc::downgrade(self);
+        bridge.watch(
+            "engine.state",
+            json!({}),
+            Box::new(move |status| {
+                let Some(app) = weak.upgrade() else { return };
+                let faults = dashboard::service_faults(&status);
+                let count = faults.len() as i32;
+                let text = faults.join("\n\n");
+                app.ui(move |ui| {
+                    ui.set_dash_fault_count(count);
+                    ui.set_dash_faults_text(text.into());
+                });
+            }),
+        )
+    }
+
+    /// `MemorySnapshot.resolve` on Android: the Core shares the process, so the process
+    /// RSS is the app and shared total.
+    pub(crate) fn publish_memory(self: &Arc<Self>) {
+        let rss = dashboard::resident_memory().unwrap_or(0);
+        let text = if rss > 0 {
+            crate::size(rss)
+        } else {
+            String::new()
+        };
+        self.ui(move |ui| {
+            ui.set_dash_mem(crate::DashMemory {
+                total: text.clone().into(),
+                app: text.into(),
+                shared: true,
+            });
+        });
+    }
+
+    /// `_handleRelease`: `core.releaseMemory`, then the banner with what was freed.
+    fn release_memory(self: &Arc<Self>) {
+        let app = self.clone();
+        self.ui(|ui| ui.set_mem_releasing(true));
+        std::thread::spawn(move || {
+            let before = dashboard::resident_memory().unwrap_or(0);
+            let result = app
+                .bridge()
+                .and_then(|b| b.call("core.releaseMemory", json!({}), Duration::from_secs(10)));
+            std::thread::sleep(Duration::from_millis(500));
+            let after = dashboard::resident_memory().unwrap_or(0);
+            app.publish_memory();
+            app.ui(|ui| ui.set_mem_releasing(false));
+            match result {
+                Ok(_) => app.toast(dashboard::released_text(before, after)),
+                Err(_) => app.toast("释放内存失败"),
+            }
+        });
+    }
+
+    /// `ProfileDetailSheet`: the current profile's counts from `profile.inspect` and its
+    /// providers from `provider.list`.
+    fn load_profile_detail(self: &Arc<Self>) {
+        let (path, updated) = {
+            let store = self.store.lock().unwrap();
+            match store.active() {
+                Some(p) => (
+                    Some(store.profile_path(&p.id)),
+                    crate::dash_profile(p, false)
+                        .updated
+                        .trim_start_matches("更新于 ")
+                        .to_string(),
+                ),
+                None => (None, String::new()),
+            }
+        };
+        let blank = DashProfileDetail {
+            updated: updated.clone().into(),
+            script: "无".into(),
+            ..Default::default()
+        };
+        self.ui(move |ui| {
+            ui.set_profile_detail(blank);
+            ui.set_profile_providers(ModelRc::new(VecModel::<ProviderRow>::default()));
+        });
+        let app = self.clone();
+        std::thread::spawn(move || {
+            let read = || -> Result<(Value, Vec<Value>), String> {
+                let bridge = app.bridge()?;
+                let path = path.ok_or_else(|| "no profile".to_string())?;
+                let inspect = bridge.call(
+                    "profile.inspect",
+                    json!({"profile": crate::profile_ref(&path)}),
+                    Duration::from_secs(20),
+                )?;
+                let providers = bridge
+                    .call("provider.list", json!({}), Duration::from_secs(10))
+                    .ok()
+                    .and_then(|r| r.get("providers").and_then(Value::as_array).cloned())
+                    .unwrap_or_default();
+                Ok((inspect, providers))
+            };
+            let (counts, rows) = match read() {
+                Ok((inspect, providers)) => (
+                    dashboard::profile_stats(&inspect, &providers).map(|n| n.to_string()),
+                    providers
+                        .iter()
+                        .map(|p| {
+                            let (name, subtitle) = dashboard::provider_row(p);
+                            ProviderRow {
+                                name: name.into(),
+                                subtitle: subtitle.into(),
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+                Err(_) => (std::array::from_fn(|_| "-".to_string()), Vec::new()),
+            };
+            app.ui(move |ui| {
+                let [groups, proxies, rules, providers] = counts;
+                ui.set_profile_detail(DashProfileDetail {
+                    groups: groups.into(),
+                    proxies: proxies.into(),
+                    rules: rules.into(),
+                    providers: providers.into(),
+                    updated: updated.into(),
+                    script: "无".into(),
+                    remote: false,
+                });
+                ui.set_profile_providers(ModelRc::new(VecModel::from(rows)));
+            });
+        });
     }
 
     /// `_reorder` in the card editor.
