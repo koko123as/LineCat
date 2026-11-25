@@ -209,8 +209,10 @@ fn requests_shot(ui: &AppWindow, st: &mut requests_view::ReqState, now: i64, ove
 
 /// The tools list, a settings page's sections and the picker or input over them.
 fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
-    let mut s = store::Settings::default();
-    s.developer_mode = true;
+    let mut s = store::Settings {
+        developer_mode: true,
+        ..Default::default()
+    };
     s.general.open_logs = true;
     s.general
         .hosts

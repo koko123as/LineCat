@@ -249,12 +249,7 @@ impl View<'_> {
             out.push(ProxyGroup {
                 name: g.name.as_str().into(),
                 kind: g.kind.as_str().into(),
-                now: if g.computed() {
-                    g.now.as_str()
-                } else {
-                    g.now.as_str()
-                }
-                .into(),
+                now: g.now.as_str().into(),
                 count: g.all.len() as i32,
                 monogram: first.into(),
                 expanded: self.style.unfold.iter().any(|u| u == &g.name),

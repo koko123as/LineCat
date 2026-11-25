@@ -641,8 +641,10 @@ mod tests {
         assert_eq!(locale_label(None), "默认");
         assert_eq!(locale_label(Some("zh_CN")), "中文简体");
         assert_eq!(locale_label(Some("ja")), "日语");
-        let mut s = Settings::default();
-        s.locale = Some("zh_CN".into());
+        let s = Settings {
+            locale: Some("zh_CN".into()),
+            ..Default::default()
+        };
         let c = choices(&s, "language");
         assert_eq!(c.len(), 8);
         assert!(c.iter().any(|(id, _, on)| id == "zh" && *on));

@@ -112,11 +112,10 @@ pub fn conditions_match<R: Record>(conditions: &[Condition], r: &R) -> bool {
 pub fn parse_query(query: &str, fields: &[&str]) -> (Vec<Condition>, String) {
     let mut conditions = Vec::new();
     let mut rest = Vec::new();
-    let mut chars = query.chars().peekable();
     let mut tokens: Vec<String> = Vec::new();
     let mut current = String::new();
     let mut quoted = false;
-    while let Some(c) = chars.next() {
+    for c in query.chars() {
         if c == '"' {
             quoted = !quoted;
             current.push(c);
@@ -250,7 +249,7 @@ pub fn suggestions(
             (v, n)
         })
         .collect();
-    all.sort_by(|a, b| b.1.cmp(&a.1));
+    all.sort_by_key(|a| std::cmp::Reverse(a.1));
     let needle = text.trim().to_lowercase();
     all.into_iter()
         .filter(|(v, _)| v.to_lowercase().contains(&needle))

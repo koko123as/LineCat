@@ -197,7 +197,7 @@ pub fn decompress_unlabeled(bytes: Vec<u8>) -> Vec<u8> {
         [0x1f, 0x8b, ..] => flate2::read::GzDecoder::new(bytes.as_slice())
             .read_to_end(&mut out)
             .is_ok(),
-        [0x78, flags, ..] if ((0x78u16 << 8) | *flags as u16) % 31 == 0 => {
+        [0x78, flags, ..] if ((0x78u16 << 8) | *flags as u16).is_multiple_of(31) => {
             flate2::read::ZlibDecoder::new(bytes.as_slice())
                 .read_to_end(&mut out)
                 .is_ok()

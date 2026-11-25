@@ -147,7 +147,7 @@ impl AccessControl {
         let order = |v: &mut Vec<&Package>| match self.sort {
             Sort::None => {}
             Sort::Name => v.sort_by(|a, b| a.label.cmp(&b.label)),
-            Sort::Time => v.sort_by(|a, b| b.last_update_time.cmp(&a.last_update_time)),
+            Sort::Time => v.sort_by_key(|p| std::cmp::Reverse(p.last_update_time)),
         };
         order(&mut first);
         order(&mut rest);
