@@ -40,14 +40,16 @@ pub(crate) fn list_get(
         _ => {
             let (spec, state, path) = override_of(s, key)?;
             let k = spec.key(path)?;
-            let overrides::Kind::List(_, desc) = k.kind else {
-                return None;
-            };
-            Some((
-                overrides::strings(&spec.value(state, path)),
-                k.label.into(),
-                desc,
-            ))
+            let v = spec.value(state, path);
+            match k.kind {
+                overrides::Kind::List(_, desc) => {
+                    Some((overrides::strings(&v), k.label.into(), desc))
+                }
+                overrides::Kind::Sniff => {
+                    Some((crate::tun_sniffer_ntp::ports(&v), "端口".into(), ""))
+                }
+                _ => None,
+            }
         }
     }
 }
@@ -60,7 +62,13 @@ fn list_put(s: &mut store::Settings, key: &str, items: Vec<String>) {
         "route-exclude" => n.route_exclude_address = items,
         _ => {
             if let Some((spec, state, path)) = override_mut(s, key) {
-                spec.set(state, path, serde_json::json!(items));
+                let value = match spec.key(path).map(|k| k.kind) {
+                    Some(overrides::Kind::Sniff) => {
+                        crate::tun_sniffer_ntp::with_ports(&spec.value(state, path), items)
+                    }
+                    _ => serde_json::json!(items),
+                };
+                spec.set(state, path, value);
             }
         }
     }
@@ -104,6 +112,9 @@ fn override_state<'a>(s: &'a store::Settings, spec: &str) -> Option<&'a override
     match spec {
         "dns" => Some(&s.dns_override),
         "general" => Some(&s.general_override),
+        "tun" => Some(&s.tun_override),
+        "sniffer" => Some(&s.sniffer_override),
+        "ntp" => Some(&s.ntp_override),
         _ => None,
     }
 }
@@ -115,6 +126,9 @@ fn override_state_mut<'a>(
     match spec {
         "dns" => Some(&mut s.dns_override),
         "general" => Some(&mut s.general_override),
+        "tun" => Some(&mut s.tun_override),
+        "sniffer" => Some(&mut s.sniffer_override),
+        "ntp" => Some(&mut s.ntp_override),
         _ => None,
     }
 }
@@ -178,6 +192,9 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
         return meta;
     }
     if let Some(meta) = crate::on_demand_app::page_meta(page) {
+        return meta;
+    }
+    if let Some(meta) = crate::tun_sniffer_ntp_app::page_meta(page) {
         return meta;
     }
     let t = targets().lock().unwrap();
@@ -385,6 +402,7 @@ impl App {
                 "advanced" => settings_view::advanced(&settings),
                 "network" => settings_view::network(&settings),
                 "on-demand" => Vec::new(),
+                "sniff" => crate::tun_sniffer_ntp_app::sniff_sections(&settings),
                 "user-agents" => settings_view::user_agents(&settings),
                 "list" => {
                     let key = targets().lock().unwrap().list.0.clone();
@@ -423,7 +441,7 @@ impl App {
         });
     }
 
-    fn open_page(self: &Arc<Self>, page: &str) {
+    pub(crate) fn open_page(self: &Arc<Self>, page: &str) {
         let page: SharedString = page.into();
         self.ui(move |ui| {
             if page == "about" && ui.get_app_icon().size().width == 0 {
@@ -556,6 +574,7 @@ impl App {
 
     fn set_clicked(self: &Arc<Self>, page: &str, id: &str) {
         if self.mitm_clicked(page, id)
+            || self.tsn_clicked(page, id)
             || self.rules_clicked(page, id)
             || self.items_clicked(page, id)
             || self.rule_sets_clicked(page, id)
@@ -769,6 +788,7 @@ impl App {
 
     fn set_toggled(self: &Arc<Self>, page: &str, id: &str, on: bool) {
         if self.mitm_toggled(page, id, on)
+            || self.tsn_toggled(page, id, on)
             || self.rules_toggled(page, id, on)
             || self.custom_proxies_toggled(page, id, on)
         {
@@ -853,6 +873,7 @@ impl App {
             || self.custom_proxies_picked(key, &value)
             || self.theme_picked(key, &value)
             || self.logs_picked(key, &value)
+            || self.tsn_picked(key, &value)
         {
             return;
         }
@@ -1010,7 +1031,7 @@ impl App {
         });
     }
 
-    fn open_list(self: &Arc<Self>, key: &str, parent: &str) {
+    pub(crate) fn open_list(self: &Arc<Self>, key: &str, parent: &str) {
         targets().lock().unwrap().list = (key.to_string(), parent.to_string());
         self.open_page("list");
     }
@@ -1020,7 +1041,7 @@ impl App {
         self.open_page("map");
     }
 
-    fn override_set(self: &Arc<Self>, id: &str, path: &str, value: Value) {
+    pub(crate) fn override_set(self: &Arc<Self>, id: &str, path: &str, value: Value) {
         let (id, path) = (id.to_string(), path.to_string());
         self.update_settings(Effect::Reapply, move |s| {
             if let (Some(spec), Some(state)) = (overrides::spec(&id), override_state_mut(s, &id)) {
@@ -1029,8 +1050,13 @@ impl App {
         });
     }
 
-    /// A tap on an override page: the bar's add, a row's remove button, or the row itself.
     fn override_clicked(self: &Arc<Self>, page: &str, id: &str) {
+        self.override_clicked_in(page, page, id);
+    }
+
+    /// A tap on an override's rows on [page]: the add row or the bar's add, a row's remove
+    /// button, or the row itself.
+    pub(crate) fn override_clicked_in(self: &Arc<Self>, page: &str, parent: &str, id: &str) {
         let Some(spec) = overrides::spec(page) else {
             return;
         };
@@ -1081,8 +1107,9 @@ impl App {
         };
         let key = format!("{page}:{id}");
         match k.kind {
-            overrides::Kind::List(..) => self.open_list(&key, page),
-            overrides::Kind::Map(_) => self.open_map(&key, page),
+            overrides::Kind::List(..) => self.open_list(&key, parent),
+            overrides::Kind::Map(_) => self.open_map(&key, parent),
+            overrides::Kind::Sniff => self.open_sniff(&key),
             overrides::Kind::Options(options) => {
                 let current = spec.text(state, id);
                 let items: Vec<ActionItem> = options

@@ -47,6 +47,12 @@ pub struct Settings {
     pub dns_override: crate::overrides::OverrideState,
     /// `PatchClashConfig.generalOverrideKeys` with their values.
     pub general_override: crate::overrides::OverrideState,
+    /// `tunOverride` with `tunOverrideKeys`, written over every profile's `tun`.
+    pub tun_override: crate::overrides::OverrideState,
+    /// The sniffer page's keys, written over every profile's `sniffer`.
+    pub sniffer_override: crate::overrides::OverrideState,
+    /// The NTP page's keys, written over every profile's `ntp`.
+    pub ntp_override: crate::overrides::OverrideState,
     /// The added rules (`globalRulesProvider`), put before every profile's rules.
     pub added_rules: Vec<crate::rules::Rule>,
     /// `AppSettingProps.filters`.
@@ -256,6 +262,9 @@ impl Default for Settings {
             network: Network::default(),
             dns_override: Default::default(),
             general_override: Default::default(),
+            tun_override: Default::default(),
+            sniffer_override: Default::default(),
+            ntp_override: Default::default(),
             added_rules: Vec::new(),
             filters: Vec::new(),
             scripts: Vec::new(),

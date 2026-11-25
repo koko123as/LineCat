@@ -359,6 +359,16 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
     }
     tun.insert("route-exclude-address".into(), Value::Array(excluded));
     set(&mut c, "tun", Value::Object(tun));
+    use crate::tun_sniffer_ntp::{apply_section, NTP, SNIFFER, TUN};
+    for (key, spec, state) in [
+        ("tun", &TUN, &settings.tun_override),
+        ("sniffer", &SNIFFER, &settings.sniffer_override),
+        ("ntp", &NTP, &settings.ntp_override),
+    ] {
+        if let Some(v) = apply_section(spec, state, c.get(key)) {
+            set(&mut c, key, v);
+        }
+    }
     set(&mut c, "geo-auto-update", settings.geo_auto_update.into());
     set(
         &mut c,
@@ -700,6 +710,29 @@ mod tests {
         assert_eq!(o["external-controller"], "");
         let o = overlay(&json!({}), "rule", &crate::store::Settings::default());
         assert_eq!(o["dns"]["enhanced-mode"], "fake-ip");
+    }
+
+    #[test]
+    fn tun_sniffer_and_ntp_overrides_reach_the_overlay() {
+        use crate::tun_sniffer_ntp::{NTP, SNIFFER, TUN};
+        let base = json!({"sniffer": {"enable": false, "skip-domain": ["a.com"]}});
+        let mut s = crate::store::Settings::default();
+        let o = overlay(&base, "rule", &s);
+        assert!(o.get("ntp").is_none());
+        assert_eq!(o["tun"]["dns-hijack"], json!(["any:53"]));
+        TUN.add(&mut s.tun_override, "dns-hijack");
+        TUN.set(&mut s.tun_override, "dns-hijack", json!(["any:5353"]));
+        SNIFFER.add(&mut s.sniffer_override, "enable");
+        SNIFFER.set(&mut s.sniffer_override, "enable", true.into());
+        NTP.add(&mut s.ntp_override, "enable");
+        let o = overlay(&base, "rule", &s);
+        assert_eq!(o["tun"]["dns-hijack"], json!(["any:5353"]));
+        assert_eq!(o["tun"]["auto-route"], true);
+        assert_eq!(
+            o["sniffer"],
+            json!({"enable": true, "skip-domain": ["a.com"]})
+        );
+        assert_eq!(o["ntp"], json!({"enable": false}));
     }
 
     #[test]

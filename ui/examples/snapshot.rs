@@ -341,7 +341,51 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             seasoncat_ui::overrides::DNS.sections(&s.dns_override)
         }
         "advanced" => settings_view::advanced(&s),
-        "network" => settings_view::network(&s),
+        "network" => {
+            if overlay == "tun" {
+                use seasoncat_ui::tun_sniffer_ntp::TUN;
+                for k in ["dns-hijack", "udp-timeout", "disable-icmp-forwarding"] {
+                    TUN.add(&mut s.tun_override, k);
+                }
+            }
+            settings_view::network(&s)
+        }
+        "sniffer" => {
+            use seasoncat_ui::tun_sniffer_ntp::{with_ports, SNIFFER};
+            if overlay != "empty" {
+                for k in [
+                    "enable",
+                    "force-dns-mapping",
+                    "force-domain",
+                    "skip-dst-address",
+                    "sniff.HTTP",
+                    "sniff.TLS",
+                    "sniff.QUIC",
+                ] {
+                    SNIFFER.add(&mut s.sniffer_override, k);
+                }
+                SNIFFER.set(&mut s.sniffer_override, "enable", true.into());
+                let tls = with_ports(&serde_json::json!({}), vec!["443".into(), "8443".into()]);
+                SNIFFER.set(&mut s.sniffer_override, "sniff.TLS", tls);
+            }
+            SNIFFER.sections(&s.sniffer_override)
+        }
+        "sniff" => {
+            use seasoncat_ui::tun_sniffer_ntp::{sniff_sections, with_destination, with_ports};
+            let tls = with_ports(&serde_json::json!({}), vec!["443".into(), "8443".into()]);
+            sniff_sections(&with_destination(&tls, Some(false)))
+        }
+        "ntp" => {
+            use seasoncat_ui::tun_sniffer_ntp::NTP;
+            if overlay != "empty" {
+                for k in seasoncat_ui::tun_sniffer_ntp::NTP_KEYS.iter() {
+                    NTP.add(&mut s.ntp_override, k.path);
+                }
+                NTP.set(&mut s.ntp_override, "enable", true.into());
+                NTP.set(&mut s.ntp_override, "server", "ntp.aliyun.com".into());
+            }
+            NTP.sections(&s.ntp_override)
+        }
         "user-agents" => {
             s.general.global_ua = s.general.user_agents.first().cloned();
             settings_view::user_agents(&s)
@@ -594,6 +638,9 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
     }
     if page == "mitm-module" {
         meta.title = "去广告合集".into();
+    }
+    if page == "sniff" {
+        meta.title = "TLS".into();
     }
     if page == "mitm-lines" {
         meta.title = "URL 重写".into();
@@ -1622,6 +1669,24 @@ fn main() {
         ("set-network-small", 3, "", "network", 1, ""),
         ("set-network-wide", 3, "", "network", 1, ""),
         ("set-network-tablet", 3, "", "network", 1, ""),
+        ("set-network-tun", 3, "", "network", 1, "tun"),
+        ("set-network-tun-small", 3, "", "network", 1, "tun"),
+        ("set-network-tun-wide", 3, "", "network", 1, "tun"),
+        ("set-network-tun-tablet", 3, "", "network", 1, "tun"),
+        ("set-sniffer", 3, "", "sniffer", 1, ""),
+        ("set-sniffer-small", 3, "", "sniffer", 1, ""),
+        ("set-sniffer-wide", 3, "", "sniffer", 1, ""),
+        ("set-sniffer-tablet", 3, "", "sniffer", 1, ""),
+        ("set-sniffer-empty", 3, "", "sniffer", 1, "empty"),
+        ("set-sniff", 3, "", "sniff", 1, ""),
+        ("set-sniff-small", 3, "", "sniff", 1, ""),
+        ("set-sniff-wide", 3, "", "sniff", 1, ""),
+        ("set-sniff-tablet", 3, "", "sniff", 1, ""),
+        ("set-ntp", 3, "", "ntp", 1, ""),
+        ("set-ntp-small", 3, "", "ntp", 1, ""),
+        ("set-ntp-wide", 3, "", "ntp", 1, ""),
+        ("set-ntp-tablet", 3, "", "ntp", 1, ""),
+        ("set-ntp-empty", 3, "", "ntp", 1, "empty"),
         ("set-list", 3, "", "list", 1, ""),
         ("set-list-small", 3, "", "list", 1, ""),
         ("set-ondemand", 3, "", "on-demand", 1, ""),

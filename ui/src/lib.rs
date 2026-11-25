@@ -51,6 +51,8 @@ pub mod settings_view;
 pub mod store;
 pub mod theme;
 mod theme_app;
+pub mod tun_sniffer_ntp;
+mod tun_sniffer_ntp_app;
 pub use theme_app::{apply as apply_theme, show_color_page};
 pub mod colors;
 pub mod custom_proxies;

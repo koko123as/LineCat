@@ -16,6 +16,9 @@ pub enum Check {
     Cidr,
     Listen,
     Url,
+    Host,
+    PortRange,
+    IpMatcher,
 }
 
 /// The kind of field a key is edited with (`OverrideField`).
@@ -32,6 +35,8 @@ pub enum Kind {
     List(Check, &'static str),
     /// A map of domain to server on its own page, with the page's description.
     Map(&'static str),
+    /// A sniffed protocol (`_SniffField`): its ports and destination on their own page.
+    Sniff,
 }
 
 pub struct Key {
@@ -66,7 +71,12 @@ pub struct OverrideState {
 
 const NUM_MAX: i64 = 0x7fff_ffff;
 
-const fn key(path: &'static str, label: &'static str, section: &'static str, kind: Kind) -> Key {
+pub(crate) const fn key(
+    path: &'static str,
+    label: &'static str,
+    section: &'static str,
+    kind: Kind,
+) -> Key {
     Key {
         path,
         label,
@@ -76,7 +86,7 @@ const fn key(path: &'static str, label: &'static str, section: &'static str, kin
     }
 }
 
-const OPTIONS: &str = "选项";
+pub(crate) const OPTIONS: &str = "选项";
 const FAKE_IP: &str = "Fake-IP";
 const NAMESERVER: &str = "Nameserver";
 const FALLBACK_FILTER: &str = "Fallback过滤";
@@ -383,6 +393,9 @@ pub fn spec(id: &str) -> Option<&'static Spec> {
     match id {
         "dns" => Some(&DNS),
         "general" => Some(&GENERAL),
+        "tun" => Some(&crate::tun_sniffer_ntp::TUN),
+        "sniffer" => Some(&crate::tun_sniffer_ntp::SNIFFER),
+        "ntp" => Some(&crate::tun_sniffer_ntp::NTP),
         _ => None,
     }
 }
@@ -539,6 +552,7 @@ impl Spec {
                 }
                 Ok(n.into())
             }
+            Kind::Sniff => check_text(Check::PortRange, k.label, input).map(|_| input.into()),
             Kind::Text(check) | Kind::List(check, _) => {
                 if matches!(k.kind, Kind::List(..)) && input.is_empty() {
                     return Err("值不能为空".into());
@@ -598,6 +612,7 @@ impl Spec {
             Kind::Toggle => ("toggle", String::new(), v.as_bool().unwrap_or(false)),
             Kind::List(..) => ("open", count(v.as_array().map_or(0, Vec::len)), false),
             Kind::Map(_) => ("open", count(v.as_object().map_or(0, Map::len)), false),
+            Kind::Sniff => ("open", crate::tun_sniffer_ntp::ports_text(&v), false),
             _ => {
                 let t = self.text(state, k.path);
                 ("value", if t.is_empty() { "无".into() } else { t }, false)
@@ -638,6 +653,15 @@ fn check_text(check: Check, label: &str, input: &str) -> Result<(), String> {
             Err("请输入地址和端口，如 0.0.0.0:1053".into())
         }
         Check::Url if !crate::profile::is_url(input) => Err(format!("{label}必须为URL")),
+        Check::Host if !crate::tun_sniffer_ntp::valid_host(input) => {
+            Err("请输入域名或 IP 地址".into())
+        }
+        Check::PortRange if !crate::tun_sniffer_ntp::valid_port_range(input) => {
+            Err("请输入端口或范围，如 443 或 8000-9000".into())
+        }
+        Check::IpMatcher if !crate::tun_sniffer_ntp::valid_ip_matcher(input) => {
+            Err("请输入有效的 CIDR".into())
+        }
         _ => Ok(()),
     }
 }
