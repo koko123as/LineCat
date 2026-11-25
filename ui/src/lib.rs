@@ -14,7 +14,10 @@ pub mod edges;
 pub mod http_capture;
 pub mod items;
 mod items_app;
+pub mod logs;
+mod logs_app;
 pub use items_app::sections as items_sections;
+pub use logs_app::log_item;
 pub mod overrides;
 pub mod profile;
 pub mod proxies;
@@ -49,7 +52,6 @@ use store::Store;
 
 const CALL: Duration = Duration::from_secs(30);
 const APPLY: Duration = Duration::from_secs(120);
-const MAX_LOGS: usize = 500;
 const DELAY_WORKERS: usize = 8;
 // The proxies list's measures, as app.slint lays it out.
 const PROXY_PAD: f32 = 8.0;
@@ -102,7 +104,8 @@ struct App {
     started_at: Mutex<Option<std::time::Instant>>,
     ip_seq: AtomicU64,
     busy: Mutex<HashSet<String>>,
-    pending_logs: Mutex<Vec<LogItem>>,
+    pending_logs: Mutex<Vec<logs::Record>>,
+    logs: Mutex<logs_app::LogsState>,
     logs_scheduled: AtomicBool,
     toast_seq: AtomicU64,
     last_id: Mutex<u64>,
@@ -231,13 +234,22 @@ fn now_secs() -> u64 {
 }
 
 /// Local wall-clock time of a unix millisecond stamp, through libc so the device's zone applies.
-fn clock(ms: i64) -> String {
+/// `DateTime.showFull`: "2026-11-25 17:30:00" in local time.
+fn full_time(ms: i64) -> String {
     let secs = (ms / 1000) as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {
         return String::new();
     }
-    format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min,
+        tm.tm_sec
+    )
 }
 
 /// `LastUpdateTimeText` (compact): empty when never updated.
@@ -438,7 +450,7 @@ impl App {
         let logs = Arc::downgrade(self);
         bridge.watch(
             "log.watch",
-            json!({"level": "info"}),
+            json!({"level": "debug"}),
             Box::new(move |entry| {
                 if let Some(app) = logs.upgrade() {
                     app.push_log(&entry);
@@ -476,52 +488,6 @@ impl App {
         ui.set_inset_left(pad.left / scale);
         ui.set_inset_right(pad.right / scale);
         ui.set_insets_known(true);
-    }
-
-    fn push_log(self: &Arc<Self>, entry: &Value) {
-        let item = LogItem {
-            level: entry
-                .get("level")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .into(),
-            time: clock(entry.get("time").and_then(Value::as_i64).unwrap_or(0)).into(),
-            text: entry
-                .get("text")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .into(),
-        };
-        {
-            let mut pending = self.pending_logs.lock().unwrap();
-            pending.push(item);
-            if pending.len() > MAX_LOGS {
-                let extra = pending.len() - MAX_LOGS;
-                pending.drain(..extra);
-            }
-        }
-        if self.logs_scheduled.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        let app = self.clone();
-        // One UI update per burst: the Core may log hundreds of lines a second.
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(250));
-            app.logs_scheduled.store(false, Ordering::SeqCst);
-            let batch: Vec<LogItem> = std::mem::take(&mut *app.pending_logs.lock().unwrap());
-            app.ui(move |ui| {
-                let model = ui.get_logs();
-                if let Some(vec) = model.as_any().downcast_ref::<VecModel<LogItem>>() {
-                    for item in batch {
-                        vec.push(item);
-                    }
-                    let extra = vec.row_count().saturating_sub(MAX_LOGS);
-                    for _ in 0..extra {
-                        vec.remove(0);
-                    }
-                }
-            });
-        });
     }
 
     // ------------------------------------------------------------ config
@@ -2250,6 +2216,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         ip_seq: AtomicU64::new(0),
         busy: Mutex::new(HashSet::new()),
         pending_logs: Mutex::new(Vec::new()),
+        logs: Mutex::new(logs_app::LogsState::default()),
         logs_scheduled: AtomicBool::new(false),
         toast_seq: AtomicU64::new(0),
         last_id: Mutex::new(0),
@@ -2386,12 +2353,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
             a.spawn(|app| app.refresh_groups());
         }
     });
-    let w = ui.as_weak();
-    ui.on_clear_logs(move || {
-        if let Some(ui) = w.upgrade() {
-            ui.set_logs(ModelRc::new(VecModel::<LogItem>::default()));
-        }
-    });
+    app.bind_logs(&ui);
     app.bind_theme(&ui);
     app.bind_requests(&ui);
     app.bind_settings(&ui);

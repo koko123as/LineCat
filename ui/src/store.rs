@@ -132,6 +132,8 @@ pub struct General {
     pub append_system_dns: bool,
     /// `openLogs`: the logs page and its entry.
     pub open_logs: bool,
+    /// `logLevel`, as `LogLevel.name`.
+    pub log_level: String,
 }
 
 impl Default for General {
@@ -159,6 +161,7 @@ impl Default for General {
             hosts: BTreeMap::new(),
             append_system_dns: false,
             open_logs: false,
+            log_level: "info".into(),
         }
     }
 }

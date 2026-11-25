@@ -122,10 +122,20 @@ export struct ProxyStyle {
     hide-timeout: bool,
 }
 
+// A log record as `LogItem` draws it: the payload read by `LogPayload.parse`.
 export struct LogItem {
+    id: int,
     level: string,
     time: string,
     text: string,
+    tag: string,
+    message: string,
+    has-route: bool,
+    dest: string,
+    error: string,
+    rule: string,
+    proxy: string,
+    source: string,
 }
 
 // A row of the requests lists: a minute's header, or a record under it.
@@ -2408,48 +2418,179 @@ component Tools inherits Rectangle {
     }
 }
 
+// `RecordLabel`: the level as a tonal chip; a tap filters by it.
+component LevelLabel inherits Rectangle {
+    in property <string> level;
+    callback tapped();
+    property <color> tone: root.level == "error" ? Theme.s.error : root.level == "warning" ? Theme.warning : Theme.s.on-surface-variant;
+    height: 22px;
+    width: ll-text.preferred-width + 16px;
+    border-radius: 11px;
+    background: ll-ta.pressed ? root.tone.with-alpha(0.24) : root.tone.with-alpha(0.12);
+    ll-text := Text { text: root.level; font-size: 12px; font-weight: 600; color: root.tone; vertical-alignment: center; horizontal-alignment: center; }
+    ll-ta := TouchArea { clicked => { root.tapped(); } }
+}
+
+// `LogItem` in a `RecordListItem`: the time and level, then `_LogBody`.
+component LogRow inherits Rectangle {
+    in property <LogItem> log;
+    callback open(int);
+    callback filter(string);
+    height: lr-col.preferred-height + 8px;
+    Rectangle {
+        y: 0;
+        height: parent.height - 8px;
+        border-radius: 20px;
+        background: lr-ta.pressed ? Theme.s.inset : Theme.s.card;
+        lr-ta := TouchArea { clicked => { root.open(root.log.id); } }
+        lr-col := VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 10px;
+            padding-bottom: 12px;
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: root.log.time; font-size: 12px; color: Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; }
+                LevelLabel { level: root.log.level; tapped => { root.filter(root.log.level); } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            if !root.log.has-route: VerticalLayout {
+                spacing: 2px;
+                Text { text: root.log.message; font-size: 15px; color: Theme.s.on-surface; wrap: word-wrap; }
+                if root.log.tag != "": Text { text: root.log.tag; font-size: 13px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+            }
+            if root.log.has-route: VerticalLayout {
+                spacing: 2px;
+                Text { text: root.log.dest; font-size: 15px; font-weight: 600; color: Theme.s.on-surface; wrap: word-wrap; }
+                if root.log.error != "": Text { text: root.log.error; font-size: 13px; color: root.log.level == "warning" ? Theme.warning : root.log.level == "error" ? Theme.s.error : Theme.s.on-surface-variant; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: 0px;
+                    if root.log.rule != "": Text { text: root.log.rule; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; max-width: lr-col.width * 0.5; }
+                    if root.log.rule != "": Text { text: " → "; font-size: 13px; color: Theme.s.on-surface-variant; }
+                    Text { text: root.log.proxy; font-size: 13px; font-weight: 600; color: Theme.s.primary; overflow: elide; max-width: lr-col.width * (root.log.rule != "" ? 0.45 : 1); }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                Text { text: root.log.source; font-size: 13px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+            }
+        }
+    }
+}
+
+// lib/views/logs.dart: search, the level filters (from the bar and a row's label) as a
+// strip of chips, export and the log level in the menu, newest first; a tap opens the
+// record's details.
 component Logs inherits Rectangle {
     in property <[LogItem]> logs;
-    callback clear-logs();
+    in property <[string]> offered;
+    in property <[string]> filters;
+    in-out property <bool> searching;
+    in-out property <string> query;
+    in property <length> bottom-gap;
     callback back();
+    callback search(string);
+    callback open-filters();
+    callback open-menu();
+    callback filter(string);
+    callback unfilter(string);
+    callback open(int);
+    changed query => { root.search(root.query); }
     VerticalLayout {
-        AppBar {
+        if !root.searching: AppBar {
             title: "日志";
             can-back: true;
             back => { root.back(); }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
+            if root.offered.length > 0: VerticalLayout { alignment: center; IconButton { glyph: Icons.filter; tint: Theme.s.on-surface; clicked => { root.open-filters(); } } }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-menu(); } } }
+        }
+        if root.searching: HorizontalLayout {
+            height: 56px;
+            padding-left: 4px;
+            padding-right: 8px;
+            spacing: 4px;
             VerticalLayout {
                 alignment: center;
-                TextButton { text: "清空"; clicked => { root.clear-logs(); } }
+                IconButton { glyph: Icons.back; tint: Theme.s.on-surface; clicked => { root.query = ""; root.searching = false; } }
             }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Rectangle {
+                    height: 44px;
+                    border-radius: 22px;
+                    background: Theme.s.block;
+                    Text {
+                        x: 16px;
+                        visible: log-input.text == "";
+                        text: "搜索";
+                        color: Theme.s.on-surface-variant;
+                        font-size: 15px;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                    log-input := TextInput {
+                        x: 16px;
+                        width: parent.width - 32px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        single-line: true;
+                        font-size: 15px;
+                        color: Theme.s.on-surface;
+                        text <=> root.query;
+                        init => { self.focus(); }
+                    }
+                }
+            }
+            if root.offered.length > 0: VerticalLayout { alignment: center; IconButton { glyph: Icons.filter; tint: Theme.s.on-surface; clicked => { root.open-filters(); } } }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-menu(); } } }
         }
-        if root.logs.length == 0: Empty { text: "暂无数据"; }
-        if root.logs.length > 0: Flickable {
-            content-height: list.preferred-height;
-            list := VerticalLayout {
+        // `_KeywordStrip`
+        if root.filters.length > 0: Flickable {
+            height: 44px;
+            content-width: kw.preferred-width;
+            interactive: kw.preferred-width > self.width;
+            kw := HorizontalLayout {
                 padding-left: 16px;
                 padding-right: 16px;
-                padding-bottom: 16px;
+                padding-bottom: 8px;
                 spacing: 8px;
-                for l in root.logs: Card {
-                    height: col.preferred-height;
-                    col := VerticalLayout {
-                        padding: 12px;
+                for f in root.filters: Rectangle {
+                    height: 36px;
+                    width: kw-row.preferred-width;
+                    border-radius: 18px;
+                    background: Theme.s.block;
+                    kw-row := HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 6px;
                         spacing: 4px;
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text {
-                                text: l.level;
-                                font-size: 11px;
-                                color: l.level == "error" ? Theme.s.error : l.level == "warning" ? Theme.warning : l.level == "info" ? Theme.s.primary : Theme.s.on-surface-variant;
-                            }
-                            Text { text: l.time; font-size: 11px; color: Theme.s.on-surface-variant; }
-                            Rectangle { }
+                        Text { text: f; font-size: 14px; color: Theme.s.on-surface; vertical-alignment: center; }
+                        Rectangle {
+                            width: 26px;
+                            Icon { glyph: Icons.close; size: 16px; tint: Theme.s.on-surface-variant; }
+                            TouchArea { clicked => { root.unfilter(f); } }
                         }
-                        Text { text: l.text; font-size: 13px; color: Theme.s.on-surface; wrap: word-wrap; }
                     }
                 }
             }
         }
+        if root.logs.length == 0: NullStatus {
+            vertical-stretch: 1;
+            label: "暂无日志";
+        }
+        if root.logs.length > 0: ListView {
+            vertical-stretch: 1;
+            for l in root.logs: HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                LogRow {
+                    log: l;
+                    open(id) => { root.open(id); }
+                    filter(level) => { root.filter(level); }
+                }
+            }
+        }
+        Rectangle { height: root.bottom-gap; }
     }
 }
 
@@ -4619,7 +4760,19 @@ export component AppWindow inherits Window {
     callback tab-changed(int);
     // Logs
     in property <[LogItem]> logs;
-    callback clear-logs();
+    in property <[string]> log-offered;
+    in property <[string]> log-filters;
+    in-out property <bool> log-searching;
+    in-out property <string> log-query;
+    in-out property <bool> log-detail-open;
+    in-out property <LogItem> log-detail;
+    callback logs-search(string);
+    callback logs-open-filters();
+    callback logs-open-menu();
+    callback logs-filter(string);
+    callback logs-unfilter(string);
+    callback logs-open(int);
+    callback logs-copy(int);
     // Settings
     in property <int> theme-mode;
     callback set-theme-mode(int);
@@ -4866,6 +5019,8 @@ export component AppWindow inherits Window {
                 if (root.cond-open) { root.cond-open = false; return accept; }
                 if (root.res-dialog != "") { root.res-dialog = ""; return accept; }
                 if (root.req-actions-open) { root.req-actions-open = false; return accept; }
+                if (root.log-detail-open) { root.log-detail-open = false; return accept; }
+                if (root.tab == 3 && root.tools-page == "logs" && root.log-searching) { root.log-searching = false; root.log-query = ""; return accept; }
                 if (root.req-sheet-open) { root.req-sheet-open = false; root.req-sheet-closed(); return accept; }
                 if (root.req-visible && root.req-searching) { root.req-searching = false; root.req-query = ""; return accept; }
                 if (root.proxy-options-open) { root.proxy-options-open = false; return accept; }
@@ -5157,8 +5312,17 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
                     logs: root.logs;
-                    clear-logs => { root.clear-logs(); }
+                    offered: root.log-offered;
+                    filters: root.log-filters;
+                    searching <=> root.log-searching;
+                    query <=> root.log-query;
                     back => { root.tools-page = ""; }
+                    search(q) => { root.logs-search(q); }
+                    open-filters => { root.logs-open-filters(); }
+                    open-menu => { root.logs-open-menu(); }
+                    filter(l) => { root.logs-filter(l); }
+                    unfilter(l) => { root.logs-unfilter(l); }
+                    open(id) => { root.logs-open(id); }
                 }
                 if root.tab == 3 && root.tools-page == "theme": ThemePage {
                     width: parent.width;
@@ -5387,6 +5551,82 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 alignment: end;
                 TextButton { text: "确定"; clicked => { root.qr-open = false; } }
+            }
+        }
+
+        // `_showLogDetail`: the record's time and level, then its whole payload.
+        if root.log-detail-open && root.tab == 3 && root.tools-page == "logs": Rectangle {
+            background: #00000066;
+            TouchArea { clicked => { root.log-detail-open = false; } }
+            Rectangle {
+                width: min(parent.width, 640px);
+                x: (parent.width - self.width) / 2;
+                y: root.top-inset + 24px;
+                height: parent.height - self.y;
+                background: Theme.s.page;
+                border-top-left-radius: 24px;
+                border-top-right-radius: 24px;
+                clip: true;
+                TouchArea { }
+                VerticalLayout {
+                    Rectangle {
+                        height: 16px;
+                        Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+                    }
+                    HorizontalLayout {
+                        height: 44px;
+                        padding-left: 20px;
+                        padding-right: 8px;
+                        Text { text: "日志详情"; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                        VerticalLayout { alignment: center; IconButton { glyph: Icons.copy; clicked => { root.logs-copy(root.log-detail.id); } } }
+                        VerticalLayout { alignment: center; IconButton { glyph: Icons.close; clicked => { root.log-detail-open = false; } } }
+                    }
+                    Flickable {
+                        vertical-stretch: 1;
+                        content-height: ld-col.preferred-height;
+                        ld-col := VerticalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            padding-top: 8px;
+                            padding-bottom: 20px + root.bottom-inset;
+                            spacing: 8px;
+                            Text { text: "基础信息"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Rectangle {
+                                background: Theme.s.card;
+                                border-radius: 16px;
+                                height: ld-info.preferred-height;
+                                ld-info := VerticalLayout {
+                                    padding-left: 16px;
+                                    padding-right: 16px;
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "时间"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.log-detail.time; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                    Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "日志等级"; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.log-detail.level; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                }
+                            }
+                            Rectangle { height: 8px; }
+                            Text { text: "内容"; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            Rectangle {
+                                background: Theme.s.card;
+                                border-radius: 16px;
+                                height: ld-body.preferred-height;
+                                ld-body := VerticalLayout {
+                                    padding: 16px;
+                                    Text { text: root.log-detail.text; font-size: 15px; color: Theme.s.on-surface; wrap: word-wrap; }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

@@ -202,7 +202,7 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
 
 /// What a change to a general setting needs beyond saving it.
 #[derive(PartialEq)]
-enum Effect {
+pub(crate) enum Effect {
     None,
     /// The Core takes it with the next `config.apply`.
     Reapply,
@@ -452,7 +452,11 @@ impl App {
         }
     }
 
-    fn update_general(self: &Arc<Self>, effect: Effect, f: impl FnOnce(&mut store::General)) {
+    pub(crate) fn update_general(
+        self: &Arc<Self>,
+        effect: Effect,
+        f: impl FnOnce(&mut store::General),
+    ) {
         self.update_settings(effect, |s| f(&mut s.general));
     }
 
@@ -675,6 +679,7 @@ impl App {
         if self.rules_picked(key, &value)
             || self.items_picked(key, &value)
             || self.theme_picked(key, &value)
+            || self.logs_picked(key, &value)
         {
             return;
         }

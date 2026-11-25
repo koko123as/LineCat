@@ -303,7 +303,11 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
     let set = |c: &mut Map<String, Value>, k: &str, v: Value| {
         c.insert(k.into(), v);
     };
-    set(&mut c, "log-level", "info".into());
+    set(
+        &mut c,
+        "log-level",
+        settings.general.log_level.as_str().into(),
+    );
     set(&mut c, "keep-alive-interval", 30.into());
     set(&mut c, "keep-alive-idle", 15.into());
     set(&mut c, "disable-keep-alive", false.into());

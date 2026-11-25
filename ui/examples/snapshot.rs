@@ -579,10 +579,29 @@ fn main() {
         group("流媒体", "Selector", "节点选择", false, vec![]),
         group("Telegram", "Selector", "新加坡", false, vec![]),
     ])));
+    let records = [
+        ("info", "[TCP] 192.168.1.5:51234(com.android.chrome) --> www.google.com:443 match RuleSet(proxy) using 节点选择[香港 01]"),
+        ("warning", "[DNS] resolve example.invalid timeout"),
+        ("error", "[TCP] dial 美国 洛杉矶 高速 (match Match()) 192.168.1.5:40122 --> api.example.invalid:443 error: connect: connection refused"),
+        ("info", "Start initial configuration in progress"),
+        ("debug", "[UDP] 192.168.1.5:5353 --> 224.0.0.251:5353 doesn't match any rule using DIRECT"),
+    ];
     let logs = VecModel::<LogItem>::default();
-    for (level, text) in [("info", "[TCP] 192.168.1.5:51234 --> www.google.com:443 match RuleSet(proxy) using 节点选择[香港 01]"), ("warning", "dns: lookup timeout for example.invalid"), ("error", "dial 美国 洛杉矶 高速 failed: connection refused")] {
-        logs.push(LogItem { level: level.into(), time: "03:41:07".into(), text: text.into() });
+    for (i, (level, text)) in records.iter().enumerate().rev() {
+        let r = logs::Record {
+            level: (*level).into(),
+            date_time: "2026-11-25 03:41:07".into(),
+            payload: (*text).into(),
+        };
+        logs.push(log_item(i, &r));
     }
+    ui.set_log_offered(ModelRc::new(VecModel::from(vec![
+        "debug".into(),
+        "info".into(),
+        "warning".into(),
+        "error".into(),
+    ])));
+    ui.set_log_detail(logs.row_data(2).unwrap());
     ui.set_logs(ModelRc::new(logs));
     let _ = ui.get_logs().row_count();
 
@@ -715,6 +734,16 @@ fn main() {
         ("profiles-sort", 2, "", "sort", 1, ""),
         ("tools", 3, "", "", 1, ""),
         ("logs", 3, "", "logs", 1, ""),
+        ("logs-small", 3, "", "logs", 1, ""),
+        ("logs-wide", 3, "", "logs", 1, ""),
+        ("logs-tablet", 3, "", "logs", 1, ""),
+        ("logs-filter", 3, "", "logs", 1, "log-filter"),
+        ("logs-filter-small", 3, "", "logs", 1, "log-filter"),
+        ("logs-detail", 3, "", "logs", 1, "log-detail"),
+        ("logs-detail-small", 3, "", "logs", 1, "log-detail"),
+        ("logs-detail-wide", 3, "", "logs", 1, "log-detail"),
+        ("logs-search", 3, "", "logs", 1, "log-search"),
+        ("logs-empty", 3, "", "logs", 1, "log-empty"),
         ("theme", 3, "", "theme", 1, ""),
         ("dashboard-dark", 0, "", "", 2, ""),
         ("proxies-dark", 1, "节点选择", "", 2, ""),
@@ -853,6 +882,7 @@ fn main() {
     ];
     let only = std::env::args().nth(2).unwrap_or_default();
     ui.show().unwrap();
+    let mut saved_logs: Option<ModelRc<LogItem>> = None;
     for (name, tab, group, page, mode, overlay) in shots {
         if !only.is_empty() && !only.split(',').any(|p| name.contains(p)) {
             continue;
@@ -934,6 +964,19 @@ fn main() {
             icon: 0,
             hide_timeout: false,
         });
+        ui.set_log_filters(ModelRc::new(VecModel::from(if *overlay == "log-filter" {
+            vec!["warning".into(), "error".into()]
+        } else {
+            vec![]
+        })));
+        ui.set_log_detail_open(*overlay == "log-detail");
+        ui.set_log_searching(*overlay == "log-search");
+        if *overlay == "log-empty" {
+            saved_logs.get_or_insert_with(|| ui.get_logs());
+            ui.set_logs(ModelRc::new(VecModel::<LogItem>::default()));
+        } else if let Some(l) = saved_logs.clone() {
+            ui.set_logs(l);
+        }
         ui.set_proxy_options_open(*overlay == "options");
         ui.set_proxy_searching(*overlay == "search");
         ui.set_add_menu_open(*overlay == "add-menu");
