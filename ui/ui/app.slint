@@ -3,7 +3,7 @@
 // two-column grid of nodes; logs and theme under tools), drawn flat: plain filled
 // surfaces, no blur, no glass, no shadows. Colors follow prism_ui's seeded scheme
 // (see src/theme.rs, generated from color.dart).
-import { Palette } from "std-widgets.slint";
+import { Palette, ListView, Spinner } from "std-widgets.slint";
 
 export struct Scheme {
     primary: color,
@@ -128,6 +128,106 @@ export struct LogItem {
     text: string,
 }
 
+// A row of the requests lists: a minute's header, or a record under it.
+export struct RecordRow {
+    header: bool,
+    label: string,
+    count: string,
+    id: int,
+    well: string,
+    well-label: bool,
+    title: string,
+    about: string,
+    about-error: bool,
+    chip: string,
+    mitm: bool,
+    top: string,
+    top-strong: bool,
+    // 0 plain, 1 error, 2 success, 3 warning, 4 muted
+    top-tone: int,
+    bottom: string,
+    first: bool,
+    last: bool,
+    selected: bool,
+}
+
+export struct ConditionItem {
+    index: int,
+    text: string,
+}
+
+export struct ConditionLine {
+    label: string,
+    items: [ConditionItem],
+}
+
+export struct Suggestion {
+    value: string,
+    count: string,
+}
+
+// kind: text, stacked, rail (mark 0 step, 1 end, 2 error), link, code, traffic. A tap
+// sends arg: copy:<text>, conn:<id> or http:<id>.
+export struct DetailRow {
+    kind: string,
+    title: string,
+    value: string,
+    note: string,
+    trailing: string,
+    tone: int,
+    mark: int,
+    first: bool,
+    last: bool,
+    arg: string,
+}
+
+export struct DetailSection {
+    title: string,
+    plain: bool,
+    rows: [DetailRow],
+}
+
+export struct ReqDetail {
+    has: bool,
+    loading: bool,
+    sheet-title: string,
+    well: string,
+    well-label: bool,
+    title: string,
+    subtitle: string,
+    subtitle-error: bool,
+    closable: bool,
+    menu: bool,
+    tabs: [string],
+    tab: int,
+    sections: [DetailSection],
+    empty: string,
+    hint: string,
+}
+
+export struct ActionItem {
+    id: string,
+    glyph: string,
+    heading: string,
+    label: string,
+    subtitle: string,
+    check: bool,
+    checked: bool,
+    danger: bool,
+    enabled: bool,
+    sub: bool,
+    section: bool,
+}
+
+export struct ResourceItem {
+    key: string,
+    title: string,
+    subtitle: string,
+    chip: string,
+    url: string,
+    busy: bool,
+}
+
 // ---------------------------------------------------------------- Icons
 // 24x24 outline glyphs, stroked.
 
@@ -178,6 +278,12 @@ global Icons {
     out property <string> shield: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z";
     out property <string> group: "M12 3l8 4-8 4-8-4z M4 12l8 4 8-4 M4 17l8 4 8-4";
     out property <string> devices: "M3 5h13v9H3z M1 17h17 M19 9h4v10h-4z";
+    out property <string> requests: "M4 8h13 M14 5l3 3-3 3 M20 16H7 M10 13l-3 3 3 3";
+    out property <string> resources: "M12 4c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3z M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7 M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3";
+    out property <string> filter: "M4 5h16l-6 7.5V19l-4-2v-4.5z";
+    out property <string> eye-off: "M3 3l18 18 M10.6 6.1A9.7 9.7 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-3 3.6 M6.6 7.6C4 9.4 2.5 12 2.5 12S6 18 12 18c1.6 0 3-.4 4.2-1 M9.9 10a3 3 0 0 0 4.2 4.2";
+    out property <string> block: "M12 3a9 9 0 1 0 0.01 0z M5.6 5.6l12.8 12.8";
+    out property <string> error: "M12 3a9 9 0 1 0 0.01 0z M12 7.5v5.5 M12 16.5v.01";
     out property <string> memory: "M6 6h12v12H6z M9 9h6v6H9z M9 3v3 M15 3v3 M9 18v3 M15 18v3 M3 9h3 M3 15h3 M18 9h3 M18 15h3";
 }
 
@@ -1925,6 +2031,7 @@ component SectionHeader inherits Text {
 
 component Tools inherits Rectangle {
     in property <string> version;
+    in property <bool> wide;
     callback open(string);
     VerticalLayout {
         AppBar { title: "工具"; }
@@ -1932,6 +2039,8 @@ component Tools inherits Rectangle {
             content-height: col.preferred-height;
             col := VerticalLayout {
                 padding-bottom: 16px;
+                if !root.wide: ListRow { glyph: Icons.requests; title: "请求"; clicked => { root.open("requests"); } }
+                ListRow { glyph: Icons.resources; title: "资源"; clicked => { root.open("resources"); } }
                 ListRow { glyph: Icons.logs; title: "日志"; clicked => { root.open("logs"); } }
                 HorizontalLayout {
                     padding-left: 16px;
@@ -2038,6 +2147,981 @@ component ThemePage inherits Rectangle {
                         TouchArea { clicked => { root.set-accent(i); } }
                     }
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Requests
+
+// `ConnectedButtonBar`: one button per choice, joined.
+component SegmentBar inherits HorizontalLayout {
+    in property <[string]> items;
+    in property <int> value;
+    in property <length> bar-height: 40px;
+    callback picked(int);
+    spacing: 2px;
+    for label[i] in root.items: Rectangle {
+        height: root.bar-height;
+        horizontal-stretch: 1;
+        min-width: seg-text.preferred-width * 1.15 + 24px;
+        border-top-left-radius: i == 0 ? self.height / 2 : 6px;
+        border-bottom-left-radius: i == 0 ? self.height / 2 : 6px;
+        border-top-right-radius: i == root.items.length - 1 ? self.height / 2 : 6px;
+        border-bottom-right-radius: i == root.items.length - 1 ? self.height / 2 : 6px;
+        background: i == root.value ? Theme.s.primary : (seg-ta.pressed ? Theme.s.inset : Theme.s.block);
+        seg-text := Text {
+            text: label;
+            font-size: 14px;
+            font-weight: i == root.value ? 600 : 400;
+            color: i == root.value ? Theme.s.on-primary : Theme.s.on-surface;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        seg-ta := TouchArea { clicked => { root.picked(i); } }
+    }
+}
+
+// `SegmentedControl` (compact): a tray with the chosen segment raised.
+component StatusBar inherits Rectangle {
+    in property <[string]> items;
+    in property <int> value;
+    callback picked(int);
+    height: 32px;
+    Flickable {
+        content-width: max(tray.preferred-width, 0px);
+        interactive: tray.preferred-width > self.width;
+        tray := Rectangle {
+            width: row.preferred-width;
+            height: 32px;
+            border-radius: 16px;
+            background: Theme.s.block;
+            row := HorizontalLayout {
+                padding: 2px;
+                for label[i] in root.items: Rectangle {
+                    width: status-text.preferred-width * 1.12 + 24px;
+                    border-radius: 14px;
+                    background: i == root.value ? Theme.s.card : transparent;
+                    status-text := Text {
+                        text: label;
+                        font-size: 13px;
+                        font-weight: i == root.value ? 600 : 400;
+                        color: i == root.value ? Theme.s.on-surface : Theme.s.on-surface-variant;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea { clicked => { root.picked(i); } }
+                }
+            }
+        }
+    }
+}
+
+// The conditions set (`ConditionBlock`): a field's line of chips, then clear all.
+component ConditionBlock inherits Rectangle {
+    in property <[ConditionLine]> lines;
+    callback edit(int);
+    callback remove(int);
+    callback clear();
+    background: Theme.s.block;
+    border-radius: 14px;
+    height: col.preferred-height;
+    col := VerticalLayout {
+        padding-left: 16px;
+        padding-right: 8px;
+        padding-top: 4px;
+        for line[li] in root.lines: VerticalLayout {
+            HorizontalLayout {
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 8px;
+                Text {
+                    text: line.label;
+                    width: 64px;
+                    font-size: 13px;
+                    color: Theme.s.on-surface-variant;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Flickable {
+                    height: 32px;
+                    content-width: chips.preferred-width;
+                    interactive: chips.preferred-width > self.width;
+                    chips := HorizontalLayout {
+                        spacing: 6px;
+                        for item[ii] in line.items: HorizontalLayout {
+                            spacing: 6px;
+                            if ii > 0: Text { text: "或"; font-size: 12px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                            Rectangle {
+                                height: 32px;
+                                width: chip-row.preferred-width;
+                                border-radius: 16px;
+                                background: Theme.s.card;
+                                chip-row := HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 4px;
+                                    spacing: 2px;
+                                    Text { text: item.text; font-size: 13px; color: Theme.s.on-surface; vertical-alignment: center; }
+                                    Rectangle {
+                                        width: 24px;
+                                        Icon { glyph: Icons.close; size: 14px; tint: Theme.s.on-surface-variant; }
+                                        TouchArea { clicked => { root.remove(item.index); } }
+                                    }
+                                }
+                                TouchArea {
+                                    width: parent.width - 28px;
+                                    x: 0;
+                                    clicked => { root.edit(item.index); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+        }
+        HorizontalLayout {
+            height: 40px;
+            spacing: 8px;
+            Text {
+                horizontal-stretch: 1;
+                text: "同一行满足其一，各行都要满足";
+                font-size: 12px;
+                color: Theme.s.on-surface-variant;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Rectangle {
+                width: clear-text.preferred-width * 1.1 + 16px;
+                clear-text := Text { text: "清除全部"; font-size: 13px; color: Theme.s.primary; vertical-alignment: center; }
+                TouchArea { clicked => { root.clear(); } }
+            }
+        }
+    }
+}
+
+// `TrackerAppWell` without the app's icon (its name's first letter), or `LabelWell`.
+component Well inherits Rectangle {
+    in property <string> text;
+    in property <bool> label;
+    in property <length> size: 40px;
+    width: size;
+    height: size;
+    border-radius: size * 0.28;
+    background: label ? Theme.s.block : Theme.s.primary-container;
+    Text {
+        text: root.text;
+        font-size: root.label ? (root.text.character-count > 3 ? root.size * 0.26 : root.size * 0.32) : root.size * 0.42;
+        font-weight: 600;
+        color: root.label ? Theme.s.on-surface-variant : Theme.s.on-primary-container;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// A row of a requests list; a long press or a right click opens its menu.
+component RecordRowView inherits Rectangle {
+    in property <RecordRow> rec;
+    in property <bool> marks;
+    callback select(int);
+    callback menu(int);
+    property <bool> fired;
+    property <color> muted: Theme.s.on-surface-variant;
+    height: root.rec.header ? 40px : 64px;
+    if root.rec.header: HorizontalLayout {
+        padding-left: 28px;
+        padding-right: 16px;
+        padding-top: 14px;
+        spacing: 8px;
+        Text { text: root.rec.label; font-size: 13px; font-weight: 600; color: root.muted; vertical-alignment: center; }
+        Text { text: root.rec.count; font-size: 13px; color: root.muted; vertical-alignment: center; horizontal-stretch: 1; }
+    }
+    if !root.rec.header: Rectangle {
+        x: 16px;
+        width: parent.width - 32px;
+        background: (root.rec.selected && root.marks) || ta.pressed ? Theme.s.block : Theme.s.card;
+        border-top-left-radius: root.rec.first ? 16px : 0;
+        border-top-right-radius: root.rec.first ? 16px : 0;
+        border-bottom-left-radius: root.rec.last ? 16px : 0;
+        border-bottom-right-radius: root.rec.last ? 16px : 0;
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 14px;
+            spacing: 12px;
+            VerticalLayout { alignment: center; Well { text: root.rec.well; label: root.rec.well-label; } }
+            VerticalLayout {
+                alignment: center;
+                spacing: 3px;
+                horizontal-stretch: 1;
+                Text { text: root.rec.title; font-size: 15px; color: Theme.s.on-surface; overflow: elide; }
+                HorizontalLayout {
+                    spacing: 4px;
+                    about := Text {
+                        text: root.rec.about;
+                        font-size: 12px;
+                        color: root.rec.about-error ? Theme.s.error : root.muted;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                        max-width: self.preferred-width;
+                        vertical-alignment: center;
+                    }
+                    if root.rec.chip != "": Chip { text: root.rec.chip; height: 18px; }
+                    if root.rec.mitm: Chip { text: "MITM"; height: 18px; }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                top := Text {
+                    text: root.rec.top;
+                    min-width: self.preferred-width * 1.12;
+                    font-size: 13px;
+                    font-weight: root.rec.top-strong ? 600 : 400;
+                    horizontal-alignment: right;
+                    color: root.rec.top-tone == 1 ? Theme.s.error : root.rec.top-tone == 2 ? Theme.success : root.rec.top-tone == 3 ? Theme.warning : root.rec.top-tone == 4 ? root.muted : Theme.s.on-surface;
+                }
+                if root.rec.bottom != "": Text {
+                    text: root.rec.bottom;
+                    min-width: self.preferred-width * 1.12;
+                    font-size: 11px;
+                    color: root.muted;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+        if !root.rec.last: Rectangle {
+            x: 64px;
+            y: parent.height - 1px;
+            width: parent.width - 64px;
+            height: 1px;
+            background: Theme.s.outline-variant.with-alpha(0.6);
+        }
+        if root.rec.selected && root.marks: Rectangle {
+            x: 0;
+            width: 3px;
+            height: 16px;
+            border-radius: 1.5px;
+            background: Theme.s.primary;
+        }
+        ta := TouchArea {
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    if (e.button == PointerEventButton.right) {
+                        root.fired = true;
+                        root.menu(root.rec.id);
+                    } else {
+                        root.fired = false;
+                        hold.running = true;
+                    }
+                } else if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                    hold.running = false;
+                }
+            }
+            moved => {
+                if (abs(self.mouse-x - self.pressed-x) > 8px || abs(self.mouse-y - self.pressed-y) > 8px) {
+                    hold.running = false;
+                }
+            }
+            clicked => {
+                if (!root.fired) { root.select(root.rec.id); }
+            }
+        }
+        hold := Timer {
+            interval: 450ms;
+            running: false;
+            triggered => {
+                self.running = false;
+                root.fired = true;
+                root.menu(root.rec.id);
+            }
+        }
+    }
+}
+
+// `NullStatus`: what an empty list or pane says.
+component NullStatus inherits Rectangle {
+    in property <string> label;
+    in property <string> description;
+    VerticalLayout {
+        alignment: center;
+        spacing: 6px;
+        padding-left: 32px;
+        padding-right: 32px;
+        Text { text: root.label; font-size: 16px; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; wrap: word-wrap; }
+        if root.description != "": Text { text: root.description; font-size: 13px; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
+    }
+}
+
+component DetailRowView inherits Rectangle {
+    in property <DetailRow> item;
+    in property <bool> divider;
+    callback tapped(string);
+    property <color> muted: Theme.s.on-surface-variant;
+    property <color> toned: root.item.tone == 1 ? Theme.s.error : root.item.tone == 2 ? Theme.success : root.item.tone == 3 ? Theme.warning : muted;
+    property <bool> opens: root.item.kind == "link" || (root.item.arg != "" && root.item.kind != "traffic");
+    height: body.preferred-height;
+    background: ta.pressed && opens ? Theme.s.inset : transparent;
+    ta := TouchArea {
+        enabled: root.opens;
+        clicked => { root.tapped(root.item.arg); }
+    }
+    body := VerticalLayout {
+        if root.item.kind == "text": HorizontalLayout {
+            height: 48px;
+            padding-left: 16px;
+            padding-right: 16px;
+            spacing: 12px;
+            Text { text: root.item.title; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; min-width: min(self.preferred-width, 72px); }
+            if root.item.value != "": Text {
+                text: root.item.value;
+                font-size: 15px;
+                color: root.item.tone == 0 ? root.muted : root.toned;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                overflow: elide;
+                max-width: self.preferred-width * 1.08;
+                horizontal-stretch: 2;
+            }
+        }
+        if root.item.kind == "stacked": HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+            spacing: 12px;
+            if root.item.tone == 1: VerticalLayout { alignment: start; Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; } }
+            VerticalLayout {
+                spacing: 2px;
+                Text { text: root.item.title; font-size: 15px; color: Theme.s.on-surface; wrap: word-wrap; }
+                Text { text: root.item.value; font-size: 13px; color: root.muted; wrap: word-wrap; overflow: elide; max-height: 54px; }
+            }
+        }
+        if root.item.kind == "rail" || root.item.kind == "link": HorizontalLayout {
+            height: root.item.note == "" ? 48px : 58px;
+            padding-left: root.item.kind == "rail" ? 0 : 16px;
+            padding-right: 16px;
+            spacing: 4px;
+            if root.item.kind == "rail": Rectangle {
+                width: 44px;
+                property <length> cy: root.item.note == "" ? self.height / 2 : self.height / 2 - 9px;
+                if !root.item.first: Rectangle { x: (parent.width - 1.5px) / 2; y: 0; width: 1.5px; height: max(0px, parent.cy - 8px); background: Theme.s.outline-variant; }
+                if !root.item.last: Rectangle { x: (parent.width - 1.5px) / 2; y: parent.cy + 8px; width: 1.5px; height: max(0px, parent.height - parent.cy - 8px); background: Theme.s.outline-variant; }
+                Rectangle {
+                    x: (parent.width - 10px) / 2;
+                    y: parent.cy - 5px;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 5px;
+                    border-width: root.item.mark == 0 ? 1.7px : 0;
+                    border-color: Theme.s.on-surface-variant;
+                    background: root.item.mark == 1 ? Theme.s.primary : root.item.mark == 2 ? Theme.s.error : transparent;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text { text: root.item.title; font-size: 15px; font-weight: root.item.mark == 1 && root.item.kind == "rail" ? 600 : 400; color: Theme.s.on-surface; overflow: elide; }
+                if root.item.note != "": Text { text: root.item.note; font-size: 12px; color: root.item.kind == "link" && root.item.tone == 1 ? Theme.s.error : root.muted; overflow: elide; }
+            }
+            if root.item.trailing != "": Text {
+                text: root.item.trailing;
+                min-width: self.preferred-width * 1.1;
+                font-size: 13px;
+                color: root.item.kind == "link" ? root.toned : root.muted;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+            if root.item.kind == "link": VerticalLayout { alignment: center; Icon { glyph: Icons.chevron; size: 18px; tint: root.muted; } }
+        }
+        if root.item.kind == "code": HorizontalLayout {
+            padding: 12px;
+            Text { text: root.item.value; font-size: 12px; color: Theme.s.on-surface; wrap: word-wrap; }
+        }
+        if root.item.kind == "traffic": HorizontalLayout {
+            spacing: 8px;
+            for cell[ci] in [{ glyph: Icons.down, label: "下载", figure: root.item.title, speed: root.item.note }, { glyph: Icons.up, label: "上传", figure: root.item.value, speed: root.item.trailing }]: Rectangle {
+                horizontal-stretch: 1;
+                border-radius: 14px;
+                background: Theme.s.block;
+                height: cell-col.preferred-height;
+                cell-col := VerticalLayout {
+                    padding: 12px;
+                    spacing: 4px;
+                    HorizontalLayout {
+                        spacing: 4px;
+                        Icon { glyph: cell.glyph; size: 16px; tint: Theme.s.primary; }
+                        Text { text: cell.label; font-size: 13px; color: root.muted; vertical-alignment: center; }
+                    }
+                    Text { text: cell.figure; font-size: 20px; font-weight: 700; color: Theme.s.on-surface; min-width: self.preferred-width * 1.1; }
+                    if cell.speed != "": Text { text: cell.speed + "/s"; font-size: 12px; color: root.muted; }
+                }
+            }
+        }
+        if root.divider: Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+    }
+}
+
+// A record's detail: its head, its tabs (`DetailTabs`) and the sections of the tab shown.
+component DetailView inherits Rectangle {
+    in property <ReqDetail> detail;
+    in property <bool> stretch-tabs;
+    in property <bool> head-menu;
+    in property <length> top-gap: 20px;
+    in property <length> bottom-gap;
+    callback tab(int);
+    callback close();
+    callback menu();
+    callback open-row(string);
+    if !root.detail.has: NullStatus { label: root.detail.empty; description: root.detail.hint; }
+    if root.detail.has: VerticalLayout {
+        padding-top: root.top-gap;
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 8px;
+            padding-bottom: root.detail.tabs.length > 1 ? 12px : 8px;
+            spacing: 12px;
+            if root.detail.well != "": VerticalLayout { alignment: center; Well { text: root.detail.well; label: root.detail.well-label; size: 48px; } }
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text { text: root.detail.title; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
+                if root.detail.subtitle != "": Text { text: root.detail.subtitle; font-size: 13px; color: root.detail.subtitle-error ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
+            }
+            if root.detail.closable: VerticalLayout { alignment: center; IconButton { glyph: Icons.block; tint: Theme.s.error; clicked => { root.close(); } } }
+            if root.head-menu && root.detail.menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; clicked => { root.menu(); } } }
+        }
+        if root.detail.tabs.length > 1: HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            alignment: root.stretch-tabs ? stretch : start;
+            SegmentBar {
+                items: root.detail.tabs;
+                value: root.detail.tab;
+                bar-height: 36px;
+                picked(i) => { root.tab(i); }
+            }
+        }
+        if root.detail.loading || root.detail.sections.length == 0: NullStatus {
+            vertical-stretch: 1;
+            label: root.detail.loading ? "" : root.detail.empty;
+        }
+        if !root.detail.loading && root.detail.sections.length > 0: Flickable {
+            vertical-stretch: 1;
+            content-height: max(secs.preferred-height, self.height);
+            secs := VerticalLayout {
+                alignment: start;
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 4px;
+                padding-bottom: 16px + root.bottom-gap;
+                for sec in root.detail.sections: VerticalLayout {
+                    if sec.title != "": HorizontalLayout {
+                        padding-left: 14px;
+                        Text { text: sec.title; height: 40px; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: bottom; }
+                    }
+                    if sec.title != "": Rectangle { height: 6px; }
+                    if sec.title == "": Rectangle { height: 12px; }
+                    if sec.plain: VerticalLayout {
+                        for r in sec.rows: DetailRowView { item: r; tapped(a) => { root.open-row(a); } }
+                    }
+                    if !sec.plain && sec.rows.length > 0: Rectangle {
+                        background: Theme.s.block;
+                        border-radius: 14px;
+                        clip: true;
+                        VerticalLayout {
+                            for r[ri] in sec.rows: DetailRowView {
+                                item: r;
+                                divider: ri < sec.rows.length - 1 && r.kind != "rail";
+                                tapped(a) => { root.open-row(a); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The page's head: the segments, then the filter row and the conditions.
+component ReqHeader inherits VerticalLayout {
+    in property <int> segment;
+    in property <bool> shows-http;
+    in property <[string]> statuses;
+    in property <int> status;
+    in property <[ConditionLine]> conditions;
+    callback set-segment(int);
+    callback set-status(int);
+    callback add-condition();
+    callback edit-condition(int);
+    callback remove-condition(int);
+    callback clear-conditions();
+    padding-top: 4px;
+    padding-bottom: 4px;
+    spacing: 12px;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        SegmentBar {
+            items: root.shows-http ? ["连接", "HTTP", "DNS"] : ["连接", "DNS"];
+            value: root.segment == 2 ? (root.shows-http ? 2 : 1) : root.segment;
+            picked(i) => { root.set-segment(!root.shows-http && i == 1 ? 2 : i); }
+        }
+    }
+    VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 8px;
+            StatusBar {
+                horizontal-stretch: 1;
+                items: root.statuses;
+                value: root.status;
+                picked(i) => { root.set-status(i); }
+            }
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: add-ta.pressed ? Theme.s.inset : Theme.s.block;
+                Icon { glyph: Icons.plus; size: 18px; tint: Theme.s.on-surface; }
+                add-ta := TouchArea { clicked => { root.add-condition(); } }
+            }
+        }
+        if root.conditions.length > 0: ConditionBlock {
+            lines: root.conditions;
+            edit(i) => { root.edit-condition(i); }
+            remove(i) => { root.remove-condition(i); }
+            clear => { root.clear-conditions(); }
+        }
+    }
+}
+
+component ReqList inherits Rectangle {
+    in property <[RecordRow]> rows;
+    in property <bool> marks;
+    in property <string> empty;
+    in property <string> empty-desc;
+    in property <length> bottom-gap;
+    callback select(int);
+    callback menu(int);
+    if root.rows.length == 0: NullStatus { label: root.empty; description: root.empty-desc; }
+    if root.rows.length > 0: ListView {
+        for r in root.rows: RecordRowView {
+            rec: r;
+            marks: root.marks;
+            select(id) => { root.select(id); }
+            menu(id) => { root.menu(id); }
+        }
+    }
+}
+
+// lib/views/connection/requests.dart: the connections, HTTP requests and DNS queries of
+// this run; beside the list on a wide page the selection's detail, else a sheet.
+component RequestsPage inherits Rectangle {
+    in property <bool> mobile;
+    in property <bool> can-back;
+    in property <int> segment;
+    in property <bool> shows-http;
+    in property <[RecordRow]> rows;
+    in property <[string]> statuses;
+    in property <int> status;
+    in property <[ConditionLine]> conditions;
+    in property <string> empty;
+    in property <string> empty-desc;
+    in property <ReqDetail> detail;
+    in property <bool> has-menu;
+    in-out property <bool> searching;
+    in-out property <string> query;
+    out property <bool> split: !root.mobile && root.width >= 392px + 496px;
+    callback back();
+    callback search(string);
+    callback open-menu();
+    callback set-segment(int);
+    callback set-status(int);
+    callback add-condition();
+    callback edit-condition(int);
+    callback remove-condition(int);
+    callback clear-conditions();
+    callback select(int, bool);
+    callback row-menu(int);
+    callback detail-tab(int);
+    callback detail-close();
+    callback detail-menu();
+    callback detail-row(string);
+
+    changed query => { root.search(root.query); }
+
+    VerticalLayout {
+        if !root.searching: AppBar {
+            title: "请求";
+            can-back: root.can-back;
+            back => { root.back(); }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
+            if root.has-menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-menu(); } } }
+        }
+        if root.searching: HorizontalLayout {
+            height: 56px;
+            padding-left: 4px;
+            padding-right: 12px;
+            spacing: 4px;
+            VerticalLayout {
+                alignment: center;
+                IconButton { glyph: Icons.back; tint: Theme.s.on-surface; clicked => { root.query = ""; root.searching = false; } }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Rectangle {
+                    height: 44px;
+                    border-radius: 22px;
+                    background: Theme.s.block;
+                    Text {
+                        x: 16px;
+                        visible: req-input.text == "";
+                        text: "搜索";
+                        color: Theme.s.on-surface-variant;
+                        font-size: 15px;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                    req-input := TextInput {
+                        x: 16px;
+                        width: parent.width - 32px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        single-line: true;
+                        font-size: 15px;
+                        color: Theme.s.on-surface;
+                        text <=> root.query;
+                        init => { self.focus(); }
+                    }
+                }
+            }
+            if root.has-menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-menu(); } } }
+        }
+        if !root.split: ReqHeader {
+            segment: root.segment;
+            shows-http: root.shows-http;
+            statuses: root.statuses;
+            status: root.status;
+            conditions: root.conditions;
+            set-segment(s) => { root.set-segment(s); }
+            set-status(s) => { root.set-status(s); }
+            add-condition => { root.add-condition(); }
+            edit-condition(i) => { root.edit-condition(i); }
+            remove-condition(i) => { root.remove-condition(i); }
+            clear-conditions => { root.clear-conditions(); }
+        }
+        if !root.split: ReqList {
+            vertical-stretch: 1;
+            rows: root.rows;
+            marks: !root.mobile;
+            empty: root.empty;
+            empty-desc: root.empty-desc;
+            select(id) => { root.select(id, false); }
+            menu(id) => { root.row-menu(id); }
+        }
+        if root.split: HorizontalLayout {
+            vertical-stretch: 1;
+            VerticalLayout {
+                width: 392px;
+                ReqHeader {
+                    segment: root.segment;
+                    shows-http: root.shows-http;
+                    statuses: root.statuses;
+                    status: root.status;
+                    conditions: root.conditions;
+                    set-segment(s) => { root.set-segment(s); }
+                    set-status(s) => { root.set-status(s); }
+                    add-condition => { root.add-condition(); }
+                    edit-condition(i) => { root.edit-condition(i); }
+                    remove-condition(i) => { root.remove-condition(i); }
+                    clear-conditions => { root.clear-conditions(); }
+                }
+                ReqList {
+                    vertical-stretch: 1;
+                    rows: root.rows;
+                    marks: true;
+                    empty: root.empty;
+                    empty-desc: root.empty-desc;
+                    select(id) => { root.select(id, true); }
+                    menu(id) => { root.row-menu(id); }
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                padding-top: 4px;
+                padding-left: 4px;
+                padding-right: 12px;
+                padding-bottom: 12px;
+                Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 28px;
+                    clip: true;
+                    DetailView {
+                        detail: root.detail;
+                        head-menu: true;
+                        tab(i) => { root.detail-tab(i); }
+                        close => { root.detail-close(); }
+                        menu => { root.detail-menu(); }
+                        open-row(a) => { root.detail-row(a); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Resources
+
+component ResourceRow inherits Rectangle {
+    in property <ResourceItem> item;
+    in property <bool> divider;
+    callback tapped(string);
+    callback menu(string);
+    property <bool> fired;
+    height: 64px;
+    background: rta.pressed ? Theme.s.inset : transparent;
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text { text: root.item.title; font-size: 16px; color: Theme.s.on-surface; overflow: elide; }
+            Text { text: root.item.subtitle; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+        }
+        if root.item.busy: VerticalLayout { alignment: center; Spinner { width: 22px; height: 22px; indeterminate: true; } }
+        if !root.item.busy && root.item.chip != "": VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 24px;
+                width: chip-text.preferred-width * 1.1 + 20px;
+                border-radius: 12px;
+                background: Theme.s.block;
+                chip-text := Text { text: root.item.chip; font-size: 12px; font-weight: 600; color: Theme.s.on-surface-variant; horizontal-alignment: center; vertical-alignment: center; }
+            }
+        }
+    }
+    if root.divider: Rectangle { x: 16px; y: parent.height - 1px; width: parent.width - 16px; height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+    rta := TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                if (e.button == PointerEventButton.right) {
+                    root.fired = true;
+                    root.menu(root.item.key);
+                } else {
+                    root.fired = false;
+                    rhold.running = true;
+                }
+            } else if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                rhold.running = false;
+            }
+        }
+        moved => {
+            if (abs(self.mouse-x - self.pressed-x) > 8px || abs(self.mouse-y - self.pressed-y) > 8px) {
+                rhold.running = false;
+            }
+        }
+        clicked => { if (!root.fired) { root.tapped(root.item.key); } }
+    }
+    rhold := Timer {
+        interval: 450ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.fired = true;
+            root.menu(root.item.key);
+        }
+    }
+}
+
+// lib/views/resources.dart: the geo files' auto update and each file.
+component ResourcesPage inherits Rectangle {
+    in property <[ResourceItem]> items;
+    in property <bool> auto;
+    in property <string> interval;
+    in property <bool> updating;
+    callback back();
+    callback update-all();
+    callback set-auto(bool);
+    callback open-interval();
+    callback tapped(string);
+    callback menu(string);
+    VerticalLayout {
+        AppBar {
+            title: "资源";
+            can-back: true;
+            back => { root.back(); }
+            VerticalLayout {
+                alignment: center;
+                if root.updating: Rectangle { width: 40px; height: 40px; Spinner { width: 22px; height: 22px; indeterminate: true; } }
+                if !root.updating: IconButton { glyph: Icons.sync; tint: Theme.s.on-surface; clicked => { root.update-all(); } }
+            }
+        }
+        Flickable {
+            content-height: max(res-col.preferred-height, self.height);
+            res-col := VerticalLayout {
+                alignment: start;
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 8px;
+                padding-bottom: 24px;
+                spacing: 6px;
+                Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 16px;
+                    clip: true;
+                    VerticalLayout {
+                        HorizontalLayout {
+                            height: 56px;
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            Text { text: "自动更新"; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                            VerticalLayout { alignment: center; Switch { checked: root.auto; toggled(on) => { root.set-auto(on); } } }
+                        }
+                        if root.auto: HorizontalLayout { padding-left: 16px; Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); } }
+                        if root.auto: Rectangle {
+                            height: 64px;
+                            background: ita.pressed ? Theme.s.inset : transparent;
+                            VerticalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                alignment: center;
+                                spacing: 2px;
+                                Text { text: "自动更新间隔"; font-size: 16px; color: Theme.s.on-surface; }
+                                Text { text: root.interval; font-size: 13px; color: Theme.s.on-surface-variant; }
+                            }
+                            ita := TouchArea { clicked => { root.open-interval(); } }
+                        }
+                    }
+                }
+                HorizontalLayout { padding-left: 14px; Text { text: "Geo"; height: 40px; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: bottom; } }
+                Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 16px;
+                    clip: true;
+                    VerticalLayout {
+                        for it[i] in root.items: ResourceRow {
+                            item: it;
+                            divider: i < root.items.length - 1;
+                            tapped(k) => { root.tapped(k); }
+                            menu(k) => { root.menu(k); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A menu as a sheet from the bottom (`PopupMenuItem`s: a heading starts a titled section,
+// section a plain one; sub rows sit under the row that opened them).
+component ActionSheet inherits Rectangle {
+    in property <string> title;
+    in property <[ActionItem]> items;
+    in property <length> bottom-inset;
+    callback picked(string);
+    callback dismiss();
+    background: #00000066;
+    TouchArea { clicked => { root.dismiss(); } }
+    Rectangle {
+        y: parent.height - self.height;
+        height: min(sheet-col.preferred-height + root.bottom-inset, parent.height - 48px);
+        background: Theme.s.card;
+        border-top-left-radius: 24px;
+        border-top-right-radius: 24px;
+        TouchArea { }
+        Flickable {
+            height: parent.height - root.bottom-inset;
+            content-height: sheet-col.preferred-height;
+            sheet-col := VerticalLayout {
+                padding-top: 12px;
+                padding-bottom: 8px;
+                if root.title != "": HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    Text { text: root.title; font-size: 16px; color: Theme.s.on-surface-variant; height: 40px; vertical-alignment: center; overflow: elide; }
+                }
+                for a[ai] in root.items: VerticalLayout {
+                    if ai > 0 && (a.section || a.heading != ""): Rectangle { height: 8px; Rectangle { y: 3px; height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); } }
+                    if a.heading != "": HorizontalLayout {
+                        padding-left: 16px;
+                        Text { text: a.heading; font-size: 13px; color: Theme.s.primary; height: 32px; vertical-alignment: center; }
+                    }
+                    Rectangle {
+                        height: a.subtitle != "" ? 60px : 48px;
+                        opacity: a.enabled ? 1 : 0.4;
+                        background: ata.pressed ? Theme.s.inset : transparent;
+                        HorizontalLayout {
+                            padding-left: a.sub ? 40px : 16px;
+                            padding-right: 16px;
+                            spacing: 14px;
+                            if a.glyph != "": VerticalLayout {
+                                alignment: center;
+                                Icon {
+                                    size: 20px;
+                                    tint: a.danger ? Theme.s.error : Theme.s.on-surface-variant;
+                                    glyph: a.glyph == "copy" ? Icons.copy : a.glyph == "filter" ? Icons.filter : a.glyph == "eye-off" ? Icons.eye-off : a.glyph == "block" ? Icons.block : a.glyph == "sync" ? Icons.sync : a.glyph == "edit" ? Icons.edit : a.glyph == "fold" ? Icons.fold : a.glyph == "unfold" ? Icons.unfold : "";
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 2px;
+                                horizontal-stretch: 1;
+                                Text { text: a.label; font-size: 15px; color: a.danger ? Theme.s.error : Theme.s.on-surface; overflow: elide; }
+                                if a.subtitle != "": Text { text: a.subtitle; font-size: 12px; color: Theme.s.on-surface-variant; overflow: elide; }
+                            }
+                            if a.check: VerticalLayout {
+                                alignment: center;
+                                width: 20px;
+                                if a.checked: Icon { glyph: Icons.check; size: 20px; tint: Theme.s.primary; }
+                            }
+                        }
+                        ata := TouchArea {
+                            enabled: a.enabled;
+                            clicked => { root.picked(a.id); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A dialog's choices in two or three columns (`_ChoiceGrid`).
+component ChoiceGrid inherits VerticalLayout {
+    in property <[string]> choices;
+    in property <int> value;
+    callback picked(int);
+    property <int> cols: root.choices.length > 4 ? 3 : 2;
+    spacing: 6px;
+    for r in ceil(root.choices.length / root.cols): HorizontalLayout {
+        spacing: 6px;
+        for c in root.cols: Rectangle {
+            property <int> i: r * root.cols + c;
+            height: 40px;
+            preferred-width: 0px;
+            min-width: 0px;
+            horizontal-stretch: 1;
+            border-radius: 20px;
+            background: self.i >= root.choices.length ? transparent : self.i == root.value ? Theme.s.primary : Theme.s.block;
+            Text {
+                text: parent.i < root.choices.length ? root.choices[parent.i] : "";
+                font-size: 14px;
+                color: parent.i == root.value ? Theme.s.on-primary : Theme.s.on-surface;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            TouchArea {
+                enabled: parent.i < root.choices.length;
+                clicked => { root.picked(parent.i); }
             }
         }
     }
@@ -2236,8 +3320,90 @@ export component AppWindow inherits Window {
     in property <string> version;
     callback set-accent(int);
     callback set-theme-mode(int);
+    // Requests (tab 4 beside the bar, tools page "requests" under it)
+    in-out property <int> req-segment;
+    in property <bool> req-shows-http;
+    in property <[RecordRow]> req-rows;
+    in property <[string]> req-statuses;
+    in property <int> req-status;
+    in property <[ConditionLine]> req-conditions;
+    in property <string> req-empty;
+    in property <string> req-empty-desc;
+    in property <ReqDetail> req-detail;
+    in property <bool> req-has-menu: true;
+    in-out property <bool> req-searching;
+    in-out property <string> req-query;
+    in-out property <bool> req-sheet-open;
+    in-out property <bool> req-actions-open;
+    in property <string> req-actions-title;
+    in property <[ActionItem]> req-actions;
+    out property <bool> req-visible: root.tab == 4 || (root.tab == 3 && root.tools-page == "requests");
+    callback req-search(string);
+    callback req-open-menu();
+    callback req-set-segment(int);
+    callback req-set-status(int);
+    callback req-add-condition();
+    callback req-edit-condition(int);
+    callback req-remove-condition(int);
+    callback req-clear-conditions();
+    callback req-select(int, bool);
+    callback req-row-menu(int);
+    callback req-detail-tab(int);
+    callback req-detail-close();
+    callback req-detail-menu();
+    callback req-detail-row(string);
+    callback req-sheet-closed();
+    callback req-action(string);
+    // Condition dialog (`showConditionDialog`)
+    in-out property <bool> cond-open;
+    in property <bool> cond-editing;
+    in property <[string]> cond-fields;
+    in-out property <int> cond-field;
+    in-out property <int> cond-op;
+    in-out property <string> cond-value;
+    in property <[Suggestion]> cond-suggestions;
+    in property <string> cond-values-in;
+    in property <string> cond-shows;
+    in property <string> cond-tip;
+    in property <bool> cond-ready;
+    callback cond-changed();
+    callback cond-submit();
+    // Resources
+    in property <[ResourceItem]> res-items;
+    in property <bool> res-auto;
+    in property <string> res-interval;
+    in property <bool> res-updating;
+    // The open input dialog: "", "interval" or "url".
+    in-out property <string> res-dialog;
+    in-out property <string> res-dialog-title;
+    in-out property <string> res-dialog-value;
+    in-out property <string> res-dialog-default;
+    in-out property <string> res-dialog-key;
+    in-out property <bool> res-touched;
+    property <string> res-error: root.res-touched && root.res-dialog != "" ? root.res-check(root.res-dialog, root.res-dialog-value) : "";
+    callback res-update-all();
+    callback res-set-auto(bool);
+    callback res-open-interval();
+    callback res-tapped(string);
+    callback res-menu(string);
+    callback res-dialog-submit(string, string, string);
+    pure callback res-check(string, string) -> string;
+    pure callback res-digits(string) -> string;
     // Feedback
     in property <string> toast;
+
+    callback page-shown();
+    changed req-visible => { if (root.req-visible) { root.page-shown(); } }
+    changed tools-page => { if (root.tools-page == "resources") { root.page-shown(); } }
+    changed cond-value => { root.cond-changed(); }
+    changed res-dialog-value => {
+        if (root.res-dialog == "interval") {
+            if (root.res-digits(root.res-dialog-value) != root.res-dialog-value) {
+                root.res-dialog-value = root.res-digits(root.res-dialog-value);
+            }
+        }
+        root.res-touched = true;
+    }
 
     public function links-done() {
         root.link-open = false;
@@ -2269,6 +3435,11 @@ export component AppWindow inherits Window {
         key-pressed(event) => {
             if (event.text == Key.Back) {
                 if (root.alert-open) { root.alert-open = false; return accept; }
+                if (root.cond-open) { root.cond-open = false; return accept; }
+                if (root.res-dialog != "") { root.res-dialog = ""; return accept; }
+                if (root.req-actions-open) { root.req-actions-open = false; return accept; }
+                if (root.req-sheet-open) { root.req-sheet-open = false; root.req-sheet-closed(); return accept; }
+                if (root.req-visible && root.req-searching) { root.req-searching = false; root.req-query = ""; return accept; }
                 if (root.proxy-options-open) { root.proxy-options-open = false; return accept; }
                 if (root.tab == 1 && root.proxy-searching) { root.proxy-searching = false; root.search-proxies(""); return accept; }
                 if (root.confirm-open) {
@@ -2315,6 +3486,7 @@ export component AppWindow inherits Window {
                     alignment: start;
                     SideItem { label: "仪表盘"; glyph: Icons.dashboard; rail: !root.desktop; active: root.tab == 0; clicked => { root.go(0); } }
                     SideItem { label: "代理"; glyph: Icons.proxies; rail: !root.desktop; active: root.tab == 1; clicked => { root.go(1); } }
+                    SideItem { label: "请求"; glyph: Icons.requests; rail: !root.desktop; active: root.tab == 4; clicked => { root.go(4); } }
                     SideItem { label: "配置"; glyph: Icons.profiles; rail: !root.desktop; active: root.tab == 2; clicked => { root.go(2); } }
                     SideItem { label: "工具"; glyph: Icons.tools; rail: !root.desktop; active: root.tab == 3; clicked => { root.go(3); } }
                 }
@@ -2419,7 +3591,58 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
                     version: root.version;
+                    wide: root.wide;
                     open(p) => { root.tools-page = p; }
+                }
+                if root.req-visible: RequestsPage {
+                    width: parent.width;
+                    height: parent.height;
+                    mobile: !root.wide;
+                    can-back: root.tab == 3;
+                    segment: root.req-segment;
+                    shows-http: root.req-shows-http;
+                    rows: root.req-rows;
+                    statuses: root.req-statuses;
+                    status: root.req-status;
+                    conditions: root.req-conditions;
+                    empty: root.req-empty;
+                    empty-desc: root.req-empty-desc;
+                    detail: root.req-detail;
+                    has-menu: root.req-has-menu;
+                    searching <=> root.req-searching;
+                    query <=> root.req-query;
+                    back => { root.tools-page = ""; }
+                    search(q) => { root.req-search(q); }
+                    open-menu => { root.req-open-menu(); }
+                    set-segment(s) => { root.req-set-segment(s); }
+                    set-status(s) => { root.req-set-status(s); }
+                    add-condition => { root.req-add-condition(); }
+                    edit-condition(i) => { root.req-edit-condition(i); }
+                    remove-condition(i) => { root.req-remove-condition(i); }
+                    clear-conditions => { root.req-clear-conditions(); }
+                    select(id, split) => {
+                        if (!split) { root.req-sheet-open = true; }
+                        root.req-select(id, split);
+                    }
+                    row-menu(id) => { root.req-row-menu(id); }
+                    detail-tab(i) => { root.req-detail-tab(i); }
+                    detail-close => { root.req-detail-close(); }
+                    detail-menu => { root.req-detail-menu(); }
+                    detail-row(a) => { root.req-detail-row(a); }
+                }
+                if root.tab == 3 && root.tools-page == "resources": ResourcesPage {
+                    width: parent.width;
+                    height: parent.height;
+                    items: root.res-items;
+                    auto: root.res-auto;
+                    interval: root.res-interval;
+                    updating: root.res-updating;
+                    back => { root.tools-page = ""; }
+                    update-all => { root.res-update-all(); }
+                    set-auto(on) => { root.res-set-auto(on); }
+                    open-interval => { root.res-open-interval(); }
+                    tapped(k) => { root.res-tapped(k); }
+                    menu(k) => { root.res-menu(k); }
                 }
                 if root.tab == 3 && root.tools-page == "logs": Logs {
                     width: parent.width;
@@ -2618,6 +3841,158 @@ export component AppWindow inherits Window {
             }
         }
 
+        // The detail of the selection in a sheet, where no pane fits beside the list.
+        if root.req-sheet-open && root.req-visible: Rectangle {
+            background: #00000066;
+            TouchArea { clicked => { root.req-sheet-open = false; root.req-sheet-closed(); } }
+            Rectangle {
+                y: root.top-inset + 24px;
+                height: parent.height - self.y;
+                background: Theme.s.card;
+                border-top-left-radius: 24px;
+                border-top-right-radius: 24px;
+                clip: true;
+                TouchArea { }
+                VerticalLayout {
+                    Rectangle {
+                        height: 16px;
+                        Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+                    }
+                    HorizontalLayout {
+                        height: 44px;
+                        padding-left: 20px;
+                        padding-right: 8px;
+                        Text { text: root.req-detail.sheet-title; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                        if root.req-detail.menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; clicked => { root.req-detail-menu(); } } }
+                        VerticalLayout { alignment: center; IconButton { glyph: Icons.close; clicked => { root.req-sheet-open = false; root.req-sheet-closed(); } } }
+                    }
+                    DetailView {
+                        vertical-stretch: 1;
+                        detail: root.req-detail;
+                        stretch-tabs: !root.wide;
+                        top-gap: 8px;
+                        bottom-gap: root.bottom-inset;
+                        tab(i) => { root.req-detail-tab(i); }
+                        close => { root.req-detail-close(); }
+                        menu => { root.req-detail-menu(); }
+                        open-row(a) => { root.req-detail-row(a); }
+                    }
+                }
+            }
+        }
+
+        if root.req-actions-open: ActionSheet {
+            title: root.req-actions-title;
+            items: root.req-actions;
+            bottom-inset: root.bottom-inset;
+            picked(id) => {
+                if (id != "capture-limit") { root.req-actions-open = false; }
+                root.req-action(id);
+            }
+            dismiss => { root.req-actions-open = false; }
+        }
+
+        if root.cond-open: Dialog {
+            title: root.cond-editing ? "编辑条件" : "添加条件";
+            keyboard: root.keyboard;
+            top: root.top-inset;
+            dismiss => { root.cond-open = false; }
+            VerticalLayout {
+                spacing: 6px;
+                HorizontalLayout { padding-left: 14px; Text { text: "字段"; font-size: 13px; color: Theme.s.on-surface-variant; } }
+                ChoiceGrid {
+                    choices: root.cond-fields;
+                    value: root.cond-field;
+                    picked(i) => { root.cond-field = i; root.cond-changed(); }
+                }
+            }
+            VerticalLayout {
+                spacing: 6px;
+                HorizontalLayout { padding-left: 14px; Text { text: "条件"; font-size: 13px; color: Theme.s.on-surface-variant; } }
+                ChoiceGrid {
+                    choices: ["包含", "不包含", "等于", "不等于"];
+                    value: root.cond-op;
+                    picked(i) => { root.cond-op = i; root.cond-changed(); }
+                }
+            }
+            Field {
+                label: "值";
+                text <=> root.cond-value;
+                accepted => { if (root.cond-ready) { root.cond-submit(); } }
+                init => { self.focus-input(); }
+            }
+            if root.cond-suggestions.length > 0: VerticalLayout {
+                spacing: 6px;
+                HorizontalLayout { padding-left: 14px; Text { text: root.cond-values-in; font-size: 13px; color: Theme.s.on-surface-variant; } }
+                Flickable {
+                    height: 32px;
+                    content-width: sugg.preferred-width;
+                    interactive: sugg.preferred-width > self.width;
+                    sugg := HorizontalLayout {
+                        spacing: 6px;
+                        for g in root.cond-suggestions: Rectangle {
+                            height: 32px;
+                            width: sugg-row.preferred-width;
+                            border-radius: 16px;
+                            background: sta.pressed ? Theme.s.inset : Theme.s.block;
+                            sugg-row := HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                spacing: 6px;
+                                Text { text: g.value; font-size: 13px; color: Theme.s.on-surface; vertical-alignment: center; }
+                                Text { text: g.count; font-size: 12px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                            }
+                            sta := TouchArea { clicked => { root.cond-value = g.value; } }
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                padding-left: 14px;
+                spacing: 4px;
+                Text { text: root.cond-shows; font-size: 13px; font-weight: 600; color: Theme.s.on-surface; }
+                Text { text: root.cond-tip; font-size: 13px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                TextButton { text: "取消"; clicked => { root.cond-open = false; } }
+                TextButton { text: root.cond-editing ? "保存" : "添加"; enabled: root.cond-ready; clicked => { root.cond-submit(); } }
+            }
+        }
+
+        if root.res-dialog != "": Dialog {
+            title: root.res-dialog-title;
+            keyboard: root.keyboard;
+            top: root.top-inset;
+            dismiss => { root.res-dialog = ""; }
+            HorizontalLayout {
+                spacing: 12px;
+                Field {
+                    horizontal-stretch: 1;
+                    text <=> root.res-dialog-value;
+                    input-type: root.res-dialog == "interval" ? InputType.number : InputType.text;
+                    init => { self.focus-input(); }
+                }
+                if root.res-dialog == "interval": Text { text: "小时"; font-size: 15px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+            }
+            if root.res-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.res-error; font-size: 13px; color: Theme.s.error; } }
+            HorizontalLayout {
+                spacing: 8px;
+                if root.res-dialog-default != "": TextButton { text: "重置"; clicked => { root.res-dialog-value = root.res-dialog-default; } }
+                Rectangle { horizontal-stretch: 1; }
+                TextButton { text: "取消"; clicked => { root.res-dialog = ""; } }
+                TextButton {
+                    text: "确定";
+                    enabled: root.res-check(root.res-dialog, root.res-dialog-value) == "";
+                    clicked => {
+                        root.res-dialog-submit(root.res-dialog, root.res-dialog-key, root.res-dialog-value);
+                        root.res-dialog = "";
+                    }
+                }
+            }
+        }
+
         if root.confirm-open: Dialog {
             title: root.confirm-title;
             top: root.top-inset;
@@ -2628,8 +4003,8 @@ export component AppWindow inherits Window {
                 spacing: 8px;
                 TextButton { text: "取消"; clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, false); } }
                 TextButton {
-                    text: root.confirm-action == "delete" ? "删除" : "确定";
-                    danger: root.confirm-action == "delete";
+                    text: root.confirm-action == "delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : "确定";
+                    danger: root.confirm-action == "delete" || root.confirm-action == "close-active";
                     clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, true); }
                 }
             }

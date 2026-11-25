@@ -280,7 +280,7 @@ const PRIVATE_ROUTES: [&str; 11] = [
 /// groups and rules. [base] is `profile.inspect`'s `config`. Defaults are PatchClashConfig's,
 /// with the Android branches of `_makeRealProfileTask`; the log level is `info` so the logs
 /// page has something to show (FlClash defaults to `error`).
-pub fn overlay(base: &Value, mode: &str) -> Value {
+pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> Value {
     let mut c: Map<String, Value> = base.as_object().cloned().unwrap_or_default();
     c.remove("rule");
     for key in [
@@ -331,8 +331,12 @@ pub fn overlay(base: &Value, mode: &str) -> Value {
     excluded.extend(PRIVATE_ROUTES.iter().map(|r| Value::from(*r)));
     tun.insert("route-exclude-address".into(), Value::Array(excluded));
     set(&mut c, "tun", Value::Object(tun));
-    set(&mut c, "geo-auto-update", true.into());
-    set(&mut c, "geo-update-interval", 24.into());
+    set(&mut c, "geo-auto-update", settings.geo_auto_update.into());
+    set(
+        &mut c,
+        "geo-update-interval",
+        settings.geo_update_interval.into(),
+    );
     let mut profile = c
         .get("profile")
         .and_then(Value::as_object)
@@ -340,15 +344,24 @@ pub fn overlay(base: &Value, mode: &str) -> Value {
         .unwrap_or_default();
     profile.insert("store-selected".into(), false.into());
     set(&mut c, "profile", Value::Object(profile));
-    set(
-        &mut c,
-        "geox-url",
-        json!({
-            "mmdb": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb",
-            "asn": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb",
-            "geosite": "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat",
-        }),
-    );
+    set(&mut c, "geox-url", json!(settings.geox_url));
+    if settings.mitm.enable {
+        if let Some(entries) = settings.mitm.capture_entries {
+            let mut mitm = c
+                .get("mitm")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            let mut limits = mitm
+                .get("limits")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            limits.insert("capture-entries".into(), entries.into());
+            mitm.insert("limits".into(), Value::Object(limits));
+            set(&mut c, "mitm", Value::Object(mitm));
+        }
+    }
     set(&mut c, "global-ua", USER_AGENT.into());
     if !c.get("hosts").is_some_and(Value::is_object) {
         set(&mut c, "hosts", json!({}));
@@ -375,12 +388,12 @@ pub fn overlay(base: &Value, mode: &str) -> Value {
     Value::Object(c)
 }
 
-pub fn options() -> Value {
+pub fn options(mitm_capture: bool) -> Value {
     json!({
         "testUrl": DEFAULT_TEST_URL,
         "skipCertVerify": false,
         "delayTestTimeout": DELAY_TEST_TIMEOUT_MS,
-        "mitmCapture": false,
+        "mitmCapture": mitm_capture,
     })
 }
 
@@ -493,14 +506,14 @@ mod tests {
     #[test]
     fn overlay_keeps_profile_dns_and_sets_the_mode() {
         let base = json!({"dns": {"enable": true, "nameserver": ["1.1.1.1"]}, "tun": {"stack": "mixed"}, "rule": 1});
-        let o = overlay(&base, "global");
+        let o = overlay(&base, "global", &crate::store::Settings::default());
         assert_eq!(o["mode"], "global");
         assert_eq!(o["dns"]["nameserver"], json!(["1.1.1.1"]));
         assert_eq!(o["tun"]["stack"], "mixed");
         assert_eq!(o["tun"]["auto-route"], true);
         assert!(o.get("rule").is_none());
         assert_eq!(o["external-controller"], "");
-        let o = overlay(&json!({}), "rule");
+        let o = overlay(&json!({}), "rule", &crate::store::Settings::default());
         assert_eq!(o["dns"]["enhanced-mode"], "fake-ip");
     }
 }

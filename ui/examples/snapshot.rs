@@ -14,6 +14,199 @@ impl Platform for Headless {
     }
 }
 
+fn sample_requests(now: i64) -> requests_view::ReqState {
+    use serde_json::json;
+    let mut st = requests_view::ReqState::default();
+    let t = |ago: i64| now - ago * 1000;
+    let conn = |id: i64,
+                ago: i64,
+                host: &str,
+                process: &str,
+                chains: serde_json::Value,
+                rule: &str,
+                payload: &str| {
+        json!({"id": id, "start": t(ago), "network": "tcp", "sourceIp": "172.19.0.1", "sourcePort": 40000 + id,
+               "destinationIp": "198.18.0.12", "destinationPort": 443, "host": host, "process": process,
+               "processPath": format!("/data/app/{process}"), "uid": 10234, "chains": chains, "rule": rule,
+               "rulePayload": payload, "ruleIndex": 12, "dnsMode": "fake-ip", "destinationGeoIp": ["US"],
+               "destinationAsn": "AS15169 Google LLC", "upload": 18_432 * id, "download": 1_204_224 * id,
+               "dnsQueries": [7],
+               "timing": {"accepted": t(ago), "dnsStart": 1200, "dnsEnd": 13_400, "routed": 14_000,
+                          "dialStart": 14_500, "connected": 92_000, "dialEnd": 120_000}})
+    };
+    let mut failed = conn(
+        5,
+        200,
+        "api.example.invalid",
+        "com.example.app",
+        json!(["DIRECT"]),
+        "MATCH",
+        "",
+    );
+    failed["failure"] =
+        json!({"kind": "timeout", "message": "dial tcp 203.0.113.5:443: i/o timeout"});
+    let mut mitm = conn(
+        6,
+        20,
+        "www.google.com",
+        "com.android.chrome",
+        json!(["香港 01", "节点选择"]),
+        "DOMAIN-SUFFIX",
+        "google.com",
+    );
+    mitm["mitm"] = json!(true);
+    st.conns.take(
+        &json!({"connections": [
+            conn(1, 300, "www.youtube.com", "com.google.android.youtube", json!(["香港 01", "节点选择"]), "GEOSITE", "youtube"),
+            conn(2, 240, "", "com.tencent.mm", json!(["DIRECT"]), "GEOIP", "CN"),
+            conn(3, 150, "github.com", "com.github.android", json!(["日本 03", "自动选择", "节点选择"]), "DOMAIN-SUFFIX", "github.com"),
+            conn(4, 90, "dns.google", "", json!(["DIRECT"]), "", ""),
+            failed, mitm
+        ]}),
+        now - 3000,
+    );
+    st.conns.take(&json!({"counters": [{"id": 1, "upload": 60_000, "download": 2_600_000}, {"id": 6, "upload": 9000, "download": 380_000}], "closed": [2, 5], "ended": [{"id": 2, "reason": "remote", "endedAt": t(100)}]}), now - 1000);
+    for (i, (domain, kind, rcode, cached, ago)) in [
+        ("www.youtube.com", "A", "NOERROR", false, 301),
+        ("github.com", "AAAA", "NOERROR", true, 151),
+        ("api.example.invalid", "A", "NXDOMAIN", false, 201),
+        ("www.google.com", "HTTPS", "NOERROR", false, 21),
+    ]
+    .iter()
+    .enumerate()
+    {
+        st.dns.push(&json!({"id": 6 + i as i64, "domain": domain, "type": kind, "initiator": "app",
+            "upstream": "https://dns.alidns.com/dns-query", "cached": cached,
+            "answers": if *rcode == "NOERROR" { json!(["198.18.0.12", "198.18.0.13"]) } else { json!([]) },
+            "rcode": rcode, "delay": 18 + i as i64 * 7, "time": t(*ago)}));
+    }
+    let start = |ago: i64| {
+        let secs = (now / 1000 - ago).rem_euclid(86_400);
+        let days = (now / 1000 - ago).div_euclid(86_400);
+        let (y, m, d) = requests::civil(days);
+        format!(
+            "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.120Z",
+            secs / 3600,
+            secs / 60 % 60,
+            secs % 60
+        )
+    };
+    let ex = |id: i64, ago: i64, method: &str, path: &str, status: i64, kind: &str| {
+        json!({"id": id, "start": start(ago), "duration": 230 + id * 40, "method": method,
+               "url": format!("https://www.google.com{path}"), "status": status, "response-size": 2048 * id,
+               "host": "www.google.com", "path": path, "status-class": "", "kind": kind,
+               "connection-id": 6, "app": {"process": "com.android.chrome"},
+               "action-kinds": if id == 3 { json!(["header-rewrite"]) } else { json!([]) }, "rewritten": id == 3})
+    };
+    st.http.take(vec![http_capture::Page::parse(&json!({"version": 3, "oldest": 1, "exchanges": [
+        ex(1, 19, "GET", "/", 200, "html"), ex(2, 18, "POST", "/gen_204?atyp=i", 204, "other"),
+        ex(3, 17, "GET", "/complete/search?q=slint", 200, "json"), ex(4, 15, "GET", "/favicon.ico", 404, "image")]}))]);
+    st.exchange = Some(
+        json!({"id": 3, "start": start(17), "duration": 350, "ttfb": 120, "method": "GET",
+        "url": "https://www.google.com/complete/search?q=slint", "proto": "HTTP/2.0", "status": 200, "reason": "OK",
+        "request-size": 0, "response-size": 6144, "connection-id": 6,
+        "request-header": {"Accept": ["*/*"], "User-Agent": ["Mozilla/5.0 (Linux; Android 15)"]},
+        "response-header": {"Content-Type": ["application/json; charset=UTF-8"], "Cache-Control": ["private, max-age=3600"]},
+        "actions": [{"kind": "header-rewrite", "phase": "response", "detail": "Cache-Control", "module": ""}],
+        "route": {"rule": "DOMAIN-SUFFIX", "rule-payload": "google.com", "chains": ["香港 01", "节点选择"]}}),
+    );
+    st.bodies = [
+        None,
+        Some("[\"slint\",[\"slint ui\",\"slint rust\",\"slint android\"]]".into()),
+    ];
+    st
+}
+
+/// The requests page's properties for a shot: `req:<segment>:<selected>:<tab>:<extra>`.
+fn requests_shot(ui: &AppWindow, st: &mut requests_view::ReqState, now: i64, overlay: &str) {
+    let parts: Vec<&str> = overlay.split(':').collect();
+    let num = |i: usize| parts.get(i).and_then(|p| p.parse::<i64>().ok());
+    st.segment = num(1).unwrap_or(0) as i32;
+    st.selected = [None; 3];
+    let seg = st.segment as usize;
+    st.selected[seg] = num(2).filter(|id| *id > 0);
+    st.tab[seg] = num(3).unwrap_or(0) as i32;
+    let extra = parts.get(4).copied().unwrap_or("");
+    st.filters = Default::default();
+    if extra == "filter" {
+        st.filters[0].status = 1;
+        st.filters[0].add(requests::Condition {
+            field: "host".into(),
+            value: "google".into(),
+            excludes: false,
+            equals: false,
+        });
+        st.filters[0].add(requests::Condition {
+            field: "host".into(),
+            value: "youtube".into(),
+            excludes: false,
+            equals: false,
+        });
+        st.filters[0].add(requests::Condition {
+            field: "app".into(),
+            value: "com.tencent.mm".into(),
+            excludes: true,
+            equals: true,
+        });
+    }
+    let groups = proxies::Groups::parse(
+        &serde_json::json!({"groups": [{"name": "节点选择", "type": "Selector"}, {"name": "自动选择", "type": "URLTest"}],
+        "nodes": [{"name": "香港 01", "type": "Shadowsocks"}, {"name": "日本 03", "type": "Trojan"}]}),
+    );
+    let delays = std::collections::HashMap::from([("香港 01".to_string(), 86)]);
+    let cx = requests_view::Ctx {
+        now,
+        offset: 8 * 3600,
+        capturing: true,
+        groups: &groups,
+        delays: &delays,
+    };
+    let model = |v: Vec<RecordRow>| ModelRc::new(VecModel::from(v));
+    ui.set_req_rows(model(st.rows(&cx)));
+    ui.set_req_segment(st.segment);
+    ui.set_req_shows_http(true);
+    ui.set_req_statuses(ModelRc::new(VecModel::from(st.status_labels())));
+    ui.set_req_status(st.filters().status);
+    ui.set_req_conditions(ModelRc::new(VecModel::from(st.condition_lines())));
+    let (empty, desc) = st.empty(false);
+    ui.set_req_empty(empty.into());
+    ui.set_req_empty_desc(desc.into());
+    ui.set_req_detail(st.detail(&cx));
+    ui.set_req_sheet_open(extra == "sheet");
+    ui.set_req_searching(false);
+    ui.set_req_actions_open(extra == "menu" || extra == "row");
+    if extra == "menu" {
+        let mitm = store::MitmSettings {
+            enable: true,
+            capture: true,
+            ..Default::default()
+        };
+        st.limit_open = true;
+        ui.set_req_actions(ModelRc::new(VecModel::from(st.page_actions(&mitm))));
+    } else if extra == "row" {
+        ui.set_req_actions(ModelRc::new(VecModel::from(st.row_actions(0, 6))));
+    }
+    ui.set_cond_open(extra == "cond");
+    if extra == "cond" {
+        st.open_draft(None);
+        st.draft.as_mut().unwrap().value = "goo".into();
+        let (suggestions, shows, ready) = st.draft_outcome();
+        let fields: Vec<slint::SharedString> = requests_view::fields(0)
+            .iter()
+            .map(|f| f.1.into())
+            .collect();
+        ui.set_cond_fields(ModelRc::new(VecModel::from(fields)));
+        ui.set_cond_field(0);
+        ui.set_cond_op(0);
+        ui.set_cond_value("goo".into());
+        ui.set_cond_suggestions(ModelRc::new(VecModel::from(suggestions)));
+        ui.set_cond_shows(shows.into());
+        ui.set_cond_ready(ready);
+        ui.set_cond_values_in("当前连接里的主机".into());
+        ui.set_cond_tip("同一字段的条件满足其一即可，不同字段的都要满足。搜索框里也能这样写：host:github.com -app:slack".into());
+    }
+}
+
 fn main() {
     let out = std::env::args().nth(1).unwrap_or_else(|| ".".into());
     let (w, h) = (412u32, 892u32);
@@ -210,7 +403,102 @@ fn main() {
     let _ = ui.get_logs().row_count();
 
     // (file, tab, open group, tools or profiles page, theme mode, overlay)
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let mut req = sample_requests(now);
+    ui.set_res_items(ModelRc::new(VecModel::from(
+        [
+            ("mmdb", "MMDB", "3 分钟前", "8.2 MB", false),
+            ("asn", "ASN", "2 天前", "10.4 MB", true),
+            ("geosite", "GEOSITE", "未知", "", false),
+        ]
+        .iter()
+        .map(|(key, title, sub, chip, busy)| ResourceItem {
+            key: (*key).into(),
+            title: (*title).into(),
+            subtitle: (*sub).into(),
+            chip: (*chip).into(),
+            url: resources::default_url(key).into(),
+            busy: *busy,
+        })
+        .collect::<Vec<_>>(),
+    )));
+    ui.set_res_auto(true);
+    ui.set_res_interval("24 小时".into());
+    ui.on_res_check(|kind, value| {
+        let e = if kind == "interval" {
+            resources::check_interval(&value).err()
+        } else {
+            resources::check_url(&value).err()
+        };
+        e.unwrap_or_default().into()
+    });
+    ui.on_res_digits(|value| resources::digits_only(&value).into());
     let shots: &[(&str, i32, &str, &str, i32, &str)] = &[
+        ("requests", 3, "", "requests", 1, "req:0:0:0"),
+        ("requests-filter", 3, "", "requests", 1, "req:0:0:0:filter"),
+        ("requests-dns", 3, "", "requests", 1, "req:2:0:0"),
+        ("requests-http", 3, "", "requests", 1, "req:1:0:0"),
+        ("requests-sheet", 3, "", "requests", 1, "req:0:6:0:sheet"),
+        (
+            "requests-sheet-info",
+            3,
+            "",
+            "requests",
+            1,
+            "req:0:3:2:sheet",
+        ),
+        (
+            "requests-sheet-failed",
+            3,
+            "",
+            "requests",
+            1,
+            "req:0:5:1:sheet",
+        ),
+        (
+            "requests-sheet-dns",
+            3,
+            "",
+            "requests",
+            1,
+            "req:2:3:0:sheet",
+        ),
+        (
+            "requests-sheet-http",
+            3,
+            "",
+            "requests",
+            1,
+            "req:1:3:0:sheet",
+        ),
+        (
+            "requests-sheet-http-response",
+            3,
+            "",
+            "requests",
+            1,
+            "req:1:3:2:sheet",
+        ),
+        ("requests-menu", 3, "", "requests", 1, "req:0:0:0:menu"),
+        ("requests-row-menu", 3, "", "requests", 1, "req:0:0:0:row"),
+        ("requests-cond", 3, "", "requests", 1, "req:0:0:0:cond"),
+        ("requests-small", 3, "", "requests", 1, "req:0:0:0"),
+        ("requests-wide", 4, "", "", 1, "req:0:3:2"),
+        ("requests-timeline-wide", 4, "", "", 1, "req:0:6:0"),
+        ("requests-empty-wide", 4, "", "", 1, "req:0:0:0"),
+        ("requests-dns-wide", 4, "", "", 1, "req:2:3:0"),
+        ("requests-http-wide", 4, "", "", 1, "req:1:3:0"),
+        ("requests-tablet", 4, "", "", 1, "req:0:6:0:sheet"),
+        ("requests-dark", 3, "", "requests", 2, "req:0:0:0"),
+        ("resources", 3, "", "resources", 1, ""),
+        ("resources-interval", 3, "", "resources", 1, "res:interval"),
+        ("resources-url", 3, "", "resources", 1, "res:url"),
+        ("resources-wide", 3, "", "resources", 1, ""),
+        ("resources-tablet", 3, "", "resources", 1, ""),
+        ("tools-wide", 3, "", "", 1, ""),
         ("dashboard", 0, "", "", 1, ""),
         ("dashboard-edit", 0, "", "", 1, "edit"),
         ("dashboard-tablet", 0, "", "", 1, ""),
@@ -264,6 +552,22 @@ fn main() {
         ui.set_inset_bottom(if *overlay == "inset" { 24.0 } else { 0.0 });
         ui.set_tab(*tab);
         ui.set_current_group((*group).into());
+        ui.set_req_sheet_open(false);
+        ui.set_req_actions_open(false);
+        ui.set_cond_open(false);
+        if overlay.starts_with("req") {
+            requests_shot(&ui, &mut req, now, overlay);
+        }
+        ui.set_res_dialog(overlay.strip_prefix("res:").unwrap_or("").into());
+        if *overlay == "res:interval" {
+            ui.set_res_dialog_title("自动更新间隔".into());
+            ui.set_res_dialog_value("24".into());
+            ui.set_res_dialog_default("".into());
+        } else if *overlay == "res:url" {
+            ui.set_res_dialog_title("MMDB".into());
+            ui.set_res_dialog_value("https://example.com/geo".into());
+            ui.set_res_dialog_default(resources::default_url("mmdb").into());
+        }
         if *tab == 2 {
             ui.set_profiles_page((*page).into());
             ui.set_tools_page("".into());

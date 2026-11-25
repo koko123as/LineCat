@@ -4,8 +4,14 @@
 
 pub mod bridge;
 pub mod dashboard;
+pub mod dns_queries;
+pub mod http_capture;
 pub mod profile;
 pub mod proxies;
+pub mod requests;
+mod requests_app;
+pub mod requests_view;
+pub mod resources;
 pub mod store;
 pub mod theme;
 
@@ -82,6 +88,12 @@ struct App {
     last_id: Mutex<u64>,
     pending_key: Mutex<Option<PendingKey>>,
     sort_order: Mutex<Vec<String>>,
+    req: Mutex<requests_view::ReqState>,
+    http_reading: AtomicBool,
+    core_home: Mutex<PathBuf>,
+    /// Geo files being fetched, by `GeoResource` name, and those a tap asked for.
+    geo_busy: Mutex<HashSet<String>>,
+    geo_manual: Mutex<HashSet<String>>,
 }
 
 /// Why a profile file could not be taken in.
@@ -380,6 +392,7 @@ impl App {
             .map(String::from)
             .unwrap_or_else(|| self.home.to_string_lossy().into_owned());
         let sdk = hello.get("sdkInt").and_then(Value::as_i64);
+        *self.core_home.lock().unwrap() = PathBuf::from(&home);
         if let Some(edges) = hello.get("insets") {
             self.set_edges(edges.clone());
         }
@@ -427,6 +440,7 @@ impl App {
                 }
             }),
         )?;
+        self.watch_requests(bridge)?;
         if engine == "configured" || engine == "running" {
             self.configured.store(true, Ordering::SeqCst);
             self.refresh_groups();
@@ -510,7 +524,7 @@ impl App {
 
     fn apply_active(self: &Arc<Self>) -> Result<(), String> {
         let bridge = self.bridge()?;
-        let (path, selection, mode) = {
+        let (path, selection, mode, settings) = {
             let store = self.store.lock().unwrap();
             let Some(p) = store.active() else {
                 return Err("添加一个配置文件后即可开始使用".into());
@@ -519,6 +533,7 @@ impl App {
                 store.profile_path(&p.id),
                 p.selection.clone(),
                 store.state.settings.mode,
+                store.state.settings.clone(),
             )
         };
         let inspect = bridge.call(
@@ -529,12 +544,13 @@ impl App {
         let overlay = profile::overlay(
             inspect.get("config").unwrap_or(&Value::Null),
             store::mode_name(mode),
+            &settings,
         );
         let params = json!({
             "profile": profile_ref(&path),
             "overlay": overlay,
             "selection": selection,
-            "options": profile::options(),
+            "options": profile::options(http_capture::capturing(&settings.mitm)),
         });
         bridge.call("config.apply", params.clone(), APPLY)?;
         *self.last_apply.lock().unwrap() = Some(params);
@@ -1646,7 +1662,7 @@ impl App {
     fn preview(self: &Arc<Self>, id: String) {
         self.spawn(move |app| {
             let path = app.store.lock().unwrap().profile_path(&id);
-            let mode = app.store.lock().unwrap().state.settings.mode;
+            let settings = app.store.lock().unwrap().state.settings.clone();
             let result = app.bridge().and_then(|b| {
                 let inspect = b.call(
                     "profile.inspect",
@@ -1655,7 +1671,8 @@ impl App {
                 )?;
                 let overlay = profile::overlay(
                     inspect.get("config").unwrap_or(&Value::Null),
-                    store::mode_name(mode),
+                    store::mode_name(settings.mode),
+                    &settings,
                 );
                 b.call(
                     "profile.build",
@@ -1845,6 +1862,7 @@ impl App {
     fn confirmed(self: &Arc<Self>, action: String, arg: String, yes: bool, form: EditForm) {
         match (action.as_str(), yes) {
             ("delete", true) => self.delete_profile(arg),
+            ("close-active", true) => self.close_active(),
             ("edit-save", _) => self.save_edit(form, yes),
             _ => {}
         }
@@ -2162,6 +2180,11 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         last_id: Mutex::new(0),
         pending_key: Mutex::new(None),
         sort_order: Mutex::new(Vec::new()),
+        req: Mutex::new(requests_view::ReqState::default()),
+        http_reading: AtomicBool::new(false),
+        core_home: Mutex::new(PathBuf::new()),
+        geo_busy: Mutex::new(HashSet::new()),
+        geo_manual: Mutex::new(HashSet::new()),
     });
 
     let apply_theme = |ui: &AppWindow, accent: usize| {
@@ -2314,6 +2337,27 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         let mut store = a.store.lock().unwrap();
         store.state.settings.theme_mode = m;
         store.save();
+    });
+
+    app.bind_requests(&ui);
+    let ticker = slint::Timer::default();
+    let a = app.clone();
+    let w = ui.as_weak();
+    ticker.start(
+        slint::TimerMode::Repeated,
+        Duration::from_secs(1),
+        move || {
+            if let Some(ui) = w.upgrade() {
+                a.tick_requests(&ui);
+            }
+        },
+    );
+    let a = app.clone();
+    let w = ui.as_weak();
+    ui.on_page_shown(move || {
+        if let Some(ui) = w.upgrade() {
+            a.tick_requests(&ui);
+        }
     });
 
     let a = app.clone();

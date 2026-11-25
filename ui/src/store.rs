@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Settings {
     /// Index into `theme::ACCENTS`.
@@ -18,6 +18,39 @@ pub struct Settings {
     pub proxies: ProxiesStyle,
     /// The dashboard's cards in order; none kept means the defaults.
     pub dashboard: Option<Vec<String>>,
+    pub mitm: MitmSettings,
+    pub geo_auto_update: bool,
+    /// Hours.
+    pub geo_update_interval: i64,
+    /// `geox-url`, keyed mmdb / asn / geosite.
+    pub geox_url: BTreeMap<String, String>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            accent: 0,
+            theme_mode: 0,
+            mode: 0,
+            proxies: ProxiesStyle::default(),
+            dashboard: None,
+            mitm: MitmSettings::default(),
+            geo_auto_update: true,
+            geo_update_interval: 24,
+            geox_url: crate::resources::default_urls(),
+        }
+    }
+}
+
+/// The part of `Mitm` in lib/models/clash_config.dart the requests page reads and sets.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct MitmSettings {
+    pub enable: bool,
+    pub hostname: Vec<String>,
+    pub capture: bool,
+    /// None keeps the platform's limit.
+    pub capture_entries: Option<i64>,
 }
 
 /// `ProxiesStyleProps` in lib/models/config.dart.
@@ -273,9 +306,17 @@ mod tests {
         store.save();
         let again = Store::open(&home);
         assert!(again.state.profiles[0].auto_update);
+        assert!(again.state.settings.geo_auto_update);
+        assert_eq!(again.state.settings.geo_update_interval, 24);
         assert_eq!(again.state, store.state);
         assert_eq!(again.active().unwrap().name, "a");
         let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn older_settings_take_the_geo_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"accent":2}"#).unwrap();
+        assert!(s.geo_auto_update && s.geox_url.len() == 3 && !s.mitm.capture);
     }
 
     #[test]
