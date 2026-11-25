@@ -24,7 +24,87 @@ pub struct Settings {
     pub geo_update_interval: i64,
     /// `geox-url`, keyed mmdb / asn / geosite.
     pub geox_url: BTreeMap<String, String>,
+    /// `AppSettingProps.locale`; None follows the system.
+    pub locale: Option<String>,
+    pub pure_black: bool,
+    pub developer_mode: bool,
+    pub auto_check_update: bool,
+    pub general: General,
 }
+
+/// What lib/views/config/general.dart sets: `AppSettingProps`, `PatchClashConfig` and
+/// `NetworkProps` fields.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct General {
+    pub auto_run: bool,
+    pub minimize_on_exit: bool,
+    /// `hidden`: kept out of the recent tasks.
+    pub hidden: bool,
+    pub show_notification_stop_action: bool,
+    /// `globalUa`; None sends the default.
+    pub global_ua: Option<String>,
+    /// The user agents offered beside the default (`userAgents`).
+    pub user_agents: Vec<String>,
+    pub check_certificate: bool,
+    pub mixed_port: i64,
+    pub allow_lan: bool,
+    pub external_controller: bool,
+    pub secret: String,
+    pub external_controller_cors: bool,
+    pub authentication: Authentication,
+    /// Milliseconds.
+    pub delay_test_timeout: i64,
+    pub find_process_always: bool,
+    pub close_connections: bool,
+    pub only_statistics_proxy: bool,
+    pub hosts: BTreeMap<String, String>,
+    pub append_system_dns: bool,
+    /// `openLogs`: the logs page and its entry.
+    pub open_logs: bool,
+}
+
+impl Default for General {
+    fn default() -> Self {
+        General {
+            auto_run: false,
+            minimize_on_exit: true,
+            hidden: false,
+            show_notification_stop_action: true,
+            global_ua: None,
+            user_agents: DEFAULT_USER_AGENTS.iter().map(|s| s.to_string()).collect(),
+            check_certificate: true,
+            mixed_port: 7890,
+            allow_lan: false,
+            external_controller: false,
+            secret: String::new(),
+            external_controller_cors: false,
+            authentication: Authentication::default(),
+            delay_test_timeout: DEFAULT_DELAY_TEST_TIMEOUT,
+            find_process_always: false,
+            close_connections: true,
+            only_statistics_proxy: false,
+            hosts: BTreeMap::new(),
+            append_system_dns: false,
+            open_logs: false,
+        }
+    }
+}
+
+/// `AuthenticationProps`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Authentication {
+    pub enable: bool,
+    pub username: String,
+    pub password: String,
+}
+
+/// `defaultUserAgents` in lib/models/config.dart.
+pub const DEFAULT_USER_AGENTS: [&str; 2] = ["clash-verge/v2.4.2", "ClashforWindows/0.19.23"];
+/// `delayTestTimeoutOptions` and `defaultDelayTestTimeout` in lib/common/constant.dart.
+pub const DELAY_TEST_TIMEOUTS: [i64; 5] = [500, 1000, 2000, 5000, 8000];
+pub const DEFAULT_DELAY_TEST_TIMEOUT: i64 = 8000;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -38,6 +118,11 @@ impl Default for Settings {
             geo_auto_update: true,
             geo_update_interval: 24,
             geox_url: crate::resources::default_urls(),
+            locale: None,
+            pure_black: false,
+            developer_mode: false,
+            auto_check_update: true,
+            general: General::default(),
         }
     }
 }
@@ -317,6 +402,17 @@ mod tests {
     fn older_settings_take_the_geo_defaults() {
         let s: Settings = serde_json::from_str(r#"{"accent":2}"#).unwrap();
         assert!(s.geo_auto_update && s.geox_url.len() == 3 && !s.mitm.capture);
+    }
+
+    #[test]
+    fn older_settings_take_flclash_general_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"accent":2}"#).unwrap();
+        let g = &s.general;
+        assert!(s.locale.is_none() && !s.developer_mode && s.auto_check_update);
+        assert!(g.check_certificate && g.close_connections && g.show_notification_stop_action);
+        assert!(!g.open_logs && !g.allow_lan && !g.authentication.enable);
+        assert_eq!((g.mixed_port, g.delay_test_timeout), (7890, 8000));
+        assert_eq!(g.user_agents.len(), 2);
     }
 
     #[test]

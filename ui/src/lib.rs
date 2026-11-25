@@ -13,6 +13,8 @@ pub mod requests;
 mod requests_app;
 pub mod requests_view;
 pub mod resources;
+mod settings_app;
+pub mod settings_view;
 pub mod store;
 pub mod theme;
 
@@ -96,6 +98,12 @@ struct App {
     geo_busy: Mutex<HashSet<String>>,
     geo_manual: Mutex<HashSet<String>>,
     edges: Mutex<Option<edges::Report>>,
+    /// The installed version (`versionName`), from the shell.
+    app_version: Mutex<String>,
+    /// The about page's logo taps: how many, and when the last was.
+    logo_taps: Mutex<(u32, Option<std::time::Instant>)>,
+    /// Auto run and the update check go once per process, not on every reconnect.
+    started_once: AtomicBool,
 }
 
 /// Why a profile file could not be taken in.
@@ -196,6 +204,16 @@ fn file_info(path: &std::path::Path) -> String {
         }
         Err(_) => "未知".into(),
     }
+}
+
+/// The accent's schemes; `pureBlack` turns the dark page black.
+fn apply_theme(ui: &AppWindow, accent: usize, pure_black: bool) {
+    let [light, mut dark] = theme::SCHEMES[accent.min(theme::SCHEMES.len() - 1)];
+    if pure_black {
+        dark.page = 0x000000;
+    }
+    ui.global::<Theme>().set_light(scheme(&light));
+    ui.global::<Theme>().set_dark(scheme(&dark));
 }
 
 fn rgb(v: u32) -> slint::Color {
@@ -404,12 +422,6 @@ impl App {
             CALL,
         )?;
         *self.bridge.lock().unwrap() = Some(bridge.clone());
-        let core_version = greeting
-            .pointer("/server/version")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        self.ui(move |ui| ui.set_version(format!("UI {VERSION} · Concord {core_version}").into()));
         let engine = greeting
             .pointer("/engine/state")
             .and_then(Value::as_str)
@@ -449,6 +461,7 @@ impl App {
         } else if self.store.lock().unwrap().active().is_some() {
             self.apply_active()?;
         }
+        self.on_connected(&hello);
         Ok(())
     }
 
@@ -550,8 +563,12 @@ impl App {
             "profile": profile_ref(&path),
             "overlay": overlay,
             "selection": selection,
-            "options": profile::options(http_capture::capturing(&settings.mitm)),
+            "options": profile::options(&settings, http_capture::capturing(&settings.mitm)),
         });
+        let mut params = params;
+        if let Some(host) = profile::host_settings(&settings.general) {
+            params["host"] = host;
+        }
         bridge.call("config.apply", params.clone(), APPLY)?;
         *self.last_apply.lock().unwrap() = Some(params);
         self.configured.store(true, Ordering::SeqCst);
@@ -748,17 +765,33 @@ impl App {
                     bridge.shell("vpn.stop", json!({}), APPLY)?;
                     return Ok(());
                 }
-                let name = match app.store.lock().unwrap().active() {
-                    Some(p) => p.name.clone(),
-                    None => return Err("添加一个配置文件后即可开始使用".into()),
+                let (name, settings) = {
+                    let store = app.store.lock().unwrap();
+                    match store.active() {
+                        Some(p) => (p.name.clone(), store.state.settings.clone()),
+                        None => return Err("添加一个配置文件后即可开始使用".into()),
+                    }
                 };
-                if !app.configured.load(Ordering::SeqCst) || app.last_apply.lock().unwrap().is_none() {
+                if !app.configured.load(Ordering::SeqCst)
+                    || app.last_apply.lock().unwrap().is_none()
+                {
                     app.apply_active()?;
                 }
-                let setup = app.last_apply.lock().unwrap().clone().unwrap_or(Value::Null);
+                let setup = app
+                    .last_apply
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap_or(Value::Null);
                 bridge.shell(
                     "vpn.start",
-                    json!({"profileName": name, "vpnOptions": profile::vpn_options(), "setupParams": setup}),
+                    json!({
+                        "profileName": name,
+                        "vpnOptions": profile::vpn_options(&settings),
+                        "setupParams": setup,
+                        "onlyStatisticsProxy": settings.general.only_statistics_proxy,
+                        "showStopAction": settings.general.show_notification_stop_action,
+                    }),
                     Duration::from_secs(300),
                 )?;
                 Ok(())
@@ -985,7 +1018,15 @@ impl App {
         url: &str,
         age_key: &str,
     ) -> Result<(Option<String>, store::Subscription), Ingest> {
-        let download = profile::download(url).map_err(Ingest::Failed)?;
+        let check = self
+            .store
+            .lock()
+            .unwrap()
+            .state
+            .settings
+            .general
+            .check_certificate;
+        let download = profile::download(url, check).map_err(Ingest::Failed)?;
         let tmp = self.temp_for(id);
         std::fs::write(&tmp, &download.bytes).map_err(|e| Ingest::Failed(e.to_string()))?;
         self.save_file(&tmp, id, age_key)?;
@@ -1863,6 +1904,7 @@ impl App {
         match (action.as_str(), yes) {
             ("delete", true) => self.delete_profile(arg),
             ("close-active", true) => self.close_active(),
+            ("clear-data", true) => self.clear_data(),
             ("edit-save", _) => self.save_edit(form, yes),
             _ => {}
         }
@@ -1990,8 +2032,15 @@ impl App {
                     if let Some(params) = app.last_apply.lock().unwrap().as_mut() {
                         params["selection"][group.as_str()] = next.into();
                     }
-                    // `closeConnections` is on by default: the old picks' connections go.
-                    if r.get("changed").and_then(Value::as_bool).unwrap_or(true) {
+                    let close = app
+                        .store
+                        .lock()
+                        .unwrap()
+                        .state
+                        .settings
+                        .general
+                        .close_connections;
+                    if close && r.get("changed").and_then(Value::as_bool).unwrap_or(true) {
                         if let Ok(b) = app.bridge() {
                             let _ = b.call("connection.close", json!({"all": true}), CALL);
                         }
@@ -2041,6 +2090,15 @@ impl App {
             }
         }
         self.publish_groups();
+        let timeout = self
+            .store
+            .lock()
+            .unwrap()
+            .state
+            .settings
+            .general
+            .delay_test_timeout
+            .max(1) as u64;
         let workers = DELAY_WORKERS.min(names.len()).max(1);
         let queue = Arc::new(Mutex::new(VecDeque::from(names)));
         let left = Arc::new(AtomicU64::new(workers as u64));
@@ -2050,22 +2108,30 @@ impl App {
                 (queue.clone(), left.clone(), url.clone(), group.clone());
             self.spawn(move |app| {
                 loop {
-                    let Some(name) = queue.lock().unwrap().pop_front() else { break };
-                    app.delays.lock().unwrap().insert(name.clone(), proxies::DELAY_RUNNING);
+                    let Some(name) = queue.lock().unwrap().pop_front() else {
+                        break;
+                    };
+                    app.delays
+                        .lock()
+                        .unwrap()
+                        .insert(name.clone(), proxies::DELAY_RUNNING);
                     app.publish_groups();
                     let value = app
                         .bridge()
                         .and_then(|b| {
                             b.call(
                                 "delay.test",
-                                json!({"proxy": name, "url": url, "timeout": profile::DELAY_TEST_TIMEOUT_MS}),
-                                Duration::from_millis(profile::DELAY_TEST_TIMEOUT_MS + 7000),
+                                json!({"proxy": name, "url": url, "timeout": timeout}),
+                                Duration::from_millis(timeout + 7000),
                             )
                         })
                         .ok()
                         .and_then(|r| r.get("value").and_then(Value::as_i64))
                         .unwrap_or(-2) as i32;
-                    app.delays.lock().unwrap().insert(name, if value == 0 { -2 } else { value });
+                    app.delays
+                        .lock()
+                        .unwrap()
+                        .insert(name, if value == 0 { -2 } else { value });
                     app.publish_groups();
                 }
                 if left.fetch_sub(1, Ordering::SeqCst) == 1 {
@@ -2186,19 +2252,16 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         geo_busy: Mutex::new(HashSet::new()),
         geo_manual: Mutex::new(HashSet::new()),
         edges: Mutex::new(None),
+        app_version: Mutex::new(String::new()),
+        logo_taps: Mutex::new((0, None)),
+        started_once: AtomicBool::new(false),
     });
 
-    let apply_theme = |ui: &AppWindow, accent: usize| {
-        let [light, dark] = theme::SCHEMES[accent.min(theme::SCHEMES.len() - 1)];
-        ui.global::<Theme>().set_light(scheme(&light));
-        ui.global::<Theme>().set_dark(scheme(&dark));
-    };
-    apply_theme(&ui, settings.accent);
+    apply_theme(&ui, settings.accent, settings.pure_black);
     ui.global::<Theme>().set_mode(settings.theme_mode);
     ui.set_accent(settings.accent as i32);
     ui.set_theme_mode(settings.theme_mode);
     ui.set_mode(settings.mode);
-    ui.set_version(format!("UI {VERSION}").into());
     ui.set_accents(ModelRc::new(VecModel::from(
         theme::ACCENTS.iter().map(|c| rgb(*c)).collect::<Vec<_>>(),
     )));
@@ -2211,6 +2274,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         if let Some(ui) = w.upgrade() {
             a.fit_edges(&ui);
         }
+        a.publish_settings();
     });
     let a = app.clone();
     ui.on_toggle_vpn(move || a.toggle_vpn());
@@ -2328,7 +2392,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     ui.on_set_accent(move |i| {
         let i = i.max(0) as usize;
         if let Some(ui) = w.upgrade() {
-            apply_theme(&ui, i);
+            apply_theme(&ui, i, a.store.lock().unwrap().state.settings.pure_black);
             ui.set_accent(i as i32);
         }
         let mut store = a.store.lock().unwrap();
@@ -2347,7 +2411,23 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         store.save();
     });
 
+    let a = app.clone();
+    let w = ui.as_weak();
+    ui.on_set_pure_black(move |on| {
+        let accent = {
+            let mut store = a.store.lock().unwrap();
+            store.state.settings.pure_black = on;
+            store.save();
+            store.state.settings.accent
+        };
+        if let Some(ui) = w.upgrade() {
+            apply_theme(&ui, accent, on);
+            ui.set_pure_black(on);
+        }
+    });
+
     app.bind_requests(&ui);
+    app.bind_settings(&ui);
     let ticker = slint::Timer::default();
     let a = app.clone();
     let w = ui.as_weak();

@@ -9,7 +9,6 @@ use std::time::Duration;
 /// so subscription servers answer as they answer FlClash. The version is pubspec's.
 pub const USER_AGENT: &str = "FlClash/v0.9.4 clash-verge Platform/android";
 pub const DEFAULT_TEST_URL: &str = "https://www.gstatic.com/generate_204";
-pub const DELAY_TEST_TIMEOUT_MS: u64 = 8000;
 const MAX_PROFILE_BYTES: u64 = 32 << 20;
 
 pub struct Download {
@@ -152,9 +151,15 @@ pub fn share_link_proxies(
     Ok((proxies, label))
 }
 
-pub fn download(url: &str) -> Result<Download, String> {
+/// `check` off is `checkCertificate` off: the certificate goes unverified (lib/common/http.dart).
+pub fn download(url: &str, check: bool) -> Result<Download, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(30)))
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .disable_verification(!check)
+                .build(),
+        )
         .build()
         .into();
     let mut response = agent
@@ -303,15 +308,25 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
     set(&mut c, "keep-alive-idle", 15.into());
     set(&mut c, "disable-keep-alive", false.into());
     set(&mut c, "routing-mark", 0.into());
-    set(&mut c, "mixed-port", 7890.into());
+    let general = &settings.general;
+    set(&mut c, "mixed-port", general.mixed_port.into());
     set(&mut c, "port", 0.into());
     set(&mut c, "socks-port", 0.into());
     set(&mut c, "redir-port", 0.into());
     set(&mut c, "tproxy-port", 0.into());
-    set(&mut c, "allow-lan", false.into());
-    set(&mut c, "authentication", json!([]));
+    set(&mut c, "allow-lan", general.allow_lan.into());
+    set(&mut c, "authentication", json!(authentication(general)));
     set(&mut c, "skip-auth-prefixes", json!([]));
-    set(&mut c, "find-process-mode", "strict".into());
+    set(
+        &mut c,
+        "find-process-mode",
+        if general.find_process_always {
+            "always"
+        } else {
+            "strict"
+        }
+        .into(),
+    );
     set(&mut c, "mode", mode.into());
     let mut tun = c
         .get("tun")
@@ -362,9 +377,18 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
             set(&mut c, "mitm", Value::Object(mitm));
         }
     }
-    set(&mut c, "global-ua", USER_AGENT.into());
+    set(
+        &mut c,
+        "global-ua",
+        general.global_ua.as_deref().unwrap_or(USER_AGENT).into(),
+    );
     if !c.get("hosts").is_some_and(Value::is_object) {
         set(&mut c, "hosts", json!({}));
+    }
+    if let Some(hosts) = c.get_mut("hosts").and_then(Value::as_object_mut) {
+        for (host, value) in &general.hosts {
+            hosts.insert(host.clone(), host_value(value));
+        }
     }
     let mut dns = c
         .get("dns")
@@ -383,27 +407,114 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
             ]),
         );
     }
+    if general.append_system_dns {
+        dns.insert("append-system".into(), true.into());
+    }
     set(&mut c, "dns", Value::Object(dns));
     set(&mut c, "rules", json!([]));
     Value::Object(c)
 }
 
-pub fn options(mitm_capture: bool) -> Value {
+pub fn options(settings: &crate::store::Settings, mitm_capture: bool) -> Value {
     json!({
         "testUrl": DEFAULT_TEST_URL,
-        "skipCertVerify": false,
-        "delayTestTimeout": DELAY_TEST_TIMEOUT_MS,
+        "skipCertVerify": !settings.general.check_certificate,
+        "delayTestTimeout": settings.general.delay_test_timeout,
         "mitmCapture": mitm_capture,
+    })
+}
+
+pub struct Release {
+    pub tag: String,
+    pub notes: String,
+    pub url: String,
+}
+
+/// `request.checkForUpdate` on the stable channel: `releases/latest`, None when there is none.
+pub fn latest_release(repository: &str) -> Result<Option<Release>, String> {
+    let url = format!("https://api.github.com/repos/{repository}/releases/latest");
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(20)))
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let mut response = agent
+        .get(&url)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/vnd.github+json")
+        .call()
+        .map_err(|e| format!("检查更新失败：{e}"))?;
+    match response.status().as_u16() {
+        404 => return Ok(None),
+        200 => {}
+        code => return Err(format!("检查更新失败：HTTP {code}")),
+    }
+    let body: Value = response
+        .body_mut()
+        .read_to_string()
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .ok_or_else(|| "检查更新失败".to_string())?;
+    let text = |k: &str| {
+        body.get(k)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
+    Ok(Some(Release {
+        tag: text("tag_name"),
+        notes: text("body"),
+        url: text("html_url"),
+    }))
+}
+
+/// `authentication` as `user:pass` entries, from `NetworkProps.authentication`.
+pub fn authentication(general: &crate::store::General) -> Vec<String> {
+    let a = &general.authentication;
+    if a.enable && !a.username.is_empty() {
+        vec![format!("{}:{}", a.username, a.password)]
+    } else {
+        Vec::new()
+    }
+}
+
+/// `String.splitByMultipleSeparators`: a value naming several addresses becomes a list.
+pub fn host_value(value: &str) -> Value {
+    let parts: Vec<&str> = value
+        .split([',', ' ', ';'])
+        .filter(|p| !p.is_empty())
+        .collect();
+    if parts.len() > 1 {
+        json!(parts)
+    } else {
+        value.into()
+    }
+}
+
+/// `hostSettingsOf`: the external controller only the host sets, never a profile. None,
+/// while it was never turned on, keeps the Core's own.
+pub fn host_settings(general: &crate::store::General) -> Option<Value> {
+    let open = general.external_controller && !general.secret.is_empty();
+    (open || !general.secret.is_empty()).then(|| {
+        json!({
+            "externalController": if open { "127.0.0.1:9090" } else { "" },
+            "secret": general.secret,
+            "externalControllerCors": {
+                "allowOrigins": if general.external_controller_cors { json!(["*"]) } else { json!([]) },
+                "allowPrivateNetwork": general.external_controller_cors,
+            },
+            "hostCredential": "",
+        })
     })
 }
 
 /// `vpnOptionsProvider` with FlClash's defaults (VpnProps, NetworkProps, Tun). An empty
 /// route list routes everything; the private ranges stay out through the overlay's
 /// `route-exclude-address`, which the Core applies to the TUN.
-pub fn vpn_options() -> Value {
+pub fn vpn_options(settings: &crate::store::Settings) -> Value {
     json!({
         "enable": true,
-        "port": 7890,
+        "port": settings.general.mixed_port,
         "ipv6": false,
         "dnsHijacking": false,
         "accessControlProps": {"enable": false, "mode": "rejectSelected", "acceptList": [], "rejectList": []},
@@ -449,6 +560,56 @@ const BYPASS_DOMAIN: [&str; 26] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn general_settings_reach_the_overlay() {
+        let mut settings = crate::store::Settings::default();
+        let g = &mut settings.general;
+        g.mixed_port = 7899;
+        g.allow_lan = true;
+        g.find_process_always = true;
+        g.global_ua = Some("sample/1.0".into());
+        g.authentication = crate::store::Authentication {
+            enable: true,
+            username: "user".into(),
+            password: "pass".into(),
+        };
+        g.hosts.insert("a.test".into(), "1.1.1.1, 2.2.2.2".into());
+        g.hosts.insert("b.test".into(), "3.3.3.3".into());
+        g.append_system_dns = true;
+        g.check_certificate = false;
+        g.delay_test_timeout = 2000;
+        let c = overlay(&json!({"hosts": {"c.test": "4.4.4.4"}}), "rule", &settings);
+        assert_eq!(c["mixed-port"], 7899);
+        assert_eq!(c["allow-lan"], true);
+        assert_eq!(c["find-process-mode"], "always");
+        assert_eq!(c["global-ua"], "sample/1.0");
+        assert_eq!(c["authentication"], json!(["user:pass"]));
+        assert_eq!(c["hosts"]["a.test"], json!(["1.1.1.1", "2.2.2.2"]));
+        assert_eq!(c["hosts"]["b.test"], "3.3.3.3");
+        assert_eq!(c["hosts"]["c.test"], "4.4.4.4");
+        assert_eq!(c["dns"]["append-system"], true);
+        let o = options(&settings, false);
+        assert_eq!(
+            (o["skipCertVerify"].clone(), o["delayTestTimeout"].clone()),
+            (json!(true), json!(2000))
+        );
+        assert_eq!(vpn_options(&settings)["port"], 7899);
+    }
+
+    #[test]
+    fn the_controller_goes_to_the_host_once_set() {
+        let mut g = crate::store::General::default();
+        assert!(host_settings(&g).is_none());
+        g.external_controller = true;
+        g.secret = "s".into();
+        g.external_controller_cors = true;
+        let h = host_settings(&g).unwrap();
+        assert_eq!(h["externalController"], "127.0.0.1:9090");
+        assert_eq!(h["externalControllerCors"]["allowOrigins"], json!(["*"]));
+        g.external_controller = false;
+        assert_eq!(host_settings(&g).unwrap()["externalController"], "");
+    }
 
     #[test]
     fn share_links_are_named_apart() {

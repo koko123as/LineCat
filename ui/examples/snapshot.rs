@@ -207,6 +207,63 @@ fn requests_shot(ui: &AppWindow, st: &mut requests_view::ReqState, now: i64, ove
     }
 }
 
+/// The tools list, a settings page's sections and the picker or input over them.
+fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
+    let mut s = store::Settings::default();
+    s.developer_mode = true;
+    s.general.open_logs = true;
+    s.general
+        .hosts
+        .insert("router.lan".into(), "192.168.1.1".into());
+    s.general
+        .hosts
+        .insert("nas.lan".into(), "192.168.1.2, 192.168.1.3".into());
+    if overlay == "more" {
+        s.general.external_controller = true;
+        s.general.secret = "Zx81kQp0aLm3Nw7T".into();
+        s.general.authentication = store::Authentication {
+            enable: true,
+            username: "flclash".into(),
+            password: "8e2f0a4c1b9d7e63".into(),
+        };
+    }
+    let m = |v: Vec<SetSection>| ModelRc::new(VecModel::from(v));
+    ui.set_tools_sections(m(settings_view::tools(&s, width <= 600, &[])));
+    let sections = match page {
+        "general" => settings_view::general(&s),
+        "developer" => settings_view::developer(&s),
+        "about" => settings_view::about(&s),
+        "hosts" => settings_view::hosts(&s),
+        _ => Vec::new(),
+    };
+    ui.set_page_sections(m(sections));
+    ui.set_choice_open(overlay.starts_with("choice:"));
+    if let Some(key) = overlay.strip_prefix("choice:") {
+        ui.set_choice_title("语言".into());
+        let items: Vec<ActionItem> = settings_view::choices(&s, key)
+            .into_iter()
+            .map(|(id, label, checked)| ActionItem {
+                id: id.into(),
+                label: label.into(),
+                check: true,
+                checked,
+                enabled: true,
+                ..Default::default()
+            })
+            .collect();
+        ui.set_choice_items(ModelRc::new(VecModel::from(items)));
+    }
+    ui.set_input_open(overlay.starts_with("input:"));
+    if overlay == "input:port" {
+        ui.set_input_key("port".into());
+        ui.set_input_title("端口".into());
+        ui.set_input_label("混合端口".into());
+        ui.set_input_value("80".into());
+        ui.set_input_label2("".into());
+        ui.set_input_number(true);
+    }
+}
+
 fn main() {
     let out = std::env::args().nth(1).unwrap_or_else(|| ".".into());
     let (w, h) = (412u32, 892u32);
@@ -305,7 +362,10 @@ fn main() {
     ui.set_down_speed("1.4 MB/s".into());
     ui.set_up_total("共 3.2 MB".into());
     ui.set_down_total("共 120.5 MB".into());
-    ui.set_version("UI 0.1.0 · Concord 0.9.5".into());
+    ui.set_app_version("v0.9.5".into());
+    if let Some(icon) = settings_view::app_icon() {
+        ui.set_app_icon(icon);
+    }
     ui.set_profiles(ModelRc::new(VecModel::from(vec![
         ProfileItem {
             id: "1".into(),
@@ -436,6 +496,12 @@ fn main() {
         e.unwrap_or_default().into()
     });
     ui.on_res_digits(|value| resources::digits_only(&value).into());
+    ui.on_input_check(|key, value, _| {
+        settings_view::check_input(&key, &value)
+            .err()
+            .unwrap_or_default()
+            .into()
+    });
     let shots: &[(&str, i32, &str, &str, i32, &str)] = &[
         ("requests", 3, "", "requests", 1, "req:0:0:0"),
         ("requests-filter", 3, "", "requests", 1, "req:0:0:0:filter"),
@@ -540,6 +606,47 @@ fn main() {
         ("dashboard-inset-300x500", 0, "", "", 1, "inset"),
         ("tools-300x500", 3, "", "", 1, ""),
         ("dashboard-surface-260x450", 0, "", "", 1, "surface"),
+        ("set-tools", 3, "", "", 1, ""),
+        ("set-tools-small", 3, "", "", 1, ""),
+        ("set-tools-wide", 3, "", "", 1, ""),
+        ("set-tools-tablet", 3, "", "", 1, ""),
+        ("set-general", 3, "", "general", 1, ""),
+        ("set-general-small", 3, "", "general", 1, ""),
+        ("set-general-wide", 3, "", "general", 1, ""),
+        ("set-general-tablet", 3, "", "general", 1, ""),
+        ("set-general-open", 3, "", "general", 1, "more"),
+        ("set-general-open-small", 3, "", "general", 1, "more"),
+        ("set-general-open-wide", 3, "", "general", 1, "more"),
+        ("set-general-open-tablet", 3, "", "general", 1, "more"),
+        ("set-developer", 3, "", "developer", 1, ""),
+        ("set-developer-small", 3, "", "developer", 1, ""),
+        ("set-developer-wide", 3, "", "developer", 1, ""),
+        ("set-developer-tablet", 3, "", "developer", 1, ""),
+        ("set-about", 3, "", "about", 1, ""),
+        ("set-about-small", 3, "", "about", 1, ""),
+        ("set-about-wide", 3, "", "about", 1, ""),
+        ("set-about-tablet", 3, "", "about", 1, ""),
+        ("set-disclaimer", 3, "", "disclaimer", 1, ""),
+        ("set-disclaimer-small", 3, "", "disclaimer", 1, ""),
+        ("set-disclaimer-wide", 3, "", "disclaimer", 1, ""),
+        ("set-disclaimer-tablet", 3, "", "disclaimer", 1, ""),
+        ("set-hosts", 3, "", "hosts", 1, ""),
+        ("set-hosts-small", 3, "", "hosts", 1, ""),
+        ("set-hosts-wide", 3, "", "hosts", 1, ""),
+        ("set-hosts-tablet", 3, "", "hosts", 1, ""),
+        ("set-theme", 3, "", "theme", 1, ""),
+        ("set-theme-small", 3, "", "theme", 1, ""),
+        ("set-theme-wide", 3, "", "theme", 1, ""),
+        ("set-theme-tablet", 3, "", "theme", 1, ""),
+        ("set-language", 3, "", "", 1, "choice:language"),
+        ("set-language-small", 3, "", "", 1, "choice:language"),
+        ("set-language-wide", 3, "", "", 1, "choice:language"),
+        ("set-language-tablet", 3, "", "", 1, "choice:language"),
+        ("set-port", 3, "", "general", 1, "input:port"),
+        ("set-port-small", 3, "", "general", 1, "input:port"),
+        ("set-port-wide", 3, "", "general", 1, "input:port"),
+        ("set-port-tablet", 3, "", "general", 1, "input:port"),
+        ("set-general-dark", 3, "", "general", 2, ""),
     ];
     let only = std::env::args().nth(2).unwrap_or_default();
     ui.show().unwrap();
@@ -596,6 +703,7 @@ fn main() {
             ui.set_res_dialog_value("https://example.com/geo".into());
             ui.set_res_dialog_default(resources::default_url("mmdb").into());
         }
+        settings_shot(&ui, w, page, overlay);
         if *tab == 2 {
             ui.set_profiles_page((*page).into());
             ui.set_tools_page("".into());

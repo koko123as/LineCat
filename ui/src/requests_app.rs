@@ -376,7 +376,10 @@ impl App {
                 let on = name == "capture-on";
                 self.store.lock().unwrap().state.settings.mitm.capture = on;
                 self.store.lock().unwrap().save();
-                self.patch(json!({"options": profile::options(on && self.mitm().enable)}));
+                let settings = self.store.lock().unwrap().state.settings.clone();
+                self.patch(
+                    json!({"options": profile::options(&settings, on && self.mitm().enable)}),
+                );
             }
             "capture-limit" => {
                 let items = {
@@ -476,7 +479,7 @@ impl App {
         });
     }
 
-    fn reapply(self: &Arc<Self>) {
+    pub(crate) fn reapply(self: &Arc<Self>) {
         if !self.configured.load(Ordering::SeqCst) {
             return;
         }

@@ -202,6 +202,7 @@ object UiBridge {
             ok {
                 addProperty("home", GlobalState.application.filesDir.path)
                 addProperty("sdkInt", Build.VERSION.SDK_INT)
+                addProperty("versionName", versionName())
                 addProperty("state", ServiceState.runState.value.name)
                 edges?.let { add("insets", it) }
             }
@@ -224,6 +225,8 @@ object UiBridge {
                 stopTip = "正在停止VPN…",
                 vpnOptions = options,
                 setupParams = setup,
+                onlyStatisticsProxy = request.get("onlyStatisticsProxy")?.asBoolean ?: false,
+                showStopAction = request.get("showStopAction")?.asBoolean ?: true,
             )
             ServiceState.syncSharedState(state)
             persistForQuickStart(state)
@@ -290,8 +293,38 @@ object UiBridge {
             }
         }
 
+        "url.open" -> {
+            val url = request.get("url")?.asString ?: error("url missing")
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            withContext(Dispatchers.Main) { GlobalState.application.startActivity(intent) }
+            ok()
+        }
+
+        // `hidden` in the general settings: the task leaves the recent apps.
+        "app.hidden" -> {
+            val hidden = request.get("value")?.asBoolean ?: false
+            withContext(Dispatchers.Main) {
+                val taskId = activity?.taskId
+                val manager = GlobalState.application
+                    .getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                manager.appTasks.firstOrNull { task ->
+                    @Suppress("DEPRECATION")
+                    val id = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) task.taskInfo?.taskId else task.taskInfo?.id
+                    id == taskId
+                }?.setExcludeFromRecents(hidden)
+            }
+            ok()
+        }
+
         else -> error("unknown op")
     }
+
+    private fun versionName(): String = runCatching {
+        val app = GlobalState.application
+        @Suppress("DEPRECATION")
+        app.packageManager.getPackageInfo(app.packageName, 0).versionName
+    }.getOrNull() ?: ""
 
     private suspend fun documentFor(intent: android.content.Intent): android.net.Uri? {
         val host = activity ?: error("界面未就绪")

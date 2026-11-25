@@ -228,6 +228,26 @@ export struct ResourceItem {
     busy: bool,
 }
 
+// A row of a settings list (`ListItem`): kind "open" (chevron), "value" (subtitle, tap to
+// edit), "value-icon" (the same with its leading icon), "toggle", "action", "link"
+// (external) or "person" (a monogram in place of the icon).
+export struct SetRow {
+    id: string,
+    kind: string,
+    glyph: string,
+    title: string,
+    subtitle: string,
+    on: bool,
+    enabled: bool,
+}
+
+// `generateSection`: a titled group of rows with an optional footer.
+export struct SetSection {
+    title: string,
+    footer: string,
+    rows: [SetRow],
+}
+
 // ---------------------------------------------------------------- Icons
 // 24x24 outline glyphs, stroked.
 
@@ -284,7 +304,26 @@ global Icons {
     out property <string> eye-off: "M3 3l18 18 M10.6 6.1A9.7 9.7 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-3 3.6 M6.6 7.6C4 9.4 2.5 12 2.5 12S6 18 12 18c1.6 0 3-.4 4.2-1 M9.9 10a3 3 0 0 0 4.2 4.2";
     out property <string> block: "M12 3a9 9 0 1 0 0.01 0z M5.6 5.6l12.8 12.8";
     out property <string> error: "M12 3a9 9 0 1 0 0.01 0z M12 7.5v5.5 M12 16.5v.01";
+    out property <string> language: "M4 5h9 M8.5 3v2 M11 5c-1 4-3.5 7-7 9 M6 9c1.5 2.5 3.5 4 6 5 M13 21l4-9 4 9 M14.5 18h5";
+    out property <string> apps: "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z";
+    out property <string> cloud-sync: "M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.5 1.5A3.8 3.8 0 0 1 17.5 18z M9.5 13.5l2.5-2.5 2.5 2.5 M12 11v5";
+    out property <string> settings: "M12 9a3 3 0 1 0 0.01 0z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M4.9 19.1 7 17 M17 7l2.1-2.1";
+    out property <string> gavel: "M14 4l6 6 M11 7l6 6 M12.5 5.5l-4 4 M15.5 8.5l-4 4 M10 11 3.5 17.5l2 2L12 13 M4 21h9";
+    out property <string> code: "M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16";
+    out property <string> send: "M21 3 3 10l7 3 3 7z M10 13l11-10";
+    out property <string> external: "M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6";
     out property <string> memory: "M6 6h12v12H6z M9 9h6v6H9z M9 3v3 M15 3v3 M9 18v3 M15 18v3 M3 9h3 M3 15h3 M18 9h3 M18 15h3";
+}
+
+// Glyphs by the names Rust gives them.
+global Glyphs {
+    pure public function of(k: string) -> string {
+        return k == "requests" ? Icons.requests : k == "resources" ? Icons.resources : k == "logs" ? Icons.logs
+            : k == "language" ? Icons.language : k == "palette" ? Icons.palette : k == "apps" ? Icons.apps
+            : k == "cloud-sync" ? Icons.cloud-sync : k == "wrench" ? Icons.tools : k == "settings" ? Icons.settings
+            : k == "gavel" ? Icons.gavel : k == "cpu" ? Icons.memory : k == "info" ? Icons.info
+            : k == "code" ? Icons.code : k == "send" ? Icons.send : "";
+    }
 }
 
 component Icon inherits Path {
@@ -1992,68 +2031,301 @@ component Dialog inherits Rectangle {
 
 // ---------------------------------------------------------------- Tools
 
-component ListRow inherits Rectangle {
-    in property <string> glyph;
-    in property <string> title;
-    in property <string> subtitle;
-    in property <bool> chevron: true;
-    callback clicked();
-    height: subtitle == "" ? 56px : 68px;
-    background: ta.pressed ? Theme.s.block : transparent;
+component SetRowView inherits Rectangle {
+    in property <SetRow> item;
+    in property <bool> divider;
+    callback clicked(string);
+    callback toggled(string, bool);
+    property <bool> leading: root.item.glyph != "" && root.item.kind != "value";
+    height: root.item.subtitle != "" ? 64px : 52px;
+    background: ta.pressed && root.item.kind != "person" ? Theme.s.inset : transparent;
+    opacity: root.item.enabled ? 1 : 0.45;
     HorizontalLayout {
         padding-left: 16px;
-        padding-right: 12px;
-        spacing: 16px;
-        VerticalLayout {
+        padding-right: 16px;
+        spacing: 14px;
+        if root.leading && root.item.kind == "person": VerticalLayout {
             alignment: center;
-            Icon { glyph: root.glyph; tint: Theme.s.on-surface-variant; }
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 20px;
+                background: Theme.s.primary-container;
+                Text { text: root.item.glyph; font-size: 16px; font-weight: 600; color: Theme.s.on-primary-container; }
+            }
+        }
+        if root.leading && root.item.kind == "link": VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 10px;
+                background: Theme.s.block;
+                Icon { glyph: Glyphs.of(root.item.glyph); size: 20px; tint: Theme.s.on-surface-variant; }
+            }
+        }
+        if root.leading && root.item.kind != "person" && root.item.kind != "link": VerticalLayout {
+            alignment: center;
+            Icon { glyph: Glyphs.of(root.item.glyph); tint: Theme.s.on-surface-variant; }
         }
         VerticalLayout {
             alignment: center;
             spacing: 2px;
-            Text { text: root.title; font-size: 16px; color: Theme.s.on-surface; }
-            if root.subtitle != "": Text { text: root.subtitle; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
+            horizontal-stretch: 1;
+            Text { text: root.item.title; font-size: 16px; color: Theme.s.on-surface; overflow: elide; }
+            if root.item.subtitle != "": Text { text: root.item.subtitle; font-size: 13px; color: Theme.s.on-surface-variant; overflow: elide; }
         }
-        if root.chevron: VerticalLayout {
+        if root.item.kind == "toggle": VerticalLayout {
+            alignment: center;
+            Switch { checked: root.item.on; toggled(on) => { root.toggled(root.item.id, on); } }
+        }
+        if root.item.kind == "open" || root.item.kind == "value-icon": VerticalLayout {
             alignment: center;
             Icon { glyph: Icons.chevron; size: 20px; tint: Theme.s.on-surface-variant; }
         }
+        if root.item.kind == "link": VerticalLayout {
+            alignment: center;
+            Icon { glyph: Icons.external; size: 20px; tint: Theme.s.on-surface-variant; }
+        }
     }
-    ta := TouchArea { clicked => { root.clicked(); } }
+    if root.divider: Rectangle {
+        x: root.leading ? 54px : 16px;
+        y: parent.height - 1px;
+        width: parent.width - self.x;
+        height: 1px;
+        background: Theme.s.outline-variant.with-alpha(0.6);
+    }
+    ta := TouchArea {
+        enabled: root.item.enabled && root.item.kind != "person";
+        clicked => {
+            if (root.item.kind == "toggle") {
+                root.toggled(root.item.id, !root.item.on);
+            } else {
+                root.clicked(root.item.id);
+            }
+        }
+    }
 }
 
-component SectionHeader inherits Text {
-    color: Theme.s.primary;
-    font-size: 13px;
-    height: 36px;
-    vertical-alignment: bottom;
+// `generateSection`s one under the other.
+component Sections inherits VerticalLayout {
+    in property <[SetSection]> sections;
+    callback clicked(string);
+    callback toggled(string, bool);
+    padding-left: 16px;
+    padding-right: 16px;
+    spacing: 4px;
+    for sec in root.sections: VerticalLayout {
+        if sec.rows.length > 0 && sec.title != "": HorizontalLayout {
+            padding-left: 14px;
+            Text { text: sec.title; height: 36px; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        }
+        if sec.rows.length > 0 && sec.title == "": Rectangle { height: 8px; }
+        if sec.rows.length > 0: Rectangle {
+            background: Theme.s.card;
+            border-radius: 16px;
+            clip: true;
+            VerticalLayout {
+                for r[i] in sec.rows: SetRowView {
+                    item: r;
+                    divider: i < sec.rows.length - 1;
+                    clicked(id) => { root.clicked(id); }
+                    toggled(id, on) => { root.toggled(id, on); }
+                }
+            }
+        }
+        if sec.rows.length > 0 && sec.footer != "": HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            padding-top: 6px;
+            Text { text: sec.footer; font-size: 12px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+        }
+    }
+}
+
+// A settings page: the bar, anything given as children, then the sections.
+component SettingsPage inherits Rectangle {
+    in property <string> title;
+    in property <bool> can-back: true;
+    in property <[SetSection]> sections;
+    in property <length> bottom-gap: 24px;
+    callback back();
+    callback clicked(string);
+    callback toggled(string, bool);
+    VerticalLayout {
+        AppBar { title: root.title; can-back: root.can-back; back => { root.back(); } }
+        Flickable {
+            content-height: page-col.preferred-height;
+            page-col := VerticalLayout {
+                alignment: start;
+                padding-bottom: root.bottom-gap;
+                @children
+                Sections {
+                    sections: root.sections;
+                    clicked(id) => { root.clicked(id); }
+                    toggled(id, on) => { root.toggled(id, on); }
+                }
+            }
+        }
+    }
+}
+
+// lib/views/about.dart: the logo (five taps turn on developer mode), name, version, the
+// description and the update check, then the sections.
+component AboutPage inherits Rectangle {
+    in property <image> icon;
+    in property <string> version;
+    in property <bool> checking;
+    in property <[SetSection]> sections;
+    callback back();
+    callback clicked(string);
+    callback toggled(string, bool);
+    callback check-update();
+    callback logo-tapped();
+    SettingsPage {
+        title: "关于";
+        sections: root.sections;
+        back => { root.back(); }
+        clicked(id) => { root.clicked(id); }
+        toggled(id, on) => { root.toggled(id, on); }
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 24px;
+            padding-bottom: 8px;
+            spacing: 0px;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 96px;
+                    height: 96px;
+                    border-radius: 24px;
+                    background: Theme.s.primary-container;
+                    Image { source: root.icon; width: 96px; height: 96px; }
+                    TouchArea { clicked => { root.logo-tapped(); } }
+                }
+            }
+            Rectangle { height: 20px; }
+            Text { text: "SeasonCat"; font-size: 22px; font-weight: 700; color: Theme.s.on-surface; horizontal-alignment: center; }
+            Rectangle { height: 10px; }
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                Rectangle {
+                    height: 24px;
+                    width: vpill.preferred-width * 1.1 + 24px;
+                    border-radius: 12px;
+                    background: Theme.s.primary;
+                    vpill := Text { text: root.version; font-size: 12px; font-weight: 600; color: Theme.s.on-primary; horizontal-alignment: center; vertical-alignment: center; }
+                }
+                Rectangle {
+                    height: 24px;
+                    width: lpill.preferred-width * 1.1 + 24px;
+                    border-radius: 12px;
+                    background: Theme.s.block;
+                    lpill := Text { text: "GPL-3.0"; font-size: 12px; font-weight: 600; color: Theme.s.on-surface-variant; horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+            Rectangle { height: 16px; }
+            Text {
+                text: "基于 Concord 内核的多平台代理客户端，简单易用，开源无广告。";
+                font-size: 15px;
+                color: Theme.s.on-surface-variant;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Rectangle { height: 20px; }
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    height: 44px;
+                    width: ubtn.preferred-width + 40px;
+                    border-radius: 22px;
+                    background: uta.pressed ? Theme.s.primary-container.darker(0.08) : Theme.s.primary-container;
+                    opacity: root.checking ? 0.5 : 1;
+                    ubtn := HorizontalLayout {
+                        alignment: center;
+                        spacing: 8px;
+                        VerticalLayout { alignment: center; Icon { glyph: Icons.sync; size: 20px; tint: Theme.s.on-primary-container; } }
+                        Text { text: "检查更新"; font-size: 15px; color: Theme.s.on-primary-container; vertical-alignment: center; }
+                    }
+                    uta := TouchArea { enabled: !root.checking; clicked => { root.check-update(); } }
+                }
+            }
+        }
+    }
+}
+
+// lib/views/disclaimer.dart, read from the tools page (no consent bar).
+component DisclaimerPage inherits Rectangle {
+    callback back();
+    property <[{title: string, content: string}]> terms: [
+        { title: "软件性质", content: "本软件是基于 Concord 内核的开源网络代理客户端，仅提供配置管理、规则分流与流量转发等本地工具功能。\n\n本软件自身不提供任何代理服务器、节点、订阅、机场或网络接入服务，也不与任何此类服务的提供者存在合作、代理或担保关系。" },
+        { title: "使用说明", content: "任何人基于本软件开展的商业活动，包括付费分发、捆绑销售或作为商业服务的组成部分，均与本软件的开发者无关，开发者不为其提供背书、支持或担保。\n\n你须自行遵守所在国家或地区的法律法规，因违法使用本软件产生的后果由你自行承担。" },
+        { title: "用户责任", content: "你应自行确认使用本软件在你所在国家或地区是合法的，并对使用本软件的全部行为及其后果独立承担法律责任。\n\n你导入的订阅、节点与配置由你自行选择和判断，其来源是否合法、内容是否安全、服务是否稳定，均由你与相关提供者自行负责。" },
+        { title: "第三方内容", content: "订阅链接、配置文件、规则集、脚本、外部资源及外部链接均由第三方提供，开发者无法也不会对其合法性、准确性、安全性和可用性进行审查或担保。\n\n因使用第三方内容导致的数据泄露、财产损失、账号封禁或其他任何损失，由你与第三方自行解决，开发者不承担任何责任。" },
+        { title: "无担保声明", content: "本软件按“现状”和“可用”的原则提供，不附带任何明示或默示的担保，包括但不限于适销性、特定用途适用性、不侵权以及持续可用、无错误、无安全漏洞的担保。\n\n开发者不保证本软件能满足你的需求，也不保证本软件的运行不会中断或不会出现错误。" },
+        { title: "责任限制", content: "在适用法律允许的最大范围内，开发者及所有贡献者均不对因使用或无法使用本软件而产生的任何直接、间接、偶然、特殊、惩罚性或后果性损害承担责任，包括但不限于数据丢失、设备损坏、网络异常、业务中断、利润损失或因此引起的任何法律纠纷，即使已被告知发生此类损害的可能性。" },
+        { title: "数据收集与隐私", content: "本软件不会收集或上传你的订阅地址、节点信息、配置内容、访问的网站、连接记录、流量内容和日志，这些数据仅保存在你的设备本地，开发者无法获取。\n\n本软件只会在你使用相应功能时访问外部网络，例如更新订阅时访问你提供的订阅地址、检查更新时访问 GitHub。\n\n本软件在所有平台上均未集成任何数据统计或崩溃上报服务。" },
+        { title: "开源协议", content: "本软件以 GPL-3.0 协议开源，你可以依该协议运行、研究、修改和分发本软件；分发本软件或其修改版本时，须同样以 GPL-3.0 协议提供源代码并保留原有的版权声明。\n\n本软件包含的第三方组件（包括 Concord 内核）分别遵循其各自的开源协议。基于本软件修改或分发的版本所产生的任何问题，与原作者无关。" },
+        { title: "声明变更", content: "本声明可能随版本更新而修订，以每个版本附带的内容为准。" },
+        { title: "与开源协议的关系", content: "本声明是对软件性质、风险与责任的说明，不是 GPL-3.0 之外的附加条款，也不限制该协议授予你的运行、复制、修改和分发等任何权利；两者不一致时，以 GPL-3.0 为准。" },
+    ];
+    VerticalLayout {
+        AppBar { title: "免责声明"; can-back: true; back => { root.back(); } }
+        Flickable {
+            content-height: dcol.preferred-height;
+            dcol := VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 8px;
+                padding-bottom: 32px;
+                Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 20px;
+                    height: intro.preferred-height;
+                    intro := HorizontalLayout {
+                        padding: 20px;
+                        spacing: 16px;
+                        VerticalLayout { alignment: start; Icon { glyph: Icons.gavel; size: 28px; tint: Theme.s.primary; } }
+                        Text {
+                            horizontal-stretch: 1;
+                            text: "在使用 FlClash（以下简称“本软件”）前，请仔细阅读并充分理解本声明。点击“同意”表示你已阅读并理解以下内容；如不想继续，可点击“退出”。";
+                            font-size: 15px;
+                            color: Theme.s.on-surface-variant;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                for t[i] in root.terms: VerticalLayout {
+                    padding-top: 28px;
+                    spacing: 10px;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Rectangle {
+                            width: 28px;
+                            height: 28px;
+                            border-radius: 14px;
+                            background: Theme.s.primary-container;
+                            Text { text: i + 1; font-size: 13px; font-weight: 600; color: Theme.s.on-primary-container; }
+                        }
+                        Text { text: t.title; font-size: 17px; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; wrap: word-wrap; }
+                    }
+                    Text { text: t.content; font-size: 15px; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                }
+            }
+        }
+    }
 }
 
 component Tools inherits Rectangle {
-    in property <string> version;
-    in property <bool> wide;
+    in property <[SetSection]> sections;
     callback open(string);
-    VerticalLayout {
-        AppBar { title: "工具"; }
-        Flickable {
-            content-height: col.preferred-height;
-            col := VerticalLayout {
-                padding-bottom: 16px;
-                if !root.wide: ListRow { glyph: Icons.requests; title: "请求"; clicked => { root.open("requests"); } }
-                ListRow { glyph: Icons.resources; title: "资源"; clicked => { root.open("resources"); } }
-                ListRow { glyph: Icons.logs; title: "日志"; clicked => { root.open("logs"); } }
-                HorizontalLayout {
-                    padding-left: 16px;
-                    SectionHeader { text: "设置"; }
-                }
-                ListRow { glyph: Icons.palette; title: "主题"; clicked => { root.open("theme"); } }
-                HorizontalLayout {
-                    padding-left: 16px;
-                    SectionHeader { text: "其他"; }
-                }
-                ListRow { glyph: Icons.info; title: "关于"; subtitle: root.version; chevron: false; }
-            }
-        }
+    SettingsPage {
+        title: "工具";
+        can-back: false;
+        sections: root.sections;
+        clicked(id) => { root.open(id); }
     }
 }
 
@@ -2106,8 +2378,10 @@ component ThemePage inherits Rectangle {
     in property <[color]> accents;
     in property <int> accent;
     in property <int> theme-mode;
+    in property <bool> pure-black;
     callback set-accent(int);
     callback set-theme-mode(int);
+    callback set-pure-black(bool);
     callback back();
     VerticalLayout {
         AppBar { title: "主题"; can-back: true; back => { root.back(); } }
@@ -2124,6 +2398,15 @@ component ThemePage inherits Rectangle {
                     RadioRow { text: "跟随系统"; checked: root.theme-mode == 0; clicked => { root.set-theme-mode(0); } }
                     RadioRow { text: "浅色"; checked: root.theme-mode == 1; clicked => { root.set-theme-mode(1); } }
                     RadioRow { text: "深色"; checked: root.theme-mode == 2; clicked => { root.set-theme-mode(2); } }
+                }
+            }
+            InfoCard {
+                title: "纯黑模式";
+                glyph: Icons.palette;
+                VerticalLayout {
+                    spacing: 2px;
+                    RadioRow { text: "标准"; checked: !root.pure-black; clicked => { root.set-pure-black(false); } }
+                    RadioRow { text: "纯黑"; checked: root.pure-black; clicked => { root.set-pure-black(true); } }
                 }
             }
             InfoCard {
@@ -3317,7 +3600,6 @@ export component AppWindow inherits Window {
     in property <[color]> accents;
     in property <int> accent;
     in property <int> theme-mode;
-    in property <string> version;
     callback set-accent(int);
     callback set-theme-mode(int);
     // Requests (tab 4 beside the bar, tools page "requests" under it)
@@ -3389,12 +3671,47 @@ export component AppWindow inherits Window {
     callback res-dialog-submit(string, string, string);
     pure callback res-check(string, string) -> string;
     pure callback res-digits(string) -> string;
+    // Settings under tools (lib/views/tools.dart): the tools list, the open settings page's
+    // sections, a picker sheet and a one or two field input dialog.
+    in property <[SetSection]> tools-sections;
+    in property <[SetSection]> page-sections;
+    in property <bool> pure-black;
+    in property <string> app-version;
+    in property <image> app-icon;
+    in property <bool> update-checking;
+    callback tools-clicked(string);
+    callback set-clicked(string, string);
+    callback set-toggled(string, string, bool);
+    callback set-pure-black(bool);
+    callback check-update();
+    callback about-logo-tapped();
+    in-out property <bool> choice-open;
+    in property <string> choice-title;
+    in property <[ActionItem]> choice-items;
+    callback choice-picked(string);
+    in-out property <bool> input-open;
+    in property <string> input-title;
+    in property <string> input-key;
+    in property <string> input-label;
+    in property <string> input-label2;
+    in-out property <string> input-value;
+    in-out property <string> input-value2;
+    in property <bool> input-removable;
+    in property <bool> input-number;
+    pure callback input-check(string, string, string) -> string;
+    callback input-submit(string, string, string);
+    property <string> input-error: root.input-open ? root.input-check(root.input-key, root.input-value, root.input-value2) : "";
+    callback input-remove(string);
     // Feedback
     in property <string> toast;
 
     callback page-shown();
     changed req-visible => { if (root.req-visible) { root.page-shown(); } }
-    changed tools-page => { if (root.tools-page == "resources") { root.page-shown(); } }
+    callback tools-page-changed();
+    changed tools-page => {
+        if (root.tools-page == "resources") { root.page-shown(); }
+        root.tools-page-changed();
+    }
     changed cond-value => { root.cond-changed(); }
     changed res-dialog-value => {
         if (root.res-dialog == "interval") {
@@ -3440,6 +3757,8 @@ export component AppWindow inherits Window {
         key-pressed(event) => {
             if (event.text == Key.Back) {
                 if (root.alert-open) { root.alert-open = false; return accept; }
+                if (root.input-open) { root.input-open = false; return accept; }
+                if (root.choice-open) { root.choice-open = false; return accept; }
                 if (root.cond-open) { root.cond-open = false; return accept; }
                 if (root.res-dialog != "") { root.res-dialog = ""; return accept; }
                 if (root.req-actions-open) { root.req-actions-open = false; return accept; }
@@ -3459,6 +3778,7 @@ export component AppWindow inherits Window {
                 if (root.link-open) { root.link-open = false; return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
                 if (root.tab == 2 && root.profiles-page != "") { root.profiles-page = ""; return accept; }
+                if (root.tab == 3 && root.tools-page == "hosts") { root.tools-page = "general"; return accept; }
                 if (root.tab == 3 && root.tools-page != "") {
                     root.tools-page = "";
                     return accept;
@@ -3597,9 +3917,42 @@ export component AppWindow inherits Window {
                 if root.tab == 3 && root.tools-page == "": Tools {
                     width: parent.width;
                     height: parent.height;
-                    version: root.version;
-                    wide: root.wide;
-                    open(p) => { root.tools-page = p; }
+                    sections: root.tools-sections;
+                    open(p) => { root.tools-clicked(p); }
+                }
+                if root.tab == 3 && (root.tools-page == "general" || root.tools-page == "developer" || root.tools-page == "hosts"): SettingsPage {
+                    width: parent.width;
+                    height: parent.height;
+                    title: root.tools-page == "general" ? "常规" : root.tools-page == "developer" ? "开发者模式" : "Hosts";
+                    sections: root.page-sections;
+                    bottom-gap: root.tools-page == "hosts" ? 96px : 24px;
+                    back => { root.tools-page = root.tools-page == "hosts" ? "general" : ""; }
+                    clicked(id) => { root.set-clicked(root.tools-page, id); }
+                    toggled(id, on) => { root.set-toggled(root.tools-page, id, on); }
+                }
+                if root.tab == 3 && root.tools-page == "hosts": Fab {
+                    x: parent.width - self.width - 16px;
+                    y: parent.height - self.height - 16px;
+                    glyph: Icons.plus;
+                    clicked => { root.set-clicked("hosts", "add"); }
+                }
+                if root.tab == 3 && root.tools-page == "about": AboutPage {
+                    width: parent.width;
+                    height: parent.height;
+                    icon: root.app-icon;
+                    version: root.app-version;
+                    checking: root.update-checking;
+                    sections: root.page-sections;
+                    back => { root.tools-page = ""; }
+                    clicked(id) => { root.set-clicked("about", id); }
+                    toggled(id, on) => { root.set-toggled("about", id, on); }
+                    check-update => { root.check-update(); }
+                    logo-tapped => { root.about-logo-tapped(); }
+                }
+                if root.tab == 3 && root.tools-page == "disclaimer": DisclaimerPage {
+                    width: parent.width;
+                    height: parent.height;
+                    back => { root.tools-page = ""; }
                 }
                 if root.req-visible: RequestsPage {
                     width: parent.width;
@@ -3664,8 +4017,10 @@ export component AppWindow inherits Window {
                     accents: root.accents;
                     accent: root.accent;
                     theme-mode: root.theme-mode;
+                    pure-black: root.pure-black;
                     set-accent(i) => { root.set-accent(i); }
                     set-theme-mode(m) => { root.set-theme-mode(m); }
+                    set-pure-black(on) => { root.set-pure-black(on); }
                     back => { root.tools-page = ""; }
                 }
 
@@ -4013,6 +4368,43 @@ export component AppWindow inherits Window {
                     text: root.confirm-action == "delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : "确定";
                     danger: root.confirm-action == "delete" || root.confirm-action == "close-active";
                     clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, true); }
+                }
+            }
+        }
+
+        if root.choice-open: ActionSheet {
+            title: root.choice-title;
+            items: root.choice-items;
+            bottom-inset: root.bottom-inset;
+            picked(id) => { root.choice-open = false; root.choice-picked(id); }
+            dismiss => { root.choice-open = false; }
+        }
+
+        if root.input-open: Dialog {
+            title: root.input-title;
+            keyboard: root.keyboard;
+            top: root.top-inset;
+            dismiss => { root.input-open = false; }
+            Field {
+                label: root.input-label;
+                text <=> root.input-value;
+                input-type: root.input-number ? InputType.number : InputType.text;
+                init => { self.focus-input(); }
+            }
+            if root.input-label2 != "": Field { label: root.input-label2; text <=> root.input-value2; }
+            if root.input-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.input-error; font-size: 13px; color: Theme.s.error; wrap: word-wrap; } }
+            HorizontalLayout {
+                spacing: 8px;
+                if root.input-removable: TextButton { text: "删除"; danger: true; clicked => { root.input-open = false; root.input-remove(root.input-key); } }
+                Rectangle { horizontal-stretch: 1; }
+                TextButton { text: "取消"; clicked => { root.input-open = false; } }
+                TextButton {
+                    text: "确定";
+                    enabled: root.input-error == "";
+                    clicked => {
+                        root.input-open = false;
+                        root.input-submit(root.input-key, root.input-value, root.input-value2);
+                    }
                 }
             }
         }
