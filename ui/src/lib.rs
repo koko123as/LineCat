@@ -38,6 +38,9 @@ pub use rules_app::sections as rules_sections;
 mod requests_app;
 pub mod requests_view;
 pub mod resources;
+pub mod rule_sets;
+mod rule_sets_app;
+pub use rule_sets_app::sections as rule_sets_sections;
 mod settings_app;
 pub use settings_app::{page_meta, set_targets};
 pub mod settings_view;
@@ -1997,6 +2000,7 @@ impl App {
             ("clear-data", true) => self.clear_data(),
             ("rules-delete", true) => self.delete_selected_rules(),
             ("script-delete", true) => self.delete_script(&arg),
+            ("rs-delete", true) => self.delete_rule_set(&arg),
             ("ua-delete", true) => self.delete_user_agent(&arg),
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings" | "location-settings", true) => self.open_app_settings(),

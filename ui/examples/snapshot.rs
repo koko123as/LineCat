@@ -365,6 +365,42 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             }
             seasoncat_ui::rules_sections(&s, page).unwrap_or_default()
         }
+        "rule-sets" => {
+            if overlay != "empty" {
+                for (i, (l, u, b, f)) in [
+                    (
+                        "广告拦截",
+                        "https://example.com/reject.yaml",
+                        "domain",
+                        "yaml",
+                    ),
+                    ("局域网", "", "ipcidr", "text"),
+                    (
+                        "流媒体服务超长名称用于测试省略显示",
+                        "https://example.com/media.mrs",
+                        "classical",
+                        "mrs",
+                    ),
+                ]
+                .iter()
+                .enumerate()
+                {
+                    s.rule_sets.push(seasoncat_ui::rule_sets::RuleSet {
+                        id: i.to_string(),
+                        label: (*l).into(),
+                        url: (*u).into(),
+                        behavior: (*b).into(),
+                        format: (*f).into(),
+                    });
+                }
+            }
+            seasoncat_ui::rule_sets_sections(
+                &s.rule_sets,
+                std::path::Path::new("/nonexistent"),
+                page,
+            )
+            .unwrap_or_default()
+        }
         "backup" => {
             if overlay.starts_with("dav") {
                 s.dav = Some(seasoncat_ui::backup::Dav {
@@ -1148,6 +1184,11 @@ fn main() {
         ("set-scripts", 3, "", "scripts", 1, ""),
         ("set-scripts-small", 3, "", "scripts", 1, ""),
         ("set-scripts-empty", 3, "", "scripts", 1, "empty"),
+        ("set-rulesets", 3, "", "rule-sets", 1, ""),
+        ("set-rulesets-small", 3, "", "rule-sets", 1, ""),
+        ("set-rulesets-wide", 3, "", "rule-sets", 1, ""),
+        ("set-rulesets-tablet", 3, "", "rule-sets", 1, ""),
+        ("set-rulesets-empty", 3, "", "rule-sets", 1, "empty"),
         ("set-rules", 3, "", "rules", 1, ""),
         ("set-rules-small", 3, "", "rules", 1, ""),
         ("set-rules-wide", 3, "", "rules", 1, ""),

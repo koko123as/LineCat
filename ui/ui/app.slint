@@ -395,6 +395,9 @@ export struct SetRow {
     // "remove": led by the button that takes the row off (`EntryButton.remove`); "add": the
     // row that adds one, led by `EntryButton.add`.
     lead: string,
+    // `ChipTitle`'s chip after the title, and a caption at the row's end.
+    chip: string,
+    trailing: string,
 }
 
 // What the page shell needs of a settings page Rust builds: its title, where back goes,
@@ -3651,9 +3654,27 @@ component SetRowView inherits Rectangle {
             alignment: center;
             spacing: 2px;
             horizontal-stretch: 1;
-            Text { text: root.item.title; font-size: 16px * Type.scale; color: root.item.lead == "add" ? Theme.s.primary : Theme.s.on-surface; overflow: elide; }
+            HorizontalLayout {
+                spacing: 6px;
+                Text { text: root.item.title; font-size: 16px * Type.scale; color: root.item.lead == "add" ? Theme.s.primary : Theme.s.on-surface; overflow: elide; horizontal-stretch: root.item.chip == "" ? 1 : 0; }
+                if root.item.chip != "": VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    HorizontalLayout {
+                        alignment: start;
+                        Rectangle {
+                            width: chip-text.preferred-width + 12px;
+                            height: chip-text.preferred-height + 4px;
+                            border-radius: self.height / 2;
+                            background: Theme.s.block;
+                            chip-text := Text { text: root.item.chip; font-size: 11px * Type.scale; color: Theme.s.on-surface-variant; }
+                        }
+                    }
+                }
+            }
             if root.item.subtitle != "": Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
         }
+        if root.item.trailing != "": Text { text: root.item.trailing; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
         if root.item.kind == "toggle": VerticalLayout {
             alignment: center;
             Switch { checked: root.item.on; toggled(on) => { root.toggled(root.item.id, on); } }
@@ -7322,6 +7343,7 @@ export component AppWindow inherits Window {
     in property <string> tools-editor-title;
     in-out property <string> tools-editor-text;
     in property <string> tools-editor-parent;
+    in property <bool> tools-editor-readonly;
     callback tools-editor-save(string);
     // The settings pages Rust builds (`page-meta` names them).
     pure callback page-meta(string, int) -> PageMeta;
@@ -7821,6 +7843,7 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
                     title: root.tools-editor-title;
+                    readonly: root.tools-editor-readonly;
                     text <=> root.tools-editor-text;
                     save(t) => { root.tools-editor-save(t); }
                     back => { root.tools-page = root.tools-editor-parent; }

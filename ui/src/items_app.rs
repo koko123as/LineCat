@@ -322,18 +322,23 @@ impl App {
     }
 
     fn open_tools_editor(self: &Arc<Self>, title: &str, text: &str, parent: &str) {
+        crate::rule_sets_app::release_editor();
         let (title, text, parent): (SharedString, SharedString, SharedString) =
             (title.into(), text.into(), parent.into());
         self.ui(move |ui| {
             ui.set_tools_editor_title(title);
             ui.set_tools_editor_text(text);
             ui.set_tools_editor_parent(parent);
+            ui.set_tools_editor_readonly(false);
             ui.set_tools_page("editor".into());
         });
     }
 
     /// The tools editor's save: a script's new content, or a new script to name.
     pub(crate) fn tools_editor_save(self: &Arc<Self>, text: String) {
+        if self.rule_set_editor_save(&text) {
+            return;
+        }
         let id = editing().lock().unwrap().script.clone();
         match id {
             Some(id) => {

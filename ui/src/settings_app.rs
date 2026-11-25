@@ -165,6 +165,9 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
     if let Some(meta) = crate::items_app::page_meta(page) {
         return meta;
     }
+    if let Some(meta) = crate::rule_sets_app::page_meta(&settings.rule_sets, page) {
+        return meta;
+    }
     if let Some(meta) = crate::on_demand_app::page_meta(page) {
         return meta;
     }
@@ -251,6 +254,9 @@ impl App {
             if let Some(e) = a.items_check(&key, &v1, &v2) {
                 return e.into();
             }
+            if let Some(e) = a.rule_sets_check(&key, &v1, &v2) {
+                return e.into();
+            }
             if let Some(e) = a.on_demand_check(&key, &v1) {
                 return e.into();
             }
@@ -315,6 +321,7 @@ impl App {
         ui.on_ctx_picked(move |kind, arg, _, id| {
             let Ok(i) = arg.parse::<usize>() else { return };
             match (kind.as_str(), id.as_str()) {
+                ("rs", id) => a.rule_set_menu_picked(i, id),
                 ("ua", "edit") => a.set_clicked("user-agents", &format!("edit:ua:{i}")),
                 ("ua", "delete") => a.confirm(
                     "提示",
@@ -370,7 +377,13 @@ impl App {
                     (Some(spec), Some(state)) => spec.sections(state),
                     _ => match crate::rules_app::sections(&settings, id)
                         .or_else(|| crate::items_app::sections(&settings, id))
-                    {
+                        .or_else(|| {
+                            crate::rule_sets_app::sections(
+                                &settings.rule_sets,
+                                &app.rule_sets_dir(),
+                                id,
+                            )
+                        }) {
                         Some(s) => s,
                         None => return,
                     },
@@ -512,7 +525,10 @@ impl App {
     }
 
     fn set_clicked(self: &Arc<Self>, page: &str, id: &str) {
-        if self.rules_clicked(page, id) || self.items_clicked(page, id) {
+        if self.rules_clicked(page, id)
+            || self.items_clicked(page, id)
+            || self.rule_sets_clicked(page, id)
+        {
             return;
         }
         let g = self.store.lock().unwrap().state.settings.general.clone();
@@ -795,6 +811,7 @@ impl App {
         let value = value.to_string();
         if self.rules_picked(key, &value)
             || self.items_picked(key, &value)
+            || self.rule_sets_picked(key, &value)
             || self.theme_picked(key, &value)
             || self.logs_picked(key, &value)
         {
@@ -843,7 +860,10 @@ impl App {
     }
 
     fn input_submit(self: &Arc<Self>, key: &str, v1: &str, v2: &str) {
-        if self.items_input(key, v1, v2) || self.on_demand_input(key, v1) {
+        if self.items_input(key, v1, v2)
+            || self.rule_sets_input(key, v1, v2)
+            || self.on_demand_input(key, v1)
+        {
             return;
         }
         let Ok(value) = settings_view::check_input(key, v1) else {

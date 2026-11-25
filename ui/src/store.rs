@@ -69,6 +69,8 @@ pub struct Settings {
     pub tab_animation: i32,
     pub font_family: Option<String>,
     pub text_scale: TextScale,
+    /// `ClashProvider`s, in the page's order.
+    pub rule_sets: Vec<crate::rule_sets::RuleSet>,
 }
 
 /// `TextScale`: off follows the system's font scale.
@@ -261,6 +263,7 @@ impl Default for Settings {
             tab_animation: 1,
             font_family: None,
             text_scale: TextScale::default(),
+            rule_sets: Vec::new(),
         }
     }
 }

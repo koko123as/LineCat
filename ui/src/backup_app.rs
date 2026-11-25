@@ -30,6 +30,8 @@ fn row(id: &str, kind: &str, title: &str, subtitle: &str) -> SetRow {
         on: false,
         enabled: true,
         lead: "".into(),
+        chip: "".into(),
+        trailing: "".into(),
     }
 }
 

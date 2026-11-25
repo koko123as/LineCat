@@ -39,6 +39,8 @@ fn row(id: &str, kind: &str, glyph: &str, title: &str, subtitle: &str) -> SetRow
         on: false,
         enabled: true,
         lead: "".into(),
+        chip: "".into(),
+        trailing: "".into(),
     }
 }
 
@@ -242,7 +244,14 @@ pub fn advanced(_settings: &Settings) -> Vec<SetSection> {
                 open("scripts", "code", "脚本"),
             ],
         ),
-        section("自定义", "", vec![open("filters", "filter", "筛选")]),
+        section(
+            "自定义",
+            "",
+            vec![
+                open("rule-sets", "resources", "规则集"),
+                open("filters", "filter", "筛选"),
+            ],
+        ),
     ]
 }
 
