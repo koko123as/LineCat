@@ -749,6 +749,63 @@ fn main() {
         .unwrap()
         .as_millis() as i64;
     let mut req = sample_requests(now);
+    // The wide dashboard's table, laid out for the width it reports.
+    let table = Rc::new(sample_requests(now));
+    let w = ui.as_weak();
+    ui.on_dash_table_width(move |width| {
+        let Some(ui) = w.upgrade() else { return };
+        let cols = dash_table::columns(dash_table::Feed::Connections, width);
+        let widths = dash_table::widths(&cols, width, &Default::default());
+        let rows = dash_table::rows(
+            dash_table::Feed::Connections,
+            &table.conns,
+            &table.dns,
+            &cols,
+            None,
+            now,
+            0,
+        );
+        let mut x = 0.0;
+        let heads: Vec<DashCol> = cols
+            .iter()
+            .zip(widths)
+            .map(|(c, w)| {
+                let col = DashCol {
+                    id: c.id.into(),
+                    label: c.label.into(),
+                    x,
+                    w,
+                    end: c.end,
+                    sort: if c.id == "download" { 2 } else { 0 },
+                };
+                x += w;
+                col
+            })
+            .collect();
+        ui.set_dash_table_cols(ModelRc::new(VecModel::from(heads)));
+        ui.set_dash_table_rows(ModelRc::new(VecModel::from(
+            rows.into_iter()
+                .map(|r| DashRow {
+                    cells: ModelRc::new(VecModel::from(
+                        r.into_iter()
+                            .map(|c| DashCell {
+                                text: c.text.into(),
+                                tone: c.tone,
+                                badge: c.badge.into(),
+                            })
+                            .collect::<Vec<_>>(),
+                    )),
+                })
+                .collect::<Vec<_>>(),
+        )));
+        ui.set_dash_table_counts(ModelRc::new(VecModel::from(vec![
+            "4".into(),
+            "6".into(),
+            "128".into(),
+        ])));
+        ui.set_dash_table_tcp("3".into());
+        ui.set_dash_table_udp("1".into());
+    });
     ui.set_res_items(ModelRc::new(VecModel::from(
         [
             ("mmdb", "MMDB", "3 分钟前", "8.2 MB", false),
@@ -928,6 +985,8 @@ fn main() {
         ("dashboard-failed-small", 0, "", "", 1, "failed"),
         ("dashboard-1280x700", 0, "", "", 1, ""),
         ("dashboard-1000x900", 0, "", "", 1, ""),
+        ("dashboard-table-1280x1000", 0, "", "", 1, ""),
+        ("dashboard-table-1600x1100", 0, "", "", 2, ""),
         ("dashboard-edit", 0, "", "", 1, "edit"),
         ("dashboard-edit-small", 0, "", "", 1, "edit"),
         ("dashboard-edit-412x2300", 0, "", "", 1, "edit"),

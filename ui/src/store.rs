@@ -59,6 +59,8 @@ pub struct Settings {
     pub service_order: Vec<String>,
     /// `AppSettingProps.disabledServices`.
     pub disabled_services: Vec<String>,
+    /// `AppSettingProps.tableColumnWidths`: dragged column widths by table id.
+    pub table_column_widths: BTreeMap<String, BTreeMap<String, f32>>,
 }
 
 /// The network page's settings: `VpnProps`, `NetworkProps` and the TUN part of
@@ -228,6 +230,7 @@ impl Default for Settings {
             hide_ip: false,
             service_order: Vec::new(),
             disabled_services: Vec::new(),
+            table_column_widths: BTreeMap::new(),
         }
     }
 }

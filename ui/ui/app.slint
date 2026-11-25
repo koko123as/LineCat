@@ -131,6 +131,27 @@ export struct DashStats {
     dns: string,
 }
 
+// `ConnectionsTableCard` (`dash_table.rs`): a column's place, a cell and a row.
+export struct DashCol {
+    id: string,
+    label: string,
+    x: length,
+    w: length,
+    end: bool,
+    // 0 unsorted, 1 ascending, 2 descending
+    sort: int,
+}
+
+export struct DashCell {
+    text: string,
+    tone: int,
+    badge: string,
+}
+
+export struct DashRow {
+    cells: [DashCell],
+}
+
 // A card the editor can add (`_AddRow`).
 export struct DashAdd {
     id: string,
@@ -1565,6 +1586,206 @@ component StatTile inherits Rectangle {
     }
 }
 
+// `ConnectionsTableCard`: tabs for live connections, recent requests and DNS with their
+// counts, then the feed's table; a header tap sorts by that column.
+component ConnTableCard inherits DashCard {
+    in property <int> feed;
+    in property <[string]> counts;
+    in property <string> tcp;
+    in property <string> udp;
+    in property <[DashCol]> cols;
+    in property <[DashRow]> rows;
+    in property <bool> compact;
+    callback select(int);
+    callback sort(string);
+    callback table-width(length);
+    // `TableColumnResizer`: a boundary's drag from its start, its end, and a double tap.
+    callback resize-start(int);
+    callback resize(length);
+    callback resize-end();
+    callback reset();
+    property <length> drag-x0;
+    property <length> tab-h: root.compact ? 32px : 36px;
+    property <length> row-h: root.compact ? 32px : 34px;
+    property <length> side: 8px;
+    property <length> table-w: self.width - root.side * 2;
+    changed table-w => { root.table-width(self.table-w); }
+    init => { root.table-width(self.table-w); }
+    VerticalLayout {
+        padding-top: 20px - root.tab-h / 2;
+        padding-left: root.side;
+        padding-right: root.side;
+        spacing: 12px;
+        HorizontalLayout {
+            height: root.tab-h;
+            padding-left: 20px - root.tab-h / 2 - root.side;
+            padding-right: 20px - root.tab-h / 2 - root.side;
+            spacing: 8px;
+            Rectangle {
+                width: tabs.preferred-width;
+                border-radius: root.tab-h / 2;
+                background: Theme.s.block;
+                tabs := HorizontalLayout {
+                    padding: 2px;
+                    spacing: 2px;
+                    for label[i] in ["实时连接", "最近请求", "DNS"]: Rectangle {
+                        width: seg.preferred-width * 1.1;
+                        border-radius: (root.tab-h - 4px) / 2;
+                        background: root.feed == i ? Theme.s.primary : seg-ta.pressed ? Theme.s.card : transparent;
+                        seg := HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 14px;
+                            spacing: 6px;
+                            Text {
+                                text: root.counts[i];
+                                font-size: 14px;
+                                font-weight: 700;
+                                color: root.feed == i ? Theme.s.on-primary : Theme.s.on-surface;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: label;
+                                font-size: 13px;
+                                font-weight: 600;
+                                color: root.feed == i ? Theme.s.on-primary : Theme.s.on-surface-variant;
+                                vertical-alignment: center;
+                            }
+                        }
+                        seg-ta := TouchArea { clicked => { root.select(i); } }
+                    }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if root.feed == 0 && root.rows.length > 0 && root.table-w >= 620px: VerticalLayout {
+                alignment: center;
+                Chip { text: "TCP " + root.tcp; }
+            }
+            if root.feed == 0 && root.rows.length > 0 && root.table-w >= 620px: VerticalLayout {
+                alignment: center;
+                Chip { text: "UDP " + root.udp; }
+            }
+        }
+        VerticalLayout {
+            Rectangle {
+                height: 32px;
+                border-radius: 8px;
+                background: Theme.s.block;
+                for c in root.cols: Rectangle {
+                    x: c.x;
+                    width: c.w;
+                    background: hd-ta.pressed ? Theme.s.card.with-alpha(0.6) : transparent;
+                    border-radius: 8px;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        spacing: 2px;
+                        alignment: c.end ? end : start;
+                        Text {
+                            text: c.label;
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: Theme.s.on-surface-variant;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        if c.sort != 0: VerticalLayout {
+                            alignment: center;
+                            Icon { glyph: c.sort == 2 ? "M7 10l5 5 5-5" : "M7 14l5-5 5 5"; size: 12px; tint: Theme.s.on-surface-variant; }
+                        }
+                    }
+                    hd-ta := TouchArea { clicked => { root.sort(c.id); } }
+                }
+                for c[i] in root.cols: handle := Rectangle {
+                    visible: i < root.cols.length - 1;
+                    x: c.x + c.w - 6px;
+                    width: 12px;
+                    Rectangle {
+                        width: 2px;
+                        height: 16px;
+                        border-radius: 1px;
+                        background: Theme.s.outline-variant;
+                        visible: grip.has-hover || grip.pressed;
+                    }
+                    grip := TouchArea {
+                        enabled: i < root.cols.length - 1;
+                        mouse-cursor: col-resize;
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.down {
+                                root.drag-x0 = handle.x + self.mouse-x;
+                                root.resize-start(i);
+                            } else if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                                root.resize-end();
+                            }
+                        }
+                        moved => { root.resize(handle.x + self.mouse-x - root.drag-x0); }
+                        double-clicked => { root.reset(); }
+                    }
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                clip: true;
+                if root.rows.length == 0: Text {
+                    y: 0;
+                    height: parent.height - 24px;
+                    text: "暂无数据";
+                    font-size: 13px;
+                    color: Theme.s.on-surface-variant;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                Flickable {
+                    content-height: root.rows.length * root.row-h + 2px;
+                    for r[ri] in root.rows: Rectangle {
+                        y: 2px + ri * root.row-h;
+                        height: root.row-h;
+                        border-radius: 8px;
+                        background: Math.mod(ri, 2) == 1 ? Theme.s.block : transparent;
+                        for cell[ci] in r.cells: HorizontalLayout {
+                            x: root.cols[ci].x;
+                            width: root.cols[ci].w;
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 6px;
+                            alignment: root.cols[ci].end ? end : stretch;
+                            if cell.badge != "" && root.cols[ci].id == "source": VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 22px;
+                                    height: 22px;
+                                    border-radius: 7px;
+                                    background: Theme.s.block;
+                                    Text { text: cell.badge; font-size: 11px; font-weight: 700; color: Theme.s.on-surface-variant; }
+                                }
+                            }
+                            if cell.badge != "" && root.cols[ci].id != "source": VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    height: 18px;
+                                    width: cb.preferred-width + 12px;
+                                    border-radius: 9px;
+                                    background: Theme.s.block;
+                                    cb := Text { text: cell.badge; font-size: 11px; font-weight: 600; color: Theme.s.on-surface-variant; }
+                                }
+                            }
+                            Text {
+                                horizontal-stretch: 1;
+                                text: cell.text;
+                                font-size: 13px;
+                                font-weight: cell.tone == 2 || cell.tone == 4 ? 600 : 400;
+                                color: cell.tone == 1 ? Theme.s.on-surface-variant : cell.tone == 3 ? Theme.s.error : cell.tone == 4 ? Theme.warning : Theme.s.on-surface;
+                                horizontal-alignment: root.cols[ci].end ? right : left;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 component Dashboard inherits Rectangle {
     // `ServiceFaultsButton`: services that did not start, a badge in the bar.
     in property <int> fault-count;
@@ -1620,6 +1841,26 @@ component Dashboard inherits Rectangle {
     property <length> drag-shift: root.drag-y - root.drag-y0 + root.drag-vy0 - root.scroll-y;
     property <int> drag-to: root.drag-from < 0 ? -1 : root.drag-target(root.drag-from, root.drag-shift, root.gap, root.widgets.length);
     callback layout(bool, int, bool);
+    // `ConnectionsTableCard` takes the summaries' place once the window is tall enough.
+    in property <int> table-feed;
+    in property <[string]> table-counts;
+    in property <string> table-tcp;
+    in property <string> table-udp;
+    in property <[DashCol]> table-cols;
+    in property <[DashRow]> table-rows;
+    callback table-select(int);
+    callback table-sort(string);
+    callback table-width(length);
+    callback table-shown(bool);
+    callback table-resize-start(int);
+    callback table-resize(length);
+    callback table-resize-end();
+    callback table-reset();
+    property <length> view-h;
+    property <length> rows-h: 28px + root.top-h + root.control-h + root.middle-h + root.gap * 3;
+    property <length> table-min: 20px + (root.compact ? 16px : 18px) + 12px + 32px + (root.compact ? 32px : 34px) * 3;
+    property <bool> tables-fit: root.wide && root.columns == 4 && root.view-h >= root.rows-h + root.table-min;
+    changed tables-fit => { root.table-shown(self.tables-fit); }
     // `DashboardDensity`: a phone column under 640, else the fixed grid of 2 or 4 columns,
     // compact under 1040 with four columns or under 824 high.
     property <bool> wide: self.width >= 640px;
@@ -1641,7 +1882,10 @@ component Dashboard inherits Rectangle {
     changed wide => { root.layout(root.wide, root.service-columns, root.shows-service); }
     changed service-columns => { root.layout(root.wide, root.service-columns, root.shows-service); }
     changed shows-service => { root.layout(root.wide, root.service-columns, root.shows-service); }
-    init => { root.layout(root.wide, root.service-columns, root.shows-service); }
+    init => {
+        root.layout(root.wide, root.service-columns, root.shows-service);
+        root.table-shown(root.tables-fit);
+    }
     function span(n: int) -> length { return root.cw * n + root.gap * (n - 1); }
 
     VerticalLayout {
@@ -1828,6 +2072,8 @@ component Dashboard inherits Rectangle {
         // columns, then the summaries.
         if root.wide: Flickable {
             content-height: grid.preferred-height + Dock.pad;
+            init => { root.view-h = self.height; }
+            changed height => { root.view-h = self.height; }
             grid := VerticalLayout {
                 alignment: start;
                 padding-left: 16px + root.inset;
@@ -1926,7 +2172,36 @@ component Dashboard inherits Rectangle {
                     }
                     MemoryDashCard { width: root.cw; height: root.middle-h; memory: root.memory; tapped => { root.open-memory(); } }
                 }
-                HorizontalLayout {
+                if root.tables-fit: HorizontalLayout {
+                    height: root.view-h - root.rows-h;
+                    spacing: root.gap;
+                    ConnTableCard {
+                        width: (root.span(4) - root.gap) * 3 / 5;
+                        feed: root.table-feed;
+                        counts: root.table-counts;
+                        tcp: root.table-tcp;
+                        udp: root.table-udp;
+                        cols: root.table-cols;
+                        rows: root.table-rows;
+                        compact: root.compact;
+                        select(f) => { root.table-select(f); }
+                        sort(c) => { root.table-sort(c); }
+                        table-width(w) => { root.table-width(w); }
+                        resize-start(b) => { root.table-resize-start(b); }
+                        resize(d) => { root.table-resize(d); }
+                        resize-end => { root.table-resize-end(); }
+                        reset => { root.table-reset(); }
+                    }
+                    GroupsDashCard {
+                        height: root.view-h - root.rows-h;
+                        limit: max(1, floor((root.view-h - root.rows-h - 64px) / 60px)) * 2;
+                        groups: root.groups;
+                        running: root.run-state == "STARTED";
+                        tapped => { root.open-group(""); }
+                        open(g) => { root.open-group(g); }
+                    }
+                }
+                if !root.tables-fit: HorizontalLayout {
                     height: root.summary-h;
                     spacing: root.gap;
                     StatsDashCard { width: root.span(root.columns / 2); fill: true; height: root.summary-h; stats: root.stats; open(i) => { root.open-stats(i); } }
@@ -5656,6 +5931,20 @@ export component AppWindow inherits Window {
     callback dash-set-lan(bool);
     callback dash-set-hide-ip(bool);
     callback dash-layout(bool, int, bool);
+    in property <int> dash-table-feed;
+    in property <[string]> dash-table-counts: ["0", "0", "0"];
+    in property <string> dash-table-tcp;
+    in property <string> dash-table-udp;
+    in property <[DashCol]> dash-table-cols;
+    in property <[DashRow]> dash-table-rows;
+    callback dash-table-select(int);
+    callback dash-table-sort(string);
+    callback dash-table-width(length);
+    callback dash-table-shown(bool);
+    callback dash-table-resize-start(int);
+    callback dash-table-resize(length);
+    callback dash-table-resize-end();
+    callback dash-table-reset();
     in property <string> dash-local-ip;
     in property <string> dash-memory;
     in property <string> dash-run-time: "00:00:00";
@@ -6192,6 +6481,20 @@ export component AppWindow inherits Window {
                     drag-target(f, d, g, n) => { return root.dash-drag-target(f, d, g, n); }
                     drag-offset(f, t, i, g) => { return root.dash-drag-offset(f, t, i, g); }
                     layout(w, c, sv) => { root.dash-layout(w, c, sv); }
+                    table-feed: root.dash-table-feed;
+                    table-counts: root.dash-table-counts;
+                    table-tcp: root.dash-table-tcp;
+                    table-udp: root.dash-table-udp;
+                    table-cols: root.dash-table-cols;
+                    table-rows: root.dash-table-rows;
+                    table-select(f) => { root.dash-table-select(f); }
+                    table-sort(c) => { root.dash-table-sort(c); }
+                    table-width(w) => { root.dash-table-width(w); }
+                    table-shown(v) => { root.dash-table-shown(v); }
+                    table-resize-start(b) => { root.dash-table-resize-start(b); }
+                    table-resize(d) => { root.dash-table-resize(d); }
+                    table-resize-end => { root.dash-table-resize-end(); }
+                    table-reset => { root.dash-table-reset(); }
                 }
                 // Kept in the tree so its measures stay readable and its scroll stays put.
                 proxies-page := Proxies {

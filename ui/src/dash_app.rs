@@ -1,15 +1,17 @@
 //! The dashboard cards added to match lib/views/dashboard: service status, connection
 //! stats, the intranet IP card's LAN switch, the IP quality sheet and the card editor.
 
+use crate::dash_table::{self, Feed};
 use crate::dashboard;
 use crate::drag;
 use crate::settings_app::Effect;
 use crate::{
-    App, AppWindow, DashAdd, DashProfileDetail, DashService, DashStats, DashStatus, ProviderRow,
-    ServiceManageRow,
+    App, AppWindow, DashAdd, DashCell, DashCol, DashProfileDetail, DashRow, DashService, DashStats,
+    DashStatus, ProviderRow, ServiceManageRow,
 };
 use serde_json::{json, Value};
 use slint::{ModelRc, VecModel};
+use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -35,10 +37,107 @@ pub(crate) struct Services {
 
 use dashboard::service_shown as shown_count;
 
+/// `ConnectionsTableCard`'s state: its feed, the header sort, the table's width, whether
+/// the dashboard shows it, and a column drag's starting widths and overrides.
+pub(crate) struct DashTable {
+    pub feed: Feed,
+    pub sort: Option<(String, bool)>,
+    pub width: f32,
+    pub shown: bool,
+    pub resize: Option<(usize, Vec<f32>, BTreeMap<String, f32>)>,
+    /// The widths while a drag moves, saved when it ends.
+    pub live: Option<BTreeMap<String, f32>>,
+}
+
+impl Default for DashTable {
+    fn default() -> Self {
+        DashTable {
+            feed: Feed::Connections,
+            sort: None,
+            width: 0.0,
+            shown: false,
+            resize: None,
+            live: None,
+        }
+    }
+}
+
 impl App {
     pub(crate) fn bind_dashboard(self: &Arc<Self>, ui: &AppWindow) {
         let a = self.clone();
         ui.on_dash_move(move |from, to| a.move_dashboard(from as usize, to as usize));
+        let a = self.clone();
+        ui.on_dash_table_select(move |feed| {
+            {
+                let mut t = a.dash_table.lock().unwrap();
+                t.feed = Feed::from_index(feed);
+                t.sort = None;
+            }
+            a.publish_table();
+        });
+        let a = self.clone();
+        ui.on_dash_table_sort(move |id| {
+            {
+                let mut t = a.dash_table.lock().unwrap();
+                let cols = dash_table::columns(t.feed, t.width);
+                if let Some(col) = cols.iter().find(|c| c.id == id.as_str()) {
+                    t.sort = dash_table::next_sort(t.sort.take(), col);
+                }
+            }
+            a.publish_table();
+        });
+        let a = self.clone();
+        ui.on_dash_table_width(move |w| {
+            a.dash_table.lock().unwrap().width = w;
+            a.publish_table();
+        });
+        let a = self.clone();
+        ui.on_dash_table_resize_start(move |boundary| {
+            let base = a.table_overrides();
+            let mut t = a.dash_table.lock().unwrap();
+            let cols = dash_table::columns(t.feed, t.width);
+            let widths = dash_table::widths(&cols, t.width, &base);
+            t.resize = Some((boundary.max(0) as usize, widths, base));
+        });
+        let a = self.clone();
+        ui.on_dash_table_resize(move |delta| {
+            {
+                let mut t = a.dash_table.lock().unwrap();
+                let cols = dash_table::columns(t.feed, t.width);
+                let Some((b, widths, base)) = &t.resize else {
+                    return;
+                };
+                t.live = Some(dash_table::resized(&cols, widths, base, *b, delta));
+            }
+            a.publish_table();
+        });
+        let a = self.clone();
+        ui.on_dash_table_resize_end(move || {
+            let (feed, live) = {
+                let mut t = a.dash_table.lock().unwrap();
+                t.resize = None;
+                (t.feed, t.live.take())
+            };
+            if let Some(live) = live {
+                a.save_table_widths(feed, live);
+            }
+        });
+        let a = self.clone();
+        ui.on_dash_table_reset(move || {
+            let feed = {
+                let mut t = a.dash_table.lock().unwrap();
+                t.resize = None;
+                t.live = None;
+                t.feed
+            };
+            a.save_table_widths(feed, BTreeMap::new());
+            a.publish_table();
+        });
+        let a = self.clone();
+        ui.on_dash_table_shown(move |shown| {
+            a.dash_table.lock().unwrap().shown = shown;
+            a.publish_table();
+        });
         let a = self.clone();
         ui.on_open_service_ip(move |ip, region| a.open_service_ip(ip.into(), region.into()));
         let a = self.clone();
@@ -531,6 +630,117 @@ impl App {
             ui.set_dash_services_checking(checking);
             ui.set_dash_service_verdict(verdict.into());
             ui.set_dash_service_warn(problems);
+        });
+    }
+
+    /// The current feed's saved column widths.
+    fn table_overrides(self: &Arc<Self>) -> BTreeMap<String, f32> {
+        let feed = self.dash_table.lock().unwrap().feed;
+        let store = self.store.lock().unwrap();
+        let saved = &store.state.settings.table_column_widths;
+        saved
+            .get(dash_table::table_id(feed))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// `saveColumnWidths`: kept by table id, an empty set removed.
+    fn save_table_widths(self: &Arc<Self>, feed: Feed, widths: BTreeMap<String, f32>) {
+        self.update_settings(Effect::None, move |s| {
+            let id = dash_table::table_id(feed).to_string();
+            if widths.is_empty() {
+                s.table_column_widths.remove(&id);
+            } else {
+                s.table_column_widths.insert(id, widths);
+            }
+        });
+    }
+
+    /// The table's columns and rows, while the dashboard shows it.
+    pub(crate) fn publish_table(self: &Arc<Self>) {
+        let (feed, sort, width, live) = {
+            let t = self.dash_table.lock().unwrap();
+            if !t.shown {
+                return;
+            }
+            (t.feed, t.sort.clone(), t.width, t.live.clone())
+        };
+        let overrides = live.unwrap_or_else(|| self.table_overrides());
+        let now = crate::requests_app::now_ms();
+        let offset = crate::requests_app::utc_offset(now);
+        let cols = dash_table::columns(feed, width);
+        let widths = dash_table::widths(&cols, width, &overrides);
+        let (rows, counts, tcp, udp) = {
+            let req = self.req.lock().unwrap();
+            let rows = dash_table::rows(
+                feed,
+                &req.conns,
+                &req.dns,
+                &cols,
+                sort.as_ref(),
+                now,
+                offset,
+            );
+            let active: Vec<_> = req.conns.conns.values().filter(|c| c.is_active()).collect();
+            let tcp = active
+                .iter()
+                .filter(|c| c.network.eq_ignore_ascii_case("tcp"))
+                .count();
+            let counts =
+                [active.len(), req.conns.conns.len(), req.dns.queries.len()].map(dashboard::count);
+            (rows, counts, tcp, active.len() - tcp)
+        };
+        let mut x = 0.0;
+        let heads: Vec<DashCol> = cols
+            .iter()
+            .zip(widths)
+            .map(|(c, w)| {
+                let sort = match &sort {
+                    Some((id, desc)) if id == c.id => 1 + *desc as i32,
+                    _ => 0,
+                };
+                let col = DashCol {
+                    id: c.id.into(),
+                    label: c.label.into(),
+                    x,
+                    w,
+                    end: c.end,
+                    sort,
+                };
+                x += w;
+                col
+            })
+            .collect();
+        self.ui(move |ui| {
+            if ui.get_tab() != 0 {
+                return;
+            }
+            let rows: Vec<DashRow> = rows
+                .into_iter()
+                .map(|r| DashRow {
+                    cells: ModelRc::new(VecModel::from(
+                        r.into_iter()
+                            .map(|c| DashCell {
+                                text: c.text.into(),
+                                tone: c.tone,
+                                badge: c.badge.into(),
+                            })
+                            .collect::<Vec<_>>(),
+                    )),
+                })
+                .collect();
+            ui.set_dash_table_feed(match feed {
+                Feed::Connections => 0,
+                Feed::Requests => 1,
+                Feed::Dns => 2,
+            });
+            ui.set_dash_table_counts(ModelRc::new(VecModel::from(
+                counts.map(slint::SharedString::from).to_vec(),
+            )));
+            ui.set_dash_table_tcp(dashboard::count(tcp).into());
+            ui.set_dash_table_udp(dashboard::count(udp).into());
+            ui.set_dash_table_cols(ModelRc::new(VecModel::from(heads)));
+            ui.set_dash_table_rows(ModelRc::new(VecModel::from(rows)));
         });
     }
 

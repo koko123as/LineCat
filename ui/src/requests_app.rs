@@ -12,7 +12,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -20,7 +20,7 @@ fn now_ms() -> i64 {
 }
 
 /// The device zone's offset from UTC, in seconds, now.
-fn utc_offset(ms: i64) -> i64 {
+pub(crate) fn utc_offset(ms: i64) -> i64 {
     let t = (ms / 1000) as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {

@@ -10,6 +10,7 @@ mod backup_app;
 pub use backup_app::sections as backup_app_sections;
 pub mod bridge;
 mod dash_app;
+pub mod dash_table;
 pub mod dashboard;
 pub mod dns_queries;
 pub mod drag;
@@ -112,6 +113,7 @@ struct App {
     dash_layout: Mutex<(bool, i32, bool)>,
     /// The editor column's card heights, by index, for the drag.
     dash_heights: Mutex<Vec<f32>>,
+    dash_table: Mutex<dash_app::DashTable>,
     logs_scheduled: AtomicBool,
     toast_seq: AtomicU64,
     last_id: Mutex<u64>,
@@ -677,6 +679,7 @@ impl App {
         });
         self.publish_memory();
         self.publish_stats();
+        self.publish_table();
     }
 
     /// `OutboundIpProbe`: where traffic leaves right now, through the rules while running
@@ -2298,6 +2301,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         services: Mutex::new(dash_app::Services::default()),
         dash_layout: Mutex::new((false, 2, false)),
         dash_heights: Mutex::new(Vec::new()),
+        dash_table: Mutex::new(dash_app::DashTable::default()),
         logs_scheduled: AtomicBool::new(false),
         toast_seq: AtomicU64::new(0),
         last_id: Mutex::new(0),
