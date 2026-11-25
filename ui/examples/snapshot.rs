@@ -773,6 +773,14 @@ fn main() {
         ("resources-tablet", 3, "", "resources", 1, ""),
         ("tools-wide", 3, "", "", 1, ""),
         ("dashboard", 0, "", "", 1, ""),
+        ("popt", 1, "节点选择", "", 1, "options"),
+        ("popt-small", 1, "节点选择", "", 1, "options"),
+        ("popt-wide", 1, "节点选择", "", 1, "options"),
+        ("popt-tablet", 1, "节点选择", "", 1, "options"),
+        ("popt-layout", 1, "节点选择", "", 1, "options-layout"),
+        ("popt-layout-small", 1, "节点选择", "", 1, "options-layout"),
+        ("popt-layout-wide", 1, "节点选择", "", 1, "options-layout"),
+        ("popt-layout-tablet", 1, "节点选择", "", 1, "options-layout"),
         ("nav-noproxies", 0, "", "", 1, "noproxies"),
         ("nav-noproxies-small", 0, "", "", 1, "noproxies"),
         ("nav-noproxies-wide", 0, "", "", 1, "noproxies"),
@@ -1119,7 +1127,8 @@ fn main() {
         } else if let Some(l) = saved_logs.clone() {
             ui.set_logs(l);
         }
-        ui.set_proxy_options_open(*overlay == "options");
+        ui.set_proxy_options_open(overlay.starts_with("options"));
+        ui.set_proxy_sub(overlay.strip_prefix("options-").unwrap_or("").into());
         ui.set_proxy_searching(*overlay == "search");
         ui.set_add_menu_open(*overlay == "add-menu");
         ui.set_link_open(*overlay == "link");

@@ -346,6 +346,12 @@ export struct SetSection {
 // ---------------------------------------------------------------- Icons
 // 24x24 outline glyphs, stroked.
 
+// The phone's floating dock: how much of a page's bottom it covers, so pages pad their
+// scroll ends and lift their buttons above it.
+global Dock {
+    in-out property <length> pad: 88px;
+}
+
 global Icons {
     out property <string> dashboard: "M4 4h7v7H4z M13 4h7v4h-7z M13 10h7v10h-7z M4 13h7v7H4z";
     out property <string> proxies: "M12 3a9 9 0 1 0 0.01 0z M3 12h18 M12 3c3 3 3 15 0 18 M12 3c-3 3-3 15 0 18";
@@ -679,23 +685,10 @@ component CatButton inherits Rectangle {
     height: size;
     opacity: root.busy ? 0.5 : 1;
     Path {
-        visible: root.on;
-        width: root.size;
-        height: root.size;
-        commands: "M333.0,536.9C282.4,531.2 242.0,516.0 215.2,492.7L208.8,487.1L201.2,491.8C194.7,495.9 192.9,496.5 188.5,496.5C180.1,496.4 174.0,490.3 174.0,481.9C174.0,475.7 176.9,471.5 184.8,466.5C189.0,463.8 190.9,462.0 190.5,461.0C190.3,460.2 188.7,455.6 187.1,450.8C184.5,443.3 183.5,439.7 183.1,435.8C183.0,435.0 172.8,439.1 164.8,443.1C158.0,446.5 154.3,446.7 149.0,444.0C141.6,440.2 138.7,429.7 143.3,422.9C146.4,418.3 153.0,414.5 168.4,408.4L181.5,403.1L182.1,387.3C182.9,367.9 185.5,354.4 190.6,343.7C192.3,340.1 192.3,340.0 189.8,335.3C186.8,329.8 184.2,321.2 183.2,313.7C182.3,307.0 182.3,254.9 183.2,249.0C187.3,222.2 208.9,203.4 236.7,202.4C250.3,201.9 260.2,205.5 287.8,221.4C310.8,234.6 309.7,234.3 323.7,232.8C338.9,231.1 381.1,231.1 396.3,232.8C408.1,234.0 408.2,234.0 413.5,231.6C416.4,230.3 424.7,225.8 431.9,221.5C458.7,205.9 469.8,201.8 483.9,202.4C498.6,203.1 511.2,208.3 521.1,218.0C529.2,225.9 532.6,232.3 536.8,247.5C537.9,251.8 538.2,303.5 537.0,311.4C535.8,321.2 533.2,329.8 530.2,335.3C527.7,340.0 527.7,340.1 529.4,343.7C534.5,354.4 537.1,367.9 537.9,387.3L538.5,403.1L551.6,408.4L572.7,418.6C579.1,423.5 580.7,430.7 577.0,438.0C574.7,442.5 569.0,446.0 564.0,446.0C562.3,446.0 558.4,444.7 555.2,443.1C547.2,439.1 537.0,435.0 536.9,435.8C536.5,439.7 535.5,443.3 532.9,450.8C531.3,455.6 529.7,460.2 529.5,461.0C529.1,462.0 531.0,463.8 535.2,466.5C543.1,471.5 546.0,475.7 546.0,481.9C546.0,490.3 539.9,496.4 531.5,496.5C527.1,496.5 525.3,495.9 518.8,491.9L511.3,487.2L504.9,492.7C480.8,513.2 449.1,526.6 407.0,534.1C386.6,537.7 351.8,539.0 333.0,536.9ZM346.3,461.1C331.5,456.0 325.4,445.0 331.1,433.3C339.1,416.7 377.6,415.3 388.7,431.2C394.7,439.9 392.0,451.6 382.8,457.3C373.6,463.0 356.9,464.8 346.3,461.1ZM295.5,423.0C287.3,421.7 281.7,417.0 277.4,407.6C268.5,388.0 278.8,363.9 297.1,361.4C306.0,360.2 316.5,367.2 321.2,377.5C324.5,384.7 324.5,400.3 321.2,407.5C316.0,418.8 306.4,424.6 295.5,423.0ZM417.3,423.0C409.5,421.9 401.9,414.7 398.5,405.1C396.2,398.5 396.5,385.4 399.1,378.4C402.7,368.8 412.8,361.0 421.5,361.0C426.1,361.0 433.5,364.4 437.6,368.5C443.4,374.3 446.0,381.7 446.0,392.4C446.0,412.8 434.2,425.3 417.3,423.0Z";
-        fill: Theme.s.primary;
-        fill-rule: evenodd;
-        viewbox-x: 97.3;
-        viewbox-y: 107.3;
-        viewbox-width: 524.4;
-        viewbox-height: 524.4;
-    }
-    Path {
-        visible: !root.on;
         width: root.size;
         height: root.size;
         commands: "M333.0,536.9C282.4,531.2 242.0,516.0 215.2,492.7L208.8,487.1L201.2,491.8C194.7,495.9 192.9,496.5 188.5,496.5C180.1,496.4 174.0,490.3 174.0,481.9C174.0,475.7 176.9,471.5 184.8,466.5C189.0,463.8 190.9,462.0 190.5,461.0C190.3,460.2 188.7,455.6 187.1,450.8C184.5,443.3 183.5,439.7 183.1,435.8C183.0,435.0 172.8,439.1 164.8,443.1C158.0,446.5 154.3,446.7 149.0,444.0C141.6,440.2 138.7,429.7 143.3,422.9C146.4,418.3 153.0,414.5 168.4,408.4L181.5,403.1L182.1,387.3C182.9,367.9 185.5,354.4 190.6,343.7C192.3,340.1 192.3,340.0 189.8,335.3C186.8,329.8 184.2,321.2 183.2,313.7C182.3,307.0 182.3,254.9 183.2,249.0C187.3,222.2 208.9,203.4 236.7,202.4C250.3,201.9 260.2,205.5 287.8,221.4C310.8,234.6 309.7,234.3 323.7,232.8C338.9,231.1 381.1,231.1 396.3,232.8C408.1,234.0 408.2,234.0 413.5,231.6C416.4,230.3 424.7,225.8 431.9,221.5C458.7,205.9 469.8,201.8 483.9,202.4C498.6,203.1 511.2,208.3 521.1,218.0C529.2,225.9 532.6,232.3 536.8,247.5C537.9,251.8 538.2,303.5 537.0,311.4C534.5,328.9 529.6,339.6 521.2,345.4C515.9,349.1 506.7,350.1 500.7,347.6C496.8,345.9 478.4,329.4 476.3,325.7C472.9,319.6 476.4,309.4 483.0,306.0C489.9,302.5 494.2,303.3 502.8,309.7C505.6,311.8 505.8,311.9 506.6,310.2C507.9,307.2 508.3,264.0 507.1,255.9C504.9,241.5 496.9,233.8 483.6,233.2C477.2,232.9 475.7,233.2 469.0,236.2C464.9,238.1 455.1,243.3 447.3,247.8C420.0,263.4 417.7,264.3 403.7,263.7C398.1,263.5 386.0,262.8 376.7,262.1C363.5,261.1 356.5,261.1 343.2,262.1C334.0,262.8 321.9,263.5 316.3,263.7C302.3,264.3 300.0,263.4 272.7,247.8C251.5,235.7 245.2,233.0 237.6,233.0C224.4,233.0 215.3,241.1 213.0,255.1C211.7,262.8 212.0,307.1 213.4,310.2C214.1,311.8 214.9,311.5 219.8,308.0C226.2,303.3 230.8,302.8 237.0,306.0C243.6,309.4 247.1,319.6 243.7,325.7C243.0,326.8 238.4,331.6 233.4,336.3C224.4,344.9 220.0,351.2 216.4,361.2C214.5,366.6 212.0,381.8 212.0,388.7L212.0,394.0L220.8,393.7C228.3,393.5 230.0,393.8 233.0,395.7C237.9,398.7 240.0,402.8 240.0,409.0C240.0,413.9 239.7,414.6 235.8,418.5C231.7,422.6 231.1,422.8 222.1,424.0L212.7,425.3L213.3,431.0C214.1,438.6 217.9,448.3 219.7,447.6C223.3,446.2 234.5,444.0 237.8,444.0C239.8,444.0 243.3,445.0 245.4,446.3C256.0,452.3 255.8,467.4 245.0,472.8L241.0,474.8L247.2,478.8C274.1,496.1 319.9,508.0 360.0,508.0C400.1,508.0 445.9,496.1 472.8,478.8L479.0,474.8L475.0,472.8C464.2,467.4 463.9,452.3 474.6,446.3C476.7,445.0 480.2,444.0 482.2,444.0C485.5,444.0 496.7,446.2 500.3,447.6C502.1,448.3 505.7,439.1 506.6,431.2L507.2,425.3L497.9,424.0C488.9,422.8 488.3,422.6 484.2,418.5C480.3,414.6 480.0,413.9 480.0,409.0C480.0,402.2 482.7,397.8 488.5,395.0C492.3,393.2 494.0,392.9 499.7,393.5C518.0,395.3 562.1,410.5 572.7,418.6C579.1,423.5 580.7,430.7 577.0,438.0C574.7,442.5 569.0,446.0 564.0,446.0C562.3,446.0 558.4,444.7 555.2,443.1C547.2,439.1 537.0,435.0 536.9,435.8C536.5,439.7 535.5,443.3 532.9,450.8C531.3,455.6 529.7,460.2 529.5,461.0C529.1,462.0 531.0,463.8 535.2,466.5C543.1,471.5 546.0,475.7 546.0,481.9C546.0,490.3 539.9,496.4 531.5,496.5C527.1,496.5 525.3,495.9 518.8,491.9L511.3,487.2L504.9,492.7C480.8,513.2 449.1,526.6 407.0,534.1C386.6,537.7 351.8,539.0 333.0,536.9ZM346.3,461.1C331.5,456.0 325.4,445.0 331.1,433.3C339.1,416.7 377.6,415.3 388.7,431.2C394.7,439.9 392.0,451.6 382.8,457.3C373.6,463.0 356.9,464.8 346.3,461.1ZM295.5,423.0C287.3,421.7 281.7,417.0 277.4,407.6C268.5,388.0 278.8,363.9 297.1,361.4C306.0,360.2 316.5,367.2 321.2,377.5C324.5,384.7 324.5,400.3 321.2,407.5C316.0,418.8 306.4,424.6 295.5,423.0ZM417.3,423.0C409.5,421.9 401.9,414.7 398.5,405.1C396.2,398.5 396.5,385.4 399.1,378.4C402.7,368.8 412.8,361.0 421.5,361.0C426.1,361.0 433.5,364.4 437.6,368.5C443.4,374.3 446.0,381.7 446.0,392.4C446.0,412.8 434.2,425.3 417.3,423.0Z";
-        fill: Theme.s.on-surface-variant;
+        fill: root.on ? Theme.s.primary : Theme.s.on-surface-variant;
         fill-rule: evenodd;
         viewbox-x: 97.3;
         viewbox-y: 107.3;
@@ -1276,6 +1269,9 @@ component MemoryDashCard inherits DashCard {
 // A card in the editor (`_EditableCard`): dragged by a hold anywhere on it, with a remove
 // button on its corner unless it holds the start button.
 component EditFrame inherits Rectangle {
+    // Only while editing does the frame take touches, and only a long press lifts the card
+    // (`_EditableCard`): outside editing every touch reaches the card itself.
+    in property <bool> editing;
     in property <bool> removable;
     in property <int> index;
     in property <int> count;
@@ -1283,14 +1279,34 @@ component EditFrame inherits Rectangle {
     callback moved(int, int);
     // The drag: how far the finger went since the card last changed places.
     property <length> base;
-    property <bool> dragging: ef-ta.pressed;
-    property <length> shift: root.dragging ? ef-ta.mouse-y - root.base : 0px;
-    @children
+    property <bool> lifted;
+    property <length> shift: root.lifted && ef-ta.pressed ? ef-ta.mouse-y - root.base : 0px;
+    Rectangle {
+        y: root.shift;
+        width: parent.width;
+        height: parent.height;
+        border-radius: 20px;
+        background: root.lifted ? Theme.s.card : transparent;
+        drop-shadow-offset-y: root.lifted ? 6px : 0px;
+        drop-shadow-blur: root.lifted ? 16px : 0px;
+        drop-shadow-color: root.lifted ? #00000033 : transparent;
+        @children
+    }
+    hold := Timer {
+        interval: 400ms;
+        running: root.editing && ef-ta.pressed && !root.lifted;
+        triggered => {
+            root.lifted = true;
+            root.base = ef-ta.mouse-y;
+        }
+    }
     ef-ta := TouchArea {
-        pointer-event(e) => {
-            if (e.kind == PointerEventKind.down) { root.base = self.mouse-y; }
+        enabled: root.editing;
+        changed pressed => {
+            if (!self.pressed) { root.lifted = false; }
         }
         moved => {
+            if (!root.lifted) { return; }
             if (root.shift > root.height * 0.6 && root.index < root.count - 1) {
                 root.moved(root.index, root.index + 1);
                 root.base = self.mouse-y + root.height;
@@ -1301,7 +1317,8 @@ component EditFrame inherits Rectangle {
         }
     }
     Rectangle {
-        visible: root.dragging;
+        visible: root.lifted;
+        y: root.shift;
         border-radius: 20px;
         border-width: 2px;
         border-color: Theme.s.primary;
@@ -1492,7 +1509,7 @@ component Dashboard inherits Rectangle {
             }
         }
         if !root.wide: Flickable {
-            content-height: mobile.preferred-height;
+            content-height: mobile.preferred-height + Dock.pad;
             mobile := VerticalLayout {
                 padding-left: root.side;
                 padding-right: root.side;
@@ -1501,6 +1518,7 @@ component Dashboard inherits Rectangle {
                 spacing: root.gap;
                 for w[i] in root.widgets: EditFrame {
                     height: card.preferred-height;
+                    editing: root.editing;
                     removable: root.editing && w != "status";
                     index: i;
                     count: root.widgets.length;
@@ -1608,7 +1626,7 @@ component Dashboard inherits Rectangle {
         // The wide dashboard (`_DesktopDashboard`): rows of fixed height across 2 or 4
         // columns, then the summaries.
         if root.wide: Flickable {
-            content-height: grid.preferred-height;
+            content-height: grid.preferred-height + Dock.pad;
             grid := VerticalLayout {
                 padding-left: 16px + root.inset;
                 padding-right: 24px + root.inset;
@@ -2019,7 +2037,7 @@ component Proxies inherits Rectangle {
 
         Rectangle {
             flick := Flickable {
-                content-height: max(content.preferred-height, self.height);
+                content-height: max(content.preferred-height, self.height) + Dock.pad;
                 content := VerticalLayout {
                     alignment: start;
                     padding-left: 16px;
@@ -2223,7 +2241,7 @@ component Profiles inherits Rectangle {
             }
         }
         if root.profiles.length > 0: Flickable {
-            content-height: list.preferred-height;
+            content-height: list.preferred-height + Dock.pad;
             list := VerticalLayout {
                 padding-left: 16px;
                 padding-right: 16px;
@@ -2320,7 +2338,7 @@ component EditProfilePage inherits Rectangle {
             }
         }
         Flickable {
-            content-height: form.preferred-height;
+            content-height: form.preferred-height + Dock.pad;
             form := VerticalLayout {
                 padding: 16px;
                 spacing: 14px;
@@ -2383,7 +2401,7 @@ component EditorPage inherits Rectangle {
         Rectangle {
             background: Theme.s.card;
             flick := Flickable {
-                content-height: max(editor.preferred-height + 24px, self.height);
+                content-height: max(editor.preferred-height + 24px, self.height) + Dock.pad;
                 content-width: self.width;
                 editor := TextInput {
                     x: 12px;
@@ -2421,7 +2439,7 @@ component SortPage inherits Rectangle {
             }
         }
         Flickable {
-            content-height: col.preferred-height;
+            content-height: col.preferred-height + Dock.pad;
             col := VerticalLayout {
                 padding: 16px;
                 spacing: 10px;
@@ -2447,6 +2465,30 @@ component SortPage inherits Rectangle {
 }
 
 // A row of a popup menu (FlClash's PopupMenuItem).
+// A row in a popup menu (`PopupMenuItem`): glyph, label, the current value with a chevron
+// for an item with options, or a check.
+component PopupRow inherits Rectangle {
+    in property <string> glyph;
+    in property <string> label;
+    in property <string> value;
+    in property <bool> more;
+    in property <bool> checked;
+    callback clicked();
+    height: 44px;
+    background: pr-ta.pressed ? Theme.s.inset : transparent;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 12px;
+        spacing: 12px;
+        if root.glyph != "": VerticalLayout { alignment: center; Icon { glyph: root.glyph; size: 18px; tint: Theme.s.on-surface-variant; } }
+        Text { text: root.label; font-size: 15px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+        if root.value != "": Text { text: root.value; font-size: 13px; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        if root.more: VerticalLayout { alignment: center; Icon { glyph: Icons.chevron; size: 16px; tint: Theme.s.on-surface-variant; } }
+        if root.checked: VerticalLayout { alignment: center; Icon { glyph: Icons.check; size: 18px; tint: Theme.s.primary; } }
+    }
+    pr-ta := TouchArea { clicked => { root.clicked(); } }
+}
+
 component MenuRow inherits Rectangle {
     in property <string> glyph;
     in property <string> label;
@@ -2726,7 +2768,7 @@ component SettingsPage inherits Rectangle {
         }
         Flickable {
             visible: !root.is-empty;
-            content-height: page-col.preferred-height;
+            content-height: page-col.preferred-height + Dock.pad;
             page-col := VerticalLayout {
                 alignment: start;
                 padding-bottom: root.bottom-gap;
@@ -3019,6 +3061,7 @@ component Logs inherits Rectangle {
                 }
             }
         }
+        Rectangle { height: Dock.pad; }
         Rectangle { height: root.bottom-gap; }
     }
 }
@@ -3537,7 +3580,7 @@ component ThemePage inherits Rectangle {
     VerticalLayout {
         AppBar { title: "主题"; can-back: true; back => { root.back(); } }
         Flickable {
-            content-height: theme-col.preferred-height;
+            content-height: theme-col.preferred-height + Dock.pad;
             theme-col := VerticalLayout {
                 alignment: start;
                 padding-bottom: root.bottom-gap;
@@ -3710,7 +3753,7 @@ component ColorPage inherits Rectangle {
             VerticalLayout { alignment: center; IconButton { glyph: Icons.check; tint: Theme.s.on-surface; clicked => { root.confirm(); } } }
         }
         Flickable {
-            content-height: color-col.preferred-height;
+            content-height: color-col.preferred-height + Dock.pad;
             color-col := VerticalLayout {
                 alignment: start;
                 padding-left: 16px;
@@ -4302,7 +4345,7 @@ component DetailView inherits Rectangle {
         }
         if !root.detail.loading && root.detail.sections.length > 0: Flickable {
             vertical-stretch: 1;
-            content-height: max(secs.preferred-height, self.height);
+            content-height: max(secs.preferred-height, self.height) + Dock.pad;
             secs := VerticalLayout {
                 alignment: start;
                 padding-left: 16px;
@@ -4843,7 +4886,7 @@ component ResourcesPage inherits Rectangle {
             }
         }
         Flickable {
-            content-height: max(res-col.preferred-height, self.height);
+            content-height: max(res-col.preferred-height, self.height) + Dock.pad;
             res-col := VerticalLayout {
                 alignment: start;
                 padding-left: 16px;
@@ -5199,6 +5242,7 @@ export component AppWindow inherits Window {
     out property <int> proxy-columns: proxies-page.columns;
     out property <length> proxy-card-height: proxies-page.card-height;
     in-out property <bool> proxy-options-open;
+    in-out property <string> proxy-sub;
     in-out property <bool> proxy-searching;
     callback test-node(string, string);
     callback toggle-group(string);
@@ -5449,6 +5493,9 @@ export component AppWindow inherits Window {
     }
 
     property <bool> wide: root.width > 600px;
+    property <length> dock-pad: !root.wide && root.keyboard == 0 ? 88px + root.bottom-inset : 0px;
+    changed dock-pad => { Dock.pad = self.dock-pad; }
+    init => { Dock.pad = self.dock-pad; }
     // `navigationItemsState`: 代理 shows once the Core has groups, or before the first
     // load while there are profiles.
     in property <bool> groups-loaded;
@@ -5500,6 +5547,7 @@ export component AppWindow inherits Window {
                 if (root.tab == 3 && root.tools-page == "logs" && root.log-searching) { root.log-searching = false; root.log-query = ""; return accept; }
                 if (root.req-sheet-open) { root.req-sheet-open = false; root.req-sheet-closed(); return accept; }
                 if (root.req-visible && root.req-searching) { root.req-searching = false; root.req-query = ""; return accept; }
+                if (root.proxy-sub != "") { root.proxy-sub = ""; return accept; }
                 if (root.proxy-options-open) { root.proxy-options-open = false; return accept; }
                 if (root.tab == 1 && root.proxy-searching) { root.proxy-searching = false; root.search-proxies(""); return accept; }
                 if (root.confirm-open && root.confirm-action == "access-save") { root.confirm-open = false; return accept; }
@@ -5717,7 +5765,7 @@ export component AppWindow inherits Window {
                 }
                 if root.tab == 3 && root.meta.known && root.meta.fab: Fab {
                     x: parent.width - self.width - 16px;
-                    y: parent.height - self.height - 16px;
+                    y: parent.height - self.height - 16px - Dock.pad;
                     glyph: Icons.plus;
                     clicked => { root.set-clicked(root.tools-page, "add"); }
                 }
@@ -5879,7 +5927,7 @@ export component AppWindow inherits Window {
                 }
 
                 if root.toast != "": Rectangle {
-                    y: parent.height - self.height - 88px - root.keyboard;
+                    y: parent.height - self.height - max(88px, Dock.pad + 12px) - root.keyboard;
                     x: (parent.width - self.width) / 2;
                     width: min(parent.width - 40px, toast-text.preferred-width + 32px);
                     height: toast-text.preferred-height + 20px;
@@ -5897,49 +5945,88 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+            // The floating dock (an approved departure from FlClash's bar): a rounded bar
+            // clear of the screen's sides and bottom, with the pages scrolling under it.
             if !root.wide && root.keyboard == 0: Rectangle {
-                height: 72px + root.bottom-inset;
-                background: Theme.s.card;
-                HorizontalLayout {
-                    y: 0;
-                    height: 72px;
+                height: 0px;
+                Rectangle {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    height: 64px;
+                    y: -self.height - 12px - root.bottom-inset;
+                    border-radius: 32px;
+                    background: Theme.s.card;
+                    border-width: 1px;
+                    border-color: Theme.s.outline-variant.with-alpha(0.5);
+                    TouchArea { }
+                    HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    height: 64px;
                     NavItem { label: "仪表盘"; glyph: Icons.dashboard; active: root.tab == 0; clicked => { root.go(0); } }
                     if root.has-proxies: NavItem { label: "代理"; glyph: Icons.proxies; active: root.tab == 1; clicked => { root.go(1); } }
                     NavItem { label: "配置"; glyph: Icons.profiles; active: root.tab == 2; clicked => { root.go(2); } }
                     NavItem { label: "工具"; glyph: Icons.tools; active: root.tab == 3; clicked => { root.go(3); } }
+                }
                 }
             }
         }
         }
 
         // The proxies page's menu (`_buildMenuItems`), as a sheet from the bottom.
+        // The proxies page's ⋯ menu (`_buildMenuItems`): 风格, 排序, 布局, 尺寸 and, for the
+        // list, 图标样式 each open their options with the current one checked; 隐藏超时代理
+        // toggles. Layout and size list 宽松/标准/紧凑 (FlClash's enum order) over the stored
+        // 0 紧凑 / 1 标准 / 2 宽松.
         if root.proxy-options-open: Rectangle {
-            background: #00000066;
-            TouchArea { clicked => { root.proxy-options-open = false; } }
+            TouchArea { clicked => { root.proxy-options-open = false; root.proxy-sub = ""; } }
             Rectangle {
-                y: parent.height - self.height;
-                height: opts.preferred-height + root.bottom-inset;
+                x: parent.width - self.width - 8px;
+                y: root.top-inset + 52px;
+                width: 240px;
+                height: pm.preferred-height;
                 background: Theme.s.card;
-                border-top-left-radius: 24px;
-                border-top-right-radius: 24px;
+                border-radius: 16px;
+                border-width: 1px;
+                border-color: Theme.s.outline-variant.with-alpha(0.5);
+                clip: true;
                 TouchArea { }
-                opts := VerticalLayout {
-                    padding-top: 20px;
-                    padding-bottom: 12px;
-                    spacing: 16px;
-                    OptionRow { label: "风格"; options: ["标签页", "列表"]; value: root.proxy-style.kind; picked(i) => { root.proxy-style-changed("kind", i); } }
-                    OptionRow { label: "排序"; options: ["默认", "延迟", "名称"]; value: root.proxy-style.sort; picked(i) => { root.proxy-style-changed("sort", i); } }
-                    OptionRow { label: "布局"; options: ["紧凑", "标准", "宽松"]; value: root.proxy-style.layout; picked(i) => { root.proxy-style-changed("layout", i); } }
-                    OptionRow { label: "尺寸"; options: ["紧凑", "标准", "宽松"]; value: root.proxy-style.card; picked(i) => { root.proxy-style-changed("card", i); } }
-                    if root.proxy-style.kind == 1: OptionRow { label: "图标样式"; options: ["色块", "纯图标", "隐藏"]; value: root.proxy-style.icon; picked(i) => { root.proxy-style-changed("icon", i); } }
-                    HorizontalLayout {
-                        padding-left: 20px;
-                        padding-right: 20px;
-                        height: 48px;
-                        Text { text: "隐藏超时代理"; font-size: 16px; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
-                        VerticalLayout {
-                            alignment: center;
-                            Switch { checked: root.proxy-style.hide-timeout; toggled(on) => { root.proxy-style-changed("hide", on ? 1 : 0); } }
+                pm := VerticalLayout {
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    if root.proxy-sub == "": VerticalLayout {
+                        PopupRow { glyph: Icons.apps; label: "风格"; value: root.proxy-style.kind == 0 ? "标签页" : "列表"; more: true; clicked => { root.proxy-sub = "kind"; } }
+                        Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.5); }
+                        PopupRow { glyph: Icons.sort; label: "排序"; value: root.proxy-style.sort == 1 ? "延迟" : root.proxy-style.sort == 2 ? "名称" : "默认"; more: true; clicked => { root.proxy-sub = "sort"; } }
+                        PopupRow { glyph: Icons.dashboard; label: "布局"; value: root.proxy-style.layout == 0 ? "紧凑" : root.proxy-style.layout == 2 ? "宽松" : "标准"; more: true; clicked => { root.proxy-sub = "layout"; } }
+                        PopupRow { glyph: Icons.unfold; label: "尺寸"; value: root.proxy-style.card == 0 ? "紧凑" : root.proxy-style.card == 2 ? "宽松" : "标准"; more: true; clicked => { root.proxy-sub = "card"; } }
+                        if root.proxy-style.kind == 1: PopupRow { glyph: Icons.photos; label: "图标样式"; value: root.proxy-style.icon == 1 ? "纯图标" : root.proxy-style.icon == 2 ? "隐藏" : "色块"; more: true; clicked => { root.proxy-sub = "icon"; } }
+                        Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.5); }
+                        PopupRow {
+                            glyph: Icons.eye-off;
+                            label: "隐藏超时代理";
+                            checked: root.proxy-style.hide-timeout;
+                            clicked => { root.proxy-style-changed("hide", root.proxy-style.hide-timeout ? 0 : 1); }
+                        }
+                    }
+                    if root.proxy-sub != "": VerticalLayout {
+                        PopupRow {
+                            glyph: Icons.back;
+                            label: root.proxy-sub == "kind" ? "风格" : root.proxy-sub == "sort" ? "排序" : root.proxy-sub == "layout" ? "布局" : root.proxy-sub == "card" ? "尺寸" : "图标样式";
+                            clicked => { root.proxy-sub = ""; }
+                        }
+                        Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.5); }
+                        for o in (root.proxy-sub == "kind" ? [{ l: "标签页", v: 0 }, { l: "列表", v: 1 }]
+                            : root.proxy-sub == "sort" ? [{ l: "默认", v: 0 }, { l: "延迟", v: 1 }, { l: "名称", v: 2 }]
+                            : root.proxy-sub == "icon" ? [{ l: "色块", v: 0 }, { l: "纯图标", v: 1 }, { l: "隐藏", v: 2 }]
+                            : [{ l: "宽松", v: 2 }, { l: "标准", v: 1 }, { l: "紧凑", v: 0 }]): PopupRow {
+                            label: o.l;
+                            checked: o.v == (root.proxy-sub == "kind" ? root.proxy-style.kind : root.proxy-sub == "sort" ? root.proxy-style.sort : root.proxy-sub == "layout" ? root.proxy-style.layout : root.proxy-sub == "card" ? root.proxy-style.card : root.proxy-style.icon);
+                            clicked => {
+                                root.proxy-style-changed(root.proxy-sub, o.v);
+                                root.proxy-sub = "";
+                                root.proxy-options-open = false;
+                            }
                         }
                     }
                 }
@@ -5953,7 +6040,7 @@ export component AppWindow inherits Window {
             TouchArea { clicked => { root.add-menu-open = false; } }
             Rectangle {
                 x: parent.width - self.width - 16px;
-                y: parent.height - self.height - (root.wide ? 0px : 72px) - root.bottom-inset - 88px;
+                y: parent.height - self.height - (root.wide ? root.bottom-inset : Dock.pad) - 88px;
                 width: 200px;
                 height: add-menu.preferred-height;
                 background: Theme.s.card;
