@@ -3921,6 +3921,11 @@ component Field inherits VerticalLayout {
     in property <string> label;
     in property <string> placeholder;
     in property <bool> multi;
+    // `minLines` with no `maxLines`: at least this many lines, growing with the text, which
+    // wraps anywhere as a link does.
+    in property <int> min-lines;
+    property <bool> grows: root.min-lines > 0;
+    property <length> line-h: 15px * Type.scale * 1.4;
     in property <bool> enabled: true;
     in property <InputType> input-type: InputType.text;
     in-out property <string> text <=> input.text;
@@ -3929,14 +3934,14 @@ component Field inherits VerticalLayout {
     spacing: 6px;
     if root.label != "": Text { text: root.label; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
     Rectangle {
-        height: root.multi ? 160px : 50px;
+        height: root.multi ? 160px : root.grows ? max(root.min-lines * root.line-h, min(input.preferred-height, 10 * root.line-h)) + 24px : 50px;
         border-radius: 8px;
         border-width: input.has-focus ? 2px : 1px;
         border-color: input.has-focus ? Theme.s.primary : Theme.s.outline-variant;
         clip: true;
         Text {
             x: 14px;
-            y: root.multi ? 12px : (parent.height - self.height) / 2;
+            y: root.multi || root.grows ? 12px : (parent.height - self.height) / 2;
             visible: input.text == "";
             text: root.placeholder;
             color: Theme.s.on-surface-variant;
@@ -3944,12 +3949,12 @@ component Field inherits VerticalLayout {
         }
         input := TextInput {
             x: 14px;
-            y: root.multi ? 12px : 0px;
+            y: root.multi || root.grows ? 12px : 0px;
             width: parent.width - 28px;
-            height: root.multi ? parent.height - 24px : parent.height;
-            vertical-alignment: root.multi ? top : center;
-            single-line: !root.multi;
-            wrap: root.multi ? word-wrap : no-wrap;
+            height: root.multi || root.grows ? parent.height - 24px : parent.height;
+            vertical-alignment: root.multi || root.grows ? top : center;
+            single-line: !root.multi && !root.grows;
+            wrap: root.grows ? char-wrap : root.multi ? word-wrap : no-wrap;
             input-type: root.input-type;
             font-size: 15px * Type.scale;
             color: Theme.s.on-surface;
@@ -9528,9 +9533,17 @@ export component AppWindow inherits Window {
     in-out property <string> input-value2;
     in property <bool> input-removable;
     in property <bool> input-number;
+    // A hint inside the empty field, and a field of at least this many lines.
+    in property <string> input-hint;
+    in property <int> input-lines;
+    // `_ShareLinkDialog`: 确定 alone, kept open while Rust reads the value (`input-busy`
+    // disables it); Rust closes it, or sets `input-fail` under the field.
+    in property <bool> input-holds;
+    in-out property <bool> input-busy;
+    in-out property <string> input-fail;
     pure callback input-check(string, string, string) -> string;
     callback input-submit(string, string, string);
-    property <string> input-error: root.input-open ? root.input-check(root.input-key, root.input-value, root.input-value2) : "";
+    property <string> input-error: !root.input-open ? "" : root.input-fail != "" ? root.input-fail : root.input-check(root.input-key, root.input-value, root.input-value2);
     callback input-remove(string);
     // Access control (lib/views/access.dart)
     in property <[AccessRow]> acc-rows;
@@ -11762,21 +11775,29 @@ export component AppWindow inherits Window {
             dismiss => { root.input-open = false; }
             Field {
                 label: root.input-label;
+                placeholder: root.input-hint;
+                min-lines: root.input-lines;
                 text <=> root.input-value;
                 input-type: root.input-number ? InputType.number : InputType.text;
                 init => { self.focus-input(); }
             }
             if root.input-label2 != "": Field { label: root.input-label2; text <=> root.input-value2; }
-            if root.input-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.input-error; font-size: 13px * Type.scale; color: Theme.s.error; wrap: word-wrap; } }
+            if root.input-error != "": HorizontalLayout { padding-left: 14px; Text { text: root.input-error; font-size: 13px * Type.scale; color: Theme.s.error; wrap: word-wrap; max-height: 3 * 13px * Type.scale * 1.4; overflow: elide; } }
             HorizontalLayout {
                 spacing: 8px;
-                if root.input-removable: TextButton { text: "删除"; danger: true; clicked => { root.input-open = false; root.input-remove(root.input-key); } }
+                if root.input-removable && !root.input-holds: TextButton { text: "删除"; danger: true; clicked => { root.input-open = false; root.input-remove(root.input-key); } }
                 Rectangle { horizontal-stretch: 1; }
-                TextButton { text: "取消"; clicked => { root.input-open = false; } }
+                if !root.input-holds: TextButton { text: "取消"; clicked => { root.input-open = false; } }
                 TextButton {
                     text: "确定";
-                    enabled: root.input-error == "";
+                    enabled: root.input-holds ? !root.input-busy : root.input-error == "";
                     clicked => {
+                        if (root.input-holds) {
+                            root.input-busy = true;
+                            root.input-fail = "";
+                            root.input-submit(root.input-key, root.input-value, root.input-value2);
+                            return;
+                        }
                         root.input-open = false;
                         root.input-submit(root.input-key, root.input-value, root.input-value2);
                     }

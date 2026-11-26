@@ -2807,6 +2807,38 @@ fn main() {
         ("set-cproxies-links-wide", 3, "", "editor", 1, "cp-links"),
         ("set-cproxies-links-tablet", 3, "", "editor", 1, "cp-links"),
         ("set-cproxy-link", 3, "", "custom-proxy", 1, "cp-link"),
+        (
+            "set-cproxy-link-busy",
+            3,
+            "",
+            "custom-proxy",
+            1,
+            "cp-link-busy",
+        ),
+        (
+            "set-cproxy-link-busy-small",
+            3,
+            "",
+            "custom-proxy",
+            1,
+            "cp-link-busy",
+        ),
+        (
+            "set-cproxy-link-busy-wide",
+            3,
+            "",
+            "custom-proxy",
+            1,
+            "cp-link-busy",
+        ),
+        (
+            "set-cproxy-link-busy-tablet",
+            3,
+            "",
+            "custom-proxy",
+            1,
+            "cp-link-busy",
+        ),
         ("set-cproxy-link-small", 3, "", "custom-proxy", 1, "cp-link"),
         ("set-cproxy-link-wide", 3, "", "custom-proxy", 1, "cp-link"),
         (
@@ -3360,14 +3392,38 @@ fn main() {
             ui.set_tools_editor_parent("custom-proxies".into());
             ui.set_tools_editor_readonly(false);
         }
-        if *overlay == "cp-link" {
+        // "cp-link": the dialog with a read that failed; "cp-link-busy": a long link being read.
+        ui.set_input_hint("".into());
+        ui.set_input_lines(0);
+        ui.set_input_holds(false);
+        ui.set_input_busy(false);
+        ui.set_input_fail("".into());
+        if overlay.starts_with("cp-link") && *overlay != "cp-links" {
+            let busy = *overlay == "cp-link-busy";
             ui.set_input_key("cp-link".into());
             ui.set_input_title("快速编辑".into());
-            ui.set_input_label("vless://…".into());
-            ui.set_input_value("vless://not-a-link".into());
+            ui.set_input_label("".into());
+            ui.set_input_hint("vless://…".into());
+            ui.set_input_lines(3);
+            ui.set_input_holds(true);
+            ui.set_input_busy(busy);
+            ui.set_input_value(if busy {
+                "vless://0b5d1c2e-7f0a-4c55-9d1e-2c8f7a6b3e11@jp.example.com:443?encryption=none&security=reality&sni=www.example.com&fp=chrome&pbk=Hn3mKq8cX0vQeL2tY7wZ5rA9sD4fG1hJ6kP0oI3uB8n&sid=6ba85179&type=grpc&serviceName=grpc&flow=#%E6%97%A5%E6%9C%AC%2003"
+            } else {
+                "vless://not-a-link"
+            }
+            .into());
+            ui.set_input_fail(
+                if busy {
+                    ""
+                } else {
+                    "第 1 行：无法从链接中读取代理"
+                }
+                .into(),
+            );
             ui.set_input_label2("".into());
             ui.set_input_removable(false);
-            ui.on_input_check(|_, _, _| "无法从链接中读取代理".into());
+            ui.on_input_check(|_, _, _| "".into());
             ui.set_input_open(true);
         } else {
             ui.on_input_check(|key, value, _| {

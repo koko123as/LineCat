@@ -281,9 +281,6 @@ impl App {
             if let Some(e) = a.icon_sets_check(&key, &v1, &v2) {
                 return e.into();
             }
-            if let Some(e) = a.share_links_check(&key, &v1) {
-                return e.into();
-            }
             if let Some(e) = a.custom_proxies_check(&key, &v1) {
                 return e.into();
             }
@@ -539,6 +536,11 @@ impl App {
         );
         self.ui(move |ui| {
             ui.set_input_number(key == "mtu");
+            ui.set_input_hint("".into());
+            ui.set_input_lines(0);
+            ui.set_input_holds(false);
+            ui.set_input_busy(false);
+            ui.set_input_fail("".into());
             ui.set_input_key(key);
             ui.set_input_title(title);
             ui.set_input_label(label);

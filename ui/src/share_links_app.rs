@@ -17,8 +17,9 @@ struct State {
     list: Option<(Vec<CustomProxy>, Vec<String>)>,
     /// What a confirmed quick edit sets the list to.
     pending: Option<Vec<CustomProxy>>,
-    /// The form's own link when its dialog opened, and the text that failed with its reason.
-    link: Option<(String, Option<(String, String)>)>,
+    link: Option<String>,
+    /// Counts the dialog's openings, so a read that ends after it closed is dropped.
+    opened: u64,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -216,34 +217,34 @@ impl App {
                 .ok()
                 .and_then(|l| l.into_iter().next())
                 .unwrap_or_default();
-            with(|s| s.link = Some((link.clone(), None)));
-            app.open_input(LINK_KEY, "快速编辑", "vless://…", &link);
+            with(|s| {
+                s.link = Some(link.clone());
+                s.opened += 1;
+            });
+            app.open_input(LINK_KEY, "快速编辑", "", &link);
+            app.ui(|ui| {
+                ui.set_input_hint("vless://…".into());
+                ui.set_input_lines(3);
+                ui.set_input_holds(true);
+            });
         });
     }
 
-    /// The dialog's error stays while its text is the one that failed.
-    pub(crate) fn share_links_check(&self, key: &str, v1: &str) -> Option<String> {
-        if key != LINK_KEY {
-            return None;
-        }
-        Some(with(|s| match &s.link {
-            Some((_, Some((text, e)))) if text == v1.trim() => e.clone(),
-            _ => String::new(),
-        }))
-    }
-
+    /// `_submit`: an unchanged link closes; another is read with 确定 disabled, then fills or fails.
     pub(crate) fn share_links_input(self: &Arc<Self>, key: &str, v1: &str) -> bool {
         if key != LINK_KEY {
             return false;
         }
         let text = v1.trim().to_string();
-        let Some((link, _)) = with(|s| s.link.clone()) else {
+        let Some(link) = with(|s| s.link.clone()) else {
             return true;
         };
         if text == link {
             with(|s| s.link = None);
+            self.ui(|ui| ui.set_input_open(false));
             return true;
         }
+        let opened = with(|s| s.opened);
         self.spawn(move |app| {
             let Some(d) = app.draft() else {
                 return;
@@ -255,22 +256,32 @@ impl App {
             let read = app
                 .decode_links(lines)
                 .and_then(|r| sl::single_definition(&r, &d.proxy.map()));
-            match read {
-                Ok(definition) => {
-                    with(|s| s.link = None);
-                    let named = sl::named_from_link(
-                        definition,
-                        &d.proxy,
-                        &app.custom_proxies(),
-                        &app.group_names(),
-                    );
-                    app.edit_draft(move |d| d.fill(named));
+            let named = read.map(|definition| {
+                sl::named_from_link(
+                    definition,
+                    &d.proxy,
+                    &app.custom_proxies(),
+                    &app.group_names(),
+                )
+            });
+            let a = app.clone();
+            app.ui(move |ui| {
+                let current = with(|s| s.opened == opened && s.link.is_some());
+                if !current || !ui.get_input_open() || ui.get_input_key() != LINK_KEY {
+                    return;
                 }
-                Err(e) => {
-                    with(|s| s.link = Some((link, Some((text.clone(), e)))));
-                    app.open_input(LINK_KEY, "快速编辑", "vless://…", &text);
+                match named {
+                    Ok(named) => {
+                        with(|s| s.link = None);
+                        ui.set_input_open(false);
+                        a.edit_draft(move |d| d.fill(named));
+                    }
+                    Err(e) => {
+                        ui.set_input_fail(e.into());
+                        ui.set_input_busy(false);
+                    }
                 }
-            }
+            });
         });
         true
     }
