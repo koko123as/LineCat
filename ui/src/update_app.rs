@@ -43,17 +43,74 @@ fn get(agent: &ureq::Agent, url: &str) -> Result<ureq::http::Response<ureq::Body
         .map_err(|e| e.to_string())
 }
 
-/// `newestOfAllReleases`: the newest rs release, as the list names it.
+/// `newestOfAllReleases`, falling back to the release feed once the API cannot answer.
 fn newest_release() -> Result<(String, String), String> {
+    match newest_listed() {
+        Err(Listing::Unanswered(e)) => newest_in_feed().map_err(|f| format!("{e}；{f}")),
+        Err(Listing::Missing(e)) => Err(e),
+        Ok(found) => Ok(found),
+    }
+}
+
+enum Listing {
+    /// The request failed or was refused (`DioException`).
+    Unanswered(String),
+    /// The list answered but holds no release of this line.
+    Missing(String),
+}
+
+fn newest_in_feed() -> Result<(String, String), String> {
+    let agent = agent();
+    let url = format!("https://github.com/{}/releases.atom", update::REPOSITORY);
+    let mut response = get(&agent, &url).map_err(|e| format!("检查更新失败：{e}"))?;
+    if response.status() != 200 {
+        return Err(format!("检查更新失败：HTTP {}", response.status().as_u16()));
+    }
+    let feed = response
+        .body_mut()
+        .with_config()
+        .limit(4 << 20)
+        .read_to_string()
+        .map_err(|e| format!("检查更新失败：{e}"))?;
+    let head: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(20)))
+        .timeout_recv_response(Some(Duration::from_secs(30)))
+        .http_status_as_error(false)
+        .max_redirects(0)
+        .build()
+        .into();
+    for tag in update::feed_candidates(&update::release_tags_of_feed(&feed)) {
+        let sums = update::asset_url(&tag, &update::checksums_name(&tag));
+        let status = head
+            .head(&sums)
+            .header("User-Agent", profile::USER_AGENT)
+            .call()
+            .map_err(|e| format!("检查更新失败：{e}"))?
+            .status()
+            .as_u16();
+        match status {
+            404 => continue,
+            s if s < 400 => return Ok((tag, String::new())),
+            s => return Err(format!("检查更新失败：HTTP {s}")),
+        }
+    }
+    Err("检查更新失败：没有可用的版本".into())
+}
+
+fn newest_listed() -> Result<(String, String), Listing> {
     let agent = agent();
     for page in 1..=PAGES {
         let url = format!(
             "https://api.github.com/repos/{}/releases?per_page={PER_PAGE}&page={page}",
             update::REPOSITORY
         );
-        let mut response = get(&agent, &url).map_err(|e| format!("检查更新失败：{e}"))?;
+        let mut response =
+            get(&agent, &url).map_err(|e| Listing::Unanswered(format!("检查更新失败：{e}")))?;
         if response.status() != 200 {
-            return Err(format!("检查更新失败：HTTP {}", response.status().as_u16()));
+            return Err(Listing::Unanswered(format!(
+                "检查更新失败：HTTP {}",
+                response.status().as_u16()
+            )));
         }
         let list: Value = response
             .body_mut()
@@ -62,7 +119,7 @@ fn newest_release() -> Result<(String, String), String> {
             .read_to_string()
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok())
-            .ok_or_else(|| "检查更新失败".to_string())?;
+            .ok_or_else(|| Listing::Unanswered("检查更新失败".to_string()))?;
         if let Some(tag) = update::newest_of(&list) {
             let notes = list
                 .as_array()
@@ -78,7 +135,7 @@ fn newest_release() -> Result<(String, String), String> {
             break;
         }
     }
-    Err("检查更新失败：没有可用的版本".into())
+    Err(Listing::Missing("检查更新失败：没有可用的版本".into()))
 }
 
 /// `downloadVerifiedRelease`: the checksums first, then the file, checked against them.

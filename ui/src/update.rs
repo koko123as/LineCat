@@ -196,6 +196,135 @@ pub fn newest_of(releases: &Value) -> Option<String> {
     found.into_iter().next().map(|(_, tag)| tag)
 }
 
+/// `releaseTagsOfFeed`: the tags the release feed's entry links name.
+pub fn release_tags_of_feed(feed: &str) -> Vec<String> {
+    let mut tags = Vec::new();
+    let mut rest = feed;
+    while let Some(at) = rest.find("<link") {
+        rest = &rest[at + 5..];
+        let tag_end = rest.find('>').unwrap_or(rest.len());
+        let attrs = &rest[..tag_end];
+        let Some(h) = attrs.find("href=\"") else {
+            continue;
+        };
+        let href = &attrs[h + 6..];
+        let href = &href[..href.find('"').unwrap_or(href.len())];
+        let path = href.split(['?', '#']).next().unwrap_or("");
+        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        if let Some(i) = segments.iter().position(|s| *s == "tag") {
+            if let Some(tag) = segments.get(i + 1) {
+                tags.push(tag.to_string());
+            }
+        }
+    }
+    tags
+}
+
+/// `_candidates`: the rs tags that name release files, newest first.
+pub fn feed_candidates(tags: &[String]) -> Vec<String> {
+    let mut found: Vec<(Version, String)> = tags
+        .iter()
+        .filter(|t| names_release_files(t))
+        .filter_map(|t| Some((Version::parse(t).filter(Version::is_rs)?, t.clone())))
+        .collect();
+    found.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+    found.dedup_by(|a, b| a.1 == b.1);
+    found.into_iter().map(|(_, t)| t).collect()
+}
+
+const CHANGELOG_JSON: &str = "<!-- flclash:changelog:json";
+const NOTES_BEGIN: &str = "<!-- flclash:changelog:begin -->";
+const NOTES_END: &str = "<!-- flclash:changelog:end -->";
+
+/// `parseReleaseChangelog` and `visibleGroups`: the first version's groups with their
+/// titles (`changelogGroupTitle`), when the body carries schema 2's JSON.
+pub fn changelog_groups(body: &str) -> Option<Vec<(&'static str, Vec<String>)>> {
+    let start = body.find(CHANGELOG_JSON)? + CHANGELOG_JSON.len();
+    let end = start + body[start..].find("-->")?;
+    let json: Value = serde_json::from_str(&body[start..end]).ok()?;
+    if json.get("schemaVersion").and_then(Value::as_i64) != Some(2) {
+        return None;
+    }
+    let version = json.get("versions")?.as_array()?.first()?;
+    let groups = version.get("groups").and_then(Value::as_array);
+    Some(
+        groups
+            .into_iter()
+            .flatten()
+            .filter_map(|g| {
+                let title = match g.get("type").and_then(Value::as_str)? {
+                    "breaking" => "重大变更",
+                    "feat" => "新功能",
+                    "fix" => "问题修复",
+                    "perf" => "性能优化",
+                    "revert" => "已回滚",
+                    _ => return None,
+                };
+                let entries: Vec<String> = g
+                    .get("entries")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .map(|e| {
+                        e.get("text")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string()
+                    })
+                    .collect();
+                (!entries.is_empty()).then_some((title, entries))
+            })
+            .collect(),
+    )
+}
+
+/// `parseReleaseBody`: the `- ` lines between the notes markers, else of the whole body.
+pub fn release_body_items(body: &str) -> Vec<String> {
+    let scoped = match body.find(NOTES_BEGIN) {
+        Some(b) => {
+            let rest = &body[b + NOTES_BEGIN.len()..];
+            &rest[..rest.find(NOTES_END).unwrap_or(rest.len())]
+        }
+        None => body,
+    };
+    scoped
+        .lines()
+        .filter_map(|l| {
+            let l = l.trim_start_matches([' ', '\t']);
+            let rest = l.strip_prefix('-')?;
+            rest.starts_with([' ', '\t'])
+                .then(|| rest.trim().to_string())
+                .filter(|t| !t.is_empty())
+        })
+        .collect()
+}
+
+/// `_releaseSpan`: the tag, then the changelog's groups under their titles, else the
+/// body's list items.
+pub fn release_text(tag: &str, body: &str) -> String {
+    let mut text = format!("{tag}\n");
+    match changelog_groups(body) {
+        Some(groups) => {
+            for (title, entries) in groups {
+                text.push_str(&format!("\n{title}\n"));
+                for e in entries {
+                    text.push_str(&format!("• {e}\n"));
+                }
+            }
+        }
+        None => {
+            let items = release_body_items(body);
+            if !items.is_empty() {
+                text.push('\n');
+            }
+            for i in items {
+                text.push_str(&format!("- {i}\n"));
+            }
+        }
+    }
+    text.trim_end().to_string()
+}
+
 /// `checkUpdateResultHandle`'s question; an empty `no` keeps the dialog's own 取消.
 #[derive(Debug, PartialEq)]
 pub struct Offer {
@@ -205,13 +334,8 @@ pub struct Offer {
 }
 
 pub fn offer(tag: &str, notes: &str, installs: bool, by_user: bool) -> Offer {
-    let notes = notes.trim();
     Offer {
-        text: if notes.is_empty() {
-            tag.to_string()
-        } else {
-            format!("{tag}\n\n{notes}")
-        },
+        text: release_text(tag, notes),
         yes: if installs { "更新" } else { GO_DOWNLOAD },
         no: if by_user { "" } else { "不再提示" },
     }
@@ -310,9 +434,43 @@ mod tests {
     }
 
     #[test]
+    fn feed_tags_fall_back_newest_first() {
+        let feed = r#"<feed><link type="text/html" rel="alternate" href="https://github.com/o/r/releases"/>
+<entry><link rel="alternate" type="text/html" href="https://github.com/o/r/releases/tag/v0.9.5-rs.1"/></entry>
+<entry><link rel="alternate" href="https://github.com/o/r/releases/tag/v0.9.6-rs.2"/></entry>
+<entry><link href="https://github.com/o/r/releases/tag/nightly"/></entry>
+<entry><link href="https://github.com/o/r/releases/tag/v0.9.7"/></entry></feed>"#;
+        let tags = release_tags_of_feed(feed);
+        assert_eq!(
+            tags,
+            vec!["v0.9.5-rs.1", "v0.9.6-rs.2", "nightly", "v0.9.7"]
+        );
+        assert_eq!(feed_candidates(&tags), vec!["v0.9.6-rs.2", "v0.9.5-rs.1"]);
+    }
+
+    #[test]
+    fn release_notes_group_as_the_changelog() {
+        let body = r#"intro
+<!-- flclash:changelog:json {"schemaVersion":2,"versions":[{"version":"1","tag":"v1","groups":[
+ {"type":"feat","entries":[{"id":"a","text":"Add A"},{"id":"b","text":"Add B"}]},
+ {"type":"chore","entries":[{"id":"c","text":"skip"}]},
+ {"type":"fix","entries":[]},
+ {"type":"breaking","entries":[{"id":"d","text":"Drop D"}]}]}]} -->"#;
+        assert_eq!(
+            release_text("v1", body),
+            "v1\n\n新功能\n• Add A\n• Add B\n\n重大变更\n• Drop D"
+        );
+        let old = body.replace("\"schemaVersion\":2", "\"schemaVersion\":1");
+        assert_eq!(release_text("v1", &old), "v1");
+        let plain = "x\n<!-- flclash:changelog:begin -->\n- one\n  - two \n-three\n<!-- flclash:changelog:end -->\n- out";
+        assert_eq!(release_text("v2", plain), "v2\n\n- one\n- two");
+        assert_eq!(release_body_items("- a\n- b"), vec!["a", "b"]);
+    }
+
+    #[test]
     fn offer_and_failures_read_as_flclash() {
-        let o = offer("v1.0.0-rs.1", " notes ", true, false);
-        assert_eq!(o.text, "v1.0.0-rs.1\n\nnotes");
+        let o = offer("v1.0.0-rs.1", "- notes ", true, false);
+        assert_eq!(o.text, "v1.0.0-rs.1\n\n- notes");
         assert_eq!((o.yes, o.no), ("更新", "不再提示"));
         let o = offer("v1", "", false, true);
         assert_eq!((o.text.as_str(), o.yes, o.no), ("v1", GO_DOWNLOAD, ""));
