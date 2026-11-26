@@ -1686,6 +1686,13 @@ export global SheetDrag {
     }
 }
 
+// prism's `SideSheet`: 40% of the window, kept between 360 and 560 wide.
+global SideSheet {
+    pure public function width(view: length) -> length {
+        return min(view, clamp(view * 0.4, 360px, 560px));
+    }
+}
+
 // A sheet over the page: a grabber, a title with up to two actions, and its body.
 component DashSheet inherits Rectangle {
     in property <string> title;
@@ -1703,6 +1710,11 @@ component DashSheet inherits Rectangle {
     callback close();
     callback action();
     callback action2();
+    // `showNestedSheet` past the mobile width: prism's `SideSheet` at the window's end.
+    in property <bool> side;
+    property <float> shown: 0;
+    animate shown { duration: 300ms; easing: ease-out; }
+    init => { root.shown = 1; }
     // `showModalBottomSheet`'s drag: the grabber or the title bar pulls the sheet down;
     // let go past half its height, or flung down, it closes, else it springs back.
     property <length> drag;
@@ -1719,17 +1731,17 @@ component DashSheet inherits Rectangle {
     background: #00000066;
     TouchArea { clicked => { root.close(); } }
     Rectangle {
-        width: min(parent.width, 640px);
-        x: (parent.width - self.width) / 2;
-        y: root.sheet-top + max(root.drag, 0px);
-        height: parent.height - root.sheet-top;
+        width: root.side ? SideSheet.width(parent.width) : min(parent.width, 640px);
+        x: root.side ? parent.width - self.width * root.shown : (parent.width - self.width) / 2;
+        y: root.side ? 0 : root.sheet-top + max(root.drag, 0px);
+        height: root.side ? parent.height : parent.height - root.sheet-top;
         background: Theme.s.page;
-        border-top-left-radius: 24px;
-        border-top-right-radius: 24px;
+        border-top-left-radius: root.side ? 0 : 24px;
+        border-top-right-radius: root.side ? 0 : 24px;
         clip: true;
         TouchArea { }
         // Under the grabber and the title bar: their buttons still take their own taps.
-        TouchArea {
+        if !root.side: TouchArea {
             y: 0;
             height: 60px;
             moved => {
@@ -1749,8 +1761,8 @@ component DashSheet inherits Rectangle {
         }
         VerticalLayout {
             Rectangle {
-                height: 16px;
-                Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+                height: root.side ? root.top-inset + 8px : 16px;
+                if !root.side: Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
             }
             HorizontalLayout {
                 height: 44px;
@@ -1785,6 +1797,11 @@ component SnapSheet inherits Rectangle {
     in property <length> top-inset;
     in-out property <bool> tall;
     callback close();
+    // Past the mobile width `showSnapSheet` opens the side sheet instead, with no detents.
+    in property <bool> side;
+    property <float> shown: 0;
+    animate shown { duration: 300ms; easing: ease-out; }
+    init => { root.shown = 1; }
     property <length> short-h: root.height * 9 / 16;
     property <length> tall-h: min(root.height * 0.9, root.height - root.top-inset);
     property <length> drag;
@@ -1807,20 +1824,20 @@ component SnapSheet inherits Rectangle {
     background: #00000066;
     TouchArea { clicked => { root.close(); } }
     Rectangle {
-        width: min(parent.width, 640px);
-        x: (parent.width - self.width) / 2;
-        y: parent.height - root.sheet-h;
-        height: root.sheet-h;
+        width: root.side ? SideSheet.width(parent.width) : min(parent.width, 640px);
+        x: root.side ? parent.width - self.width * root.shown : (parent.width - self.width) / 2;
+        y: root.side ? 0 : parent.height - root.sheet-h;
+        height: root.side ? parent.height : root.sheet-h;
         background: Theme.s.page;
-        border-top-left-radius: 24px;
-        border-top-right-radius: 24px;
+        border-top-left-radius: root.side ? 0 : 24px;
+        border-top-right-radius: root.side ? 0 : 24px;
         clip: true;
         TouchArea { }
         VerticalLayout {
             Rectangle {
-                height: 24px;
-                Rectangle { y: 10px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
-                TouchArea {
+                height: root.side ? root.top-inset : 24px;
+                if !root.side: Rectangle { y: 10px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+                if !root.side: TouchArea {
                     moved => {
                         root.drag += self.mouse-y - self.pressed-y;
                         root.fling = SheetDrag.speed(self.absolute-position.y + self.mouse-y, animation-tick(), root.last-y, root.last-t, root.fling);
@@ -10515,6 +10532,7 @@ export component AppWindow inherits Window {
         // `openDashboardFeed`: the requests page in a snap sheet over the dashboard, on DNS
         // for the DNS figure.
         if root.feed-open && root.tab == 0: SnapSheet {
+            side: root.wide;
             top-inset: root.top-inset;
             tall <=> root.feed-tall;
             close => { root.close-feed(); }
@@ -10558,6 +10576,7 @@ export component AppWindow inherits Window {
 
         // `showProxiesSheet`: the proxies page as a picker over the dashboard.
         if root.group-sheet-open && root.tab == 0: SnapSheet {
+            side: root.wide;
             top-inset: root.top-inset;
             tall <=> root.group-sheet-tall;
             close => { root.close-group-sheet(); }
@@ -10611,6 +10630,7 @@ export component AppWindow inherits Window {
         // `showProfilesSheet` (`ProfilesView(picker: true)`): the profiles, a tap makes one
         // current; with none, 暂无配置 and 添加配置 opening AddProfileMenu.
         if root.picker-open && root.tab == 0: DashSheet {
+            side: root.wide;
             title: "配置";
             top-inset: root.top-inset;
             bottom-inset: root.bottom-inset;
@@ -10931,6 +10951,7 @@ export component AppWindow inherits Window {
         // `MemoryDetailSheet`: the total, what the app holds, and release memory.
         // ReorderableProfilesSheet: drag the profiles into order, then ✓ saves.
         if root.profiles-shown && root.profiles-page == "sort": DashSheet {
+            side: root.wide;
             title: "配置排序";
             top-inset: root.top-inset;
             bottom-inset: root.bottom-inset;
@@ -10947,6 +10968,7 @@ export component AppWindow inherits Window {
         // `ServiceStatusSheet`: every enabled service, a tap checks one, ⚡ all of them;
         // the sliders open `ServiceManageView` to switch and order them.
         if root.svc-sheet-open && root.tab == 0: DashSheet {
+            side: root.wide;
             title: root.svc-sheet-page == "manage" ? "管理服务" : "服务状态";
             top-inset: root.top-inset;
             bottom-inset: root.bottom-inset;
@@ -11024,6 +11046,7 @@ export component AppWindow inherits Window {
         }
 
         if root.mem-sheet-open && root.tab == 0: DashSheet {
+            side: root.wide;
             title: "内存信息";
             top-inset: root.top-inset;
             bottom-inset: root.bottom-inset;
@@ -11070,6 +11093,7 @@ export component AppWindow inherits Window {
 
         // `ProfileDetailSheet`: counts, subscription, update time, script and providers.
         if root.profile-sheet-open && root.tab == 0: DashSheet {
+            side: root.wide;
             title: root.dash-profile.name;
             top-inset: root.top-inset;
             bottom-inset: root.bottom-inset;
@@ -11163,19 +11187,19 @@ export component AppWindow inherits Window {
             background: #00000066;
             TouchArea { clicked => { root.ip-sheet-open = false; } }
             Rectangle {
-                width: min(parent.width, 640px);
-                x: (parent.width - self.width) / 2;
-                y: max(root.top-inset + 24px, parent.height - ipq-col.preferred-height - 60px);
+                width: root.wide ? SideSheet.width(parent.width) : min(parent.width, 640px);
+                x: root.wide ? parent.width - self.width : (parent.width - self.width) / 2;
+                y: root.wide ? 0 : max(root.top-inset + 24px, parent.height - ipq-col.preferred-height - 60px);
                 height: parent.height - self.y;
                 background: Theme.s.page;
-                border-top-left-radius: 24px;
-                border-top-right-radius: 24px;
+                border-top-left-radius: root.wide ? 0 : 24px;
+                border-top-right-radius: root.wide ? 0 : 24px;
                 clip: true;
                 TouchArea { }
                 VerticalLayout {
                     Rectangle {
-                        height: 16px;
-                        Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+                        height: root.wide ? root.top-inset + 8px : 16px;
+                        if !root.wide: Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
                     }
                     HorizontalLayout {
                         height: 44px;
@@ -11277,19 +11301,19 @@ export component AppWindow inherits Window {
             background: #00000066;
             TouchArea { clicked => { root.log-detail-open = false; } }
             Rectangle {
-                width: min(parent.width, 640px);
-                x: (parent.width - self.width) / 2;
-                y: root.top-inset + 24px;
+                width: root.wide ? SideSheet.width(parent.width) : min(parent.width, 640px);
+                x: root.wide ? parent.width - self.width : (parent.width - self.width) / 2;
+                y: root.wide ? 0 : root.top-inset + 24px;
                 height: parent.height - self.y;
                 background: Theme.s.page;
-                border-top-left-radius: 24px;
-                border-top-right-radius: 24px;
+                border-top-left-radius: root.wide ? 0 : 24px;
+                border-top-right-radius: root.wide ? 0 : 24px;
                 clip: true;
                 TouchArea { }
                 VerticalLayout {
                     Rectangle {
-                        height: 16px;
-                        Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+                        height: root.wide ? root.top-inset + 8px : 16px;
+                        if !root.wide: Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
                     }
                     HorizontalLayout {
                         height: 44px;

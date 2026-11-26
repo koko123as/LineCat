@@ -2550,6 +2550,7 @@ fn main() {
         ("logs-detail", 3, "", "logs", 1, "log-detail"),
         ("logs-detail-small", 3, "", "logs", 1, "log-detail"),
         ("logs-detail-wide", 3, "", "logs", 1, "log-detail"),
+        ("logs-detail-tablet", 3, "", "logs", 1, "log-detail"),
         ("logs-search", 3, "", "logs", 1, "log-search"),
         ("logs-empty", 3, "", "logs", 1, "log-empty"),
         ("theme", 3, "", "theme", 1, ""),
