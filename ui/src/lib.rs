@@ -796,7 +796,8 @@ impl App {
         }
         bridge.call("config.apply", params.clone(), APPLY)?;
         self.load_warnings();
-        *self.last_apply.lock().unwrap() = Some(params);
+        *self.last_apply.lock().unwrap() = Some(params.clone());
+        self.sync_shared_state(&bridge, params);
         self.configured.store(true, Ordering::SeqCst);
         self.delays.lock().unwrap().clear();
         self.sorted_delays.lock().unwrap().clear();
@@ -1009,6 +1010,24 @@ impl App {
         });
     }
 
+    /// FlClash's `syncState`: a switched profile retitles the running notification.
+    fn sync_shared_state(self: &Arc<Self>, bridge: &Bridge, setup: Value) {
+        if self.run_state.lock().unwrap().as_str() != "STARTED" {
+            return;
+        }
+        let (name, settings) = {
+            let store = self.store.lock().unwrap();
+            match store.active() {
+                Some(p) => (p.name.clone(), store.state.settings.clone()),
+                None => return,
+            }
+        };
+        let state = profile::shared_state(&name, &settings, &self.module_network(), setup);
+        if let Err(e) = bridge.shell("vpn.sync", state, CALL) {
+            self.toast(e);
+        }
+    }
+
     fn start_vpn(self: &Arc<Self>) -> Result<(), String> {
         let bridge = self.bridge()?;
         let (name, settings) = {
@@ -1029,13 +1048,7 @@ impl App {
             .unwrap_or(Value::Null);
         bridge.shell(
             "vpn.start",
-            json!({
-                "profileName": name,
-                "vpnOptions": profile::vpn_options(&settings, &self.module_network()),
-                "setupParams": setup,
-                "onlyStatisticsProxy": settings.general.only_statistics_proxy,
-                "showStopAction": settings.general.show_notification_stop_action,
-            }),
+            profile::shared_state(&name, &settings, &self.module_network(), setup),
             Duration::from_secs(300),
         )?;
         Ok(())

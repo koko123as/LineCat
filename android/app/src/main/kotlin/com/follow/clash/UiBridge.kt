@@ -263,20 +263,20 @@ object UiBridge {
                 error("需要VPN权限")
             }
             requestNotificationPermission()
-            val setup = request.get("setupParams")?.takeIf { it.isJsonObject }?.asJsonObject
-            val state = SharedState(
-                currentProfileName = request.get("profileName")?.asString ?: "SeasonCat",
-                stopText = "暂停",
-                startTip = "正在启动VPN…",
-                stopTip = "正在停止VPN…",
-                vpnOptions = options,
-                setupParams = setup,
-                onlyStatisticsProxy = request.get("onlyStatisticsProxy")?.asBoolean ?: false,
-                showStopAction = request.get("showStopAction")?.asBoolean ?: true,
-            )
+            val state = sharedState(request, options)
             ServiceState.syncSharedState(state)
             persistForQuickStart(state)
             if (!ServiceState.requestStart().await()) error("启动服务失败")
+            ok { addProperty("state", ServiceState.runState.value.name) }
+        }
+
+        // FlClash's syncState: retitles the running notification without starting anything.
+        "vpn.sync" -> {
+            val options = gson.fromJson(request.get("vpnOptions"), VpnOptions::class.java)
+                ?: error("vpnOptions missing")
+            val state = sharedState(request, options)
+            ServiceState.syncSharedState(state)
+            persistForQuickStart(state)
             ok { addProperty("state", ServiceState.runState.value.name) }
         }
 
@@ -793,6 +793,17 @@ object UiBridge {
             }
         }
     }
+
+    private fun sharedState(request: JsonObject, options: VpnOptions) = SharedState(
+        currentProfileName = request.get("profileName")?.asString ?: "SeasonCat",
+        stopText = "暂停",
+        startTip = "正在启动VPN…",
+        stopTip = "正在停止VPN…",
+        vpnOptions = options,
+        setupParams = request.get("setupParams")?.takeIf { it.isJsonObject }?.asJsonObject,
+        onlyStatisticsProxy = request.get("onlyStatisticsProxy")?.asBoolean ?: false,
+        showStopAction = request.get("showStopAction")?.asBoolean ?: true,
+    )
 
     private suspend fun requestNotificationPermission() {
         val host = activity ?: return

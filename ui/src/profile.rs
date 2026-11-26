@@ -511,6 +511,22 @@ pub fn host_settings(general: &crate::store::General) -> Option<Value> {
 /// `vpnOptionsProvider` with FlClash's defaults (VpnProps, NetworkProps, Tun). An empty
 /// route list routes everything; the private ranges stay out through the overlay's
 /// `route-exclude-address`, which the Core applies to the TUN.
+/// FlClash's `sharedStateProvider`, sent by both `vpn.start` and `vpn.sync`.
+pub fn shared_state(
+    profile_name: &str,
+    settings: &crate::store::Settings,
+    modules: &crate::mitm_network::Network,
+    setup: Value,
+) -> Value {
+    json!({
+        "profileName": profile_name,
+        "vpnOptions": vpn_options(settings, modules),
+        "setupParams": setup,
+        "onlyStatisticsProxy": settings.general.only_statistics_proxy,
+        "showStopAction": settings.general.show_notification_stop_action,
+    })
+}
+
 pub fn vpn_options(
     settings: &crate::store::Settings,
     modules: &crate::mitm_network::Network,
@@ -566,6 +582,18 @@ pub const BYPASS_DOMAIN: [&str; 26] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_shared_state_carries_the_active_profile_name() {
+        let mut settings = crate::store::Settings::default();
+        settings.general.show_notification_stop_action = false;
+        let setup = json!({"profile": "b"});
+        let s = shared_state("机场 B", &settings, &Default::default(), setup.clone());
+        assert_eq!(s["profileName"], "机场 B");
+        assert_eq!(s["setupParams"], setup);
+        assert_eq!(s["showStopAction"], false);
+        assert!(s["vpnOptions"].is_object());
+    }
 
     #[test]
     fn general_settings_reach_the_overlay() {
