@@ -1250,6 +1250,114 @@ fn snapshot_more(ui: &AppWindow, overlay: &str) {
     }
 }
 
+/// 扩展 ("ext:main", "ext:select", "ext:apply"), 编辑全局规则 ("ext:global",
+/// "ext:global-empty") and a custom profile's 更多 with module exits ("pmexits").
+fn snapshot_extend(ui: &AppWindow, overlay: &str) {
+    use seasoncat_ui::extend::{self, exit_row};
+    use seasoncat_ui::rules::{parse, Rule};
+    if !overlay.starts_with("ext:") && overlay != "pmexits" {
+        return;
+    }
+    let mut s = store::State::default();
+    s.profiles.push(store::Profile {
+        id: "p".into(),
+        name: "机场订阅".into(),
+        url: "https://example.com/sub".into(),
+        updated: 1,
+        ..Default::default()
+    });
+    let exit = |mut r: Rule| {
+        r.custom_exit = true;
+        r
+    };
+    if overlay != "ext:global-empty" {
+        s.settings.added_rules = vec![
+            parse("GEOSITE,private,DIRECT", 1),
+            exit(parse("DOMAIN-SUFFIX,company.example.com,公司", 2)),
+            parse("AND,((NETWORK,UDP),(DST-PORT,443)),REJECT-DROP", 3),
+            parse(
+                "PROCESS-NAME-REGEX,(?i)^(qbittorrent|transmission.*|deluge.*|aria2c)(\\.exe)?$,DIRECT",
+                4,
+            ),
+        ];
+    }
+    extend::set_disabled(&mut s, "p", 3, true);
+    extend::set_own_rules(
+        &mut s,
+        "p",
+        &[
+            exit(parse("DOMAIN-SUFFIX,home.example.com,家里", 10)),
+            parse("IP-CIDR,192.168.0.0/16,DIRECT,no-resolve", 11),
+            parse(
+                "DOMAIN-KEYWORD,very-long-keyword-for-checking-elide-in-rows,REJECT",
+                12,
+            ),
+        ],
+    );
+    s.profiles[0]
+        .exit_targets
+        .insert("公司".into(), "已删除策略组".into());
+    s.profiles[0]
+        .exit_targets
+        .insert("广告".into(), "REJECT".into());
+    let names: std::collections::BTreeSet<String> =
+        ["节点选择".to_string(), "自动选择".into(), "香港 01".into()].into();
+    let modules = vec![(
+        "广告".to_string(),
+        vec!["去广告".to_string(), "净化".to_string()],
+    )];
+    if overlay == "pmexits" {
+        let mut c = seasoncat_ui::custom_profile::new_profile("c".into(), "自定义分流", 1);
+        c.exit_targets.insert("广告".into(), "REJECT".into());
+        s.profiles.push(c);
+        let (meta, mut sections, issue) =
+            seasoncat_ui::profile_more_view(&s, "c", "more", std::path::Path::new("/nonexistent"));
+        let rows: Vec<_> = extend::exits(&[], &modules, true)
+            .iter()
+            .map(|e| exit_row(e, Some("REJECT"), Some(&names), None, Some(&modules[0].1)))
+            .collect();
+        sections.extend(exit_section(&rows));
+        ui.set_pm_meta(meta);
+        ui.set_pm_sections(ModelRc::new(VecModel::from(sections)));
+        ui.set_pm_issue(issue.into());
+        return;
+    }
+    if overlay.starts_with("ext:global") {
+        let (meta, sections) = extend_global_view(&s, "p", "");
+        ui.set_ext_meta(meta);
+        ui.set_ext_sections(ModelRc::new(VecModel::from(sections)));
+        ui.set_ext_searching(false);
+        return;
+    }
+    let p = s.profiles[0].clone();
+    let mut all = extend::own_rules(&s, "p");
+    all.extend(extend::enabled_global(&s, "p"));
+    let rows: Vec<_> = extend::exits(&all, &modules, false)
+        .iter()
+        .map(|e| {
+            exit_row(
+                e,
+                p.exit_targets.get(e).map(String::as_str),
+                Some(&names),
+                Some("节点选择"),
+                modules.iter().find(|(x, _)| x == e).map(|(_, m)| m),
+            )
+        })
+        .collect();
+    let selected: std::collections::BTreeSet<u64> = if overlay == "ext:select" {
+        [10, 12].into()
+    } else {
+        Default::default()
+    };
+    let (top, rules, bottom) = extend_view(&s, "p", &selected, &rows);
+    ui.set_ext_top(ModelRc::new(VecModel::from(top)));
+    ui.set_ext_rules(ModelRc::new(VecModel::from(rules)));
+    ui.set_ext_bottom(ModelRc::new(VecModel::from(bottom)));
+    ui.set_ext_selecting(!selected.is_empty());
+    ui.set_ext_apply(overlay == "ext:apply");
+    ui.set_ext_applying(false);
+}
+
 fn snapshot_rules(ui: &AppWindow, overlay: &str, w: u32) {
     use seasoncat_ui::profile_rules::{self as pr, Targets};
     if !overlay.starts_with("r-") {
@@ -2122,6 +2230,27 @@ fn main() {
             1,
             "pm:providers:empty",
         ),
+        ("extend", 2, "", "extend", 1, "ext:main"),
+        ("extend-small", 2, "", "extend", 1, "ext:main"),
+        ("extend-wide", 2, "", "extend", 1, "ext:main"),
+        ("extend-tablet", 2, "", "extend", 1, "ext:main"),
+        ("extend-select", 2, "", "extend", 1, "ext:select"),
+        ("extend-select-small", 2, "", "extend", 1, "ext:select"),
+        ("extend-select-wide", 2, "", "extend", 1, "ext:select"),
+        ("extend-select-tablet", 2, "", "extend", 1, "ext:select"),
+        ("extend-apply", 2, "", "extend", 1, "ext:apply"),
+        ("extend-apply-small", 2, "", "extend", 1, "ext:apply"),
+        ("extend-apply-wide", 2, "", "extend", 1, "ext:apply"),
+        ("extend-apply-tablet", 2, "", "extend", 1, "ext:apply"),
+        ("extend-global", 2, "", "ext", 1, "ext:global"),
+        ("extend-global-small", 2, "", "ext", 1, "ext:global"),
+        ("extend-global-wide", 2, "", "ext", 1, "ext:global"),
+        ("extend-global-tablet", 2, "", "ext", 1, "ext:global"),
+        ("pm-exits", 2, "", "pmore", 1, "pmexits"),
+        ("pm-exits-small", 2, "", "pmore", 1, "pmexits"),
+        ("pm-exits-wide", 2, "", "pmore", 1, "pmexits"),
+        ("pm-exits-tablet", 2, "", "pmore", 1, "pmexits"),
+        ("extend-global-empty", 2, "", "ext", 1, "ext:global-empty"),
         ("pform-pick", 2, "", "group-members", 1, "pfpick"),
         ("pform-pick-small", 2, "", "group-members", 1, "pfpick"),
         ("group-form-small", 2, "", "group", 1, "gform"),
@@ -2845,6 +2974,7 @@ fn main() {
         snapshot_groups(&ui, overlay, w);
         snapshot_rules(&ui, overlay, w);
         snapshot_more(&ui, overlay);
+        snapshot_extend(&ui, overlay);
         if matches!(*overlay, "groupmenu" | "tabs" | "tabs-list") {
             let mut many: Vec<ProxyGroup> = base_groups.iter().collect();
             for (i, name) in [

@@ -469,7 +469,7 @@ impl App {
         self.core_home.lock().unwrap().join("mitm").join("modules")
     }
 
-    fn module_path(&self, m: &MitmModule) -> PathBuf {
+    pub(crate) fn module_path(&self, m: &MitmModule) -> PathBuf {
         self.modules_dir().join(m.file_name())
     }
 
@@ -1058,7 +1058,7 @@ impl App {
     }
 
     /// `readMitmModule`: the Core reads the text with these argument values.
-    fn read_text(
+    pub(crate) fn read_text(
         &self,
         text: &str,
         arguments: &BTreeMap<String, String>,

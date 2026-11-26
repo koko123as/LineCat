@@ -334,6 +334,9 @@ impl App {
 
     /// The overview's rows past 规则: 外部资源, DNS and 更多.
     pub(crate) fn open_pm(self: &Arc<Self>, page: &str) {
+        if page == "more" {
+            self.refresh_module_exits();
+        }
         STACK.lock().unwrap().push(page.to_string());
         self.publish_pm();
         self.ui(|ui| ui.set_profiles_page("pmore".into()));
@@ -363,8 +366,14 @@ impl App {
         };
         let dir = self.rule_sets_dir();
         let state = self.store.lock().unwrap().state.clone();
+        let exits = if page == "more" {
+            self.exit_rows(&state, &pid)
+        } else {
+            Vec::new()
+        };
         self.ui(move |ui| {
-            let (meta, sections, issue) = view(&state, &pid, &page, &dir);
+            let (meta, mut sections, issue) = view(&state, &pid, &page, &dir);
+            sections.extend(crate::extend_app::exit_section(&exits));
             ui.set_pm_meta(meta);
             ui.set_pm_sections(ModelRc::new(VecModel::from(sections)));
             ui.set_pm_issue(issue.into());
@@ -415,7 +424,14 @@ impl App {
             return;
         };
         match page.as_str() {
-            "more" => self.open_pm(id),
+            "more" => match id.strip_prefix("exit:") {
+                Some(exit) => {
+                    if let Some(pid) = crate::custom_profile_app::page_id() {
+                        self.open_exit_sheet(&pid, exit);
+                    }
+                }
+                None => self.open_pm(id),
+            },
             "providers" => self.provider_clicked(id),
             "dialers" => {
                 if let Some(proxy) = id.strip_prefix("dl:") {

@@ -23,6 +23,20 @@ struct RulesUi {
     draft: Draft,
     selected: BTreeSet<u64>,
     presets: BTreeSet<usize>,
+    /// The profile whose own added rules the pages edit, None for the app's.
+    scope: Option<String>,
+    /// The pages show inside a profile's 扩展 rather than under 进阶配置.
+    hosted: bool,
+}
+
+pub const PAGES: [&str; 4] = ["rules", "rules-select", "rule-form", "rule-presets"];
+
+pub fn scope() -> Option<String> {
+    state().lock().unwrap().scope.clone()
+}
+
+pub fn selected() -> BTreeSet<u64> {
+    state().lock().unwrap().selected.clone()
 }
 
 fn state() -> &'static Mutex<RulesUi> {
@@ -253,7 +267,31 @@ impl App {
         self.ui(|ui| ui.set_meta_rev(ui.get_meta_rev() + 1));
     }
 
+    pub(crate) fn host_rules(&self, scope: Option<String>) {
+        let mut st = state().lock().unwrap();
+        st.hosted = true;
+        st.scope = scope;
+    }
+
+    fn rules_refresh(self: &Arc<Self>) {
+        self.publish_settings();
+        self.publish_ext();
+    }
+
+    fn scoped_rules(&self) -> Vec<Rule> {
+        let scope = scope();
+        let store = self.store.lock().unwrap();
+        match scope {
+            Some(pid) => crate::extend::own_rules(&store.state, &pid),
+            None => store.state.settings.added_rules.clone(),
+        }
+    }
+
     fn open_rules_page(self: &Arc<Self>, page: &str) {
+        if state().lock().unwrap().hosted {
+            self.ext_rules_page(page);
+            return;
+        }
         let page: SharedString = page.into();
         self.ui(move |ui| {
             ui.set_tools_page(page);
@@ -261,14 +299,25 @@ impl App {
         });
     }
 
+    /// A profile's own rules wait for 立即应用 or leaving 扩展; the app's apply now.
     fn update_rules(self: &Arc<Self>, f: impl FnOnce(&mut Vec<Rule>)) {
+        let scope = scope();
         {
             let mut store = self.store.lock().unwrap();
-            f(&mut store.state.settings.added_rules);
+            match &scope {
+                Some(pid) => {
+                    let mut list = crate::extend::own_rules(&store.state, pid);
+                    f(&mut list);
+                    crate::extend::set_own_rules(&mut store.state, pid, &list);
+                }
+                None => f(&mut store.state.settings.added_rules),
+            }
             store.save();
         }
-        self.publish_settings();
-        self.reapply();
+        self.rules_refresh();
+        if scope.is_none() {
+            self.reapply();
+        }
     }
 
     fn open_form(self: &Arc<Self>, rule: Option<Rule>) {
@@ -292,6 +341,7 @@ impl App {
     /// A tap on a rules page, its bar or the dialogs it opens.
     pub(crate) fn rules_clicked(self: &Arc<Self>, page: &str, id: &str) -> bool {
         let settings = self.store.lock().unwrap().state.settings.clone();
+        let list = self.scoped_rules();
         match (page, id) {
             ("rules", "action") => self.open_form(None),
             ("rules", "action2") => {
@@ -310,7 +360,7 @@ impl App {
                 } else if let Some(rid) =
                     id.strip_prefix("rule:").and_then(|i| i.parse::<u64>().ok())
                 {
-                    let rule = settings.added_rules.iter().find(|r| r.id == rid).cloned();
+                    let rule = list.iter().find(|r| r.id == rid).cloned();
                     if rule.is_some() {
                         self.open_form(rule);
                     }
@@ -328,7 +378,7 @@ impl App {
                 }
             }
             ("rules-select", "action2") => {
-                let all: BTreeSet<u64> = settings.added_rules.iter().map(|r| r.id).collect();
+                let all: BTreeSet<u64> = list.iter().map(|r| r.id).collect();
                 {
                     let mut st = state().lock().unwrap();
                     st.selected = if st.selected.is_superset(&all) {
@@ -365,7 +415,14 @@ impl App {
                         rules::parse(line, id)
                     })
                     .collect();
-                self.update_rules(move |list| list.extend(added));
+                let front = scope().is_some();
+                self.update_rules(move |list| {
+                    if front {
+                        list.splice(0..0, added);
+                    } else {
+                        list.extend(added);
+                    }
+                });
                 self.open_rules_page("rules");
             }
             ("rule-presets", id) => {
@@ -379,7 +436,7 @@ impl App {
                             st.presets.insert(i);
                         }
                     }
-                    self.publish_settings();
+                    self.rules_refresh();
                     self.bump_meta();
                 }
             }
@@ -402,7 +459,7 @@ impl App {
         if state().lock().unwrap().selected.is_empty() {
             self.open_rules_page("rules");
         } else {
-            self.publish_settings();
+            self.rules_refresh();
             self.bump_meta();
         }
     }
@@ -443,7 +500,15 @@ impl App {
                         item(format!("rule-target:{t}"), t, on, "")
                     })
                     .collect();
-                let mut exits = rules::custom_exits(&settings.added_rules);
+                let mut exits = match st.scope.clone() {
+                    Some(pid) => {
+                        let store = self.store.lock().unwrap();
+                        let mut all = crate::extend::own_rules(&store.state, &pid);
+                        all.extend(settings.added_rules.iter().cloned());
+                        rules::custom_exits(&all)
+                    }
+                    None => rules::custom_exits(&settings.added_rules),
+                };
                 if d.rule.custom_exit && !d.new_exit && !exits.contains(&d.rule.target) {
                     exits.push(d.rule.target.clone());
                 }
@@ -494,7 +559,7 @@ impl App {
                 _ => return false,
             }
         }
-        self.publish_settings();
+        self.rules_refresh();
         if key == "rule-new-exit" {
             self.open_input("rule-exit", "名称", "", "");
         }
@@ -511,7 +576,7 @@ impl App {
                 _ => return false,
             }
         }
-        self.publish_settings();
+        self.rules_refresh();
         true
     }
 
@@ -527,7 +592,7 @@ impl App {
                 _ => return false,
             }
         }
-        self.publish_settings();
+        self.rules_refresh();
         true
     }
 
@@ -542,12 +607,14 @@ impl App {
             }
         };
         let Some(rule) = rule else {
-            self.publish_settings();
+            self.rules_refresh();
             return;
         };
+        let front = scope().is_some();
         self.update_rules(
             move |list| match list.iter_mut().find(|r| r.id == rule.id) {
                 Some(r) => *r = rule,
+                None if front => list.insert(0, rule),
                 None => list.push(rule),
             },
         );
@@ -557,7 +624,23 @@ impl App {
     /// Leaving the selection by back clears it.
     pub(crate) fn rules_page_shown(&self, page: &str) {
         if page == "rules" {
-            state().lock().unwrap().selected.clear();
+            let mut st = state().lock().unwrap();
+            st.selected.clear();
+            st.hosted = false;
+            st.scope = None;
         }
+    }
+
+    pub(crate) fn rules_unhost(&self, clear: bool) {
+        let mut st = state().lock().unwrap();
+        if clear {
+            st.selected.clear();
+        }
+        st.hosted = false;
+        st.scope = None;
+    }
+
+    pub(crate) fn clear_rules_selection(&self) {
+        state().lock().unwrap().selected.clear();
     }
 }

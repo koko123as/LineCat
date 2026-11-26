@@ -870,6 +870,7 @@ impl App {
             || self.theme_picked(key, &value)
             || self.logs_picked(key, &value)
             || self.pm_picked(key, &value)
+            || self.ext_picked(key, &value)
         {
             return;
         }

@@ -337,6 +337,8 @@ pub struct ModuleRead {
     pub network: Vec<String>,
     pub lists: Vec<(&'static str, Vec<Line>)>,
     pub rules: Vec<String>,
+    /// `namedPolicies`: the policies its rules leave to the profile's exits.
+    pub named_policies: Vec<String>,
     /// Each ignored line with why.
     pub ignored: Vec<(String, String)>,
     only_section_skips: bool,
@@ -450,6 +452,14 @@ pub fn read_module(source: &str, read: &Value) -> ModuleRead {
             line
         })
         .collect();
+    let mut named_policies: Vec<String> = Vec::new();
+    for r in array(read, "rules") {
+        if let Some(n) = r.get("policy").and_then(|p| opt_text(p, "named")) {
+            if !named_policies.contains(&n) {
+                named_policies.push(n);
+            }
+        }
+    }
     let ignored_raw = array(read, "ignored");
     let ignored = ignored_raw
         .iter()
@@ -478,6 +488,7 @@ pub fn read_module(source: &str, read: &Value) -> ModuleRead {
             .unwrap_or_default(),
         lists,
         rules,
+        named_policies,
         ignored,
         only_section_skips,
         skip_verify_hosts,

@@ -414,6 +414,8 @@ pub struct Profile {
     /// The proxy picked in each group, handed to `config.apply` as `selection`.
     pub selection: BTreeMap<String, String>,
     pub overrides: crate::custom_profile::ProfileOverrides,
+    /// `exitTargets`: where each custom exit of the added rules and modules goes.
+    pub exit_targets: BTreeMap<String, String>,
 }
 
 impl Default for Profile {
@@ -430,6 +432,7 @@ impl Default for Profile {
             subscription: None,
             selection: BTreeMap::new(),
             overrides: Default::default(),
+            exit_targets: BTreeMap::new(),
         }
     }
 }

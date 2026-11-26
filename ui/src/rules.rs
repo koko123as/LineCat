@@ -224,18 +224,6 @@ pub fn custom_exits(rules: &[Rule]) -> Vec<String> {
     out
 }
 
-/// The overlay's `rules`: the added rules, each custom exit sent where the profile's last
-/// MATCH goes (`exitTargetResolver` with no exit picked), DIRECT when it has none.
-pub fn overlay_rules(rules: &[Rule], match_rules: &[String]) -> Vec<String> {
-    let fallback = match_rules
-        .last()
-        .and_then(|m| m.split(',').nth(1))
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| "DIRECT".into());
-    rules.iter().map(|r| r.raw(|_| fallback.clone())).collect()
-}
-
 /// Whether a search matches a rule (`searchFields`).
 pub fn matches(rule: &Rule, query: &str) -> bool {
     let q = query.trim().to_lowercase();
@@ -284,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn exits_go_where_match_goes() {
+    fn custom_exits_are_listed_once() {
         let mut a = Rule::new(1);
         a.content = "a.com".into();
         a.custom_exit = true;
@@ -293,11 +281,6 @@ mod tests {
         b.content = "b.com".into();
         let rules = vec![a, b];
         assert_eq!(custom_exits(&rules), vec!["家里"]);
-        assert_eq!(
-            overlay_rules(&rules, &["MATCH,节点选择".into()]),
-            vec!["DOMAIN,a.com,节点选择", "DOMAIN,b.com,DIRECT"]
-        );
-        assert_eq!(overlay_rules(&rules, &[])[0], "DOMAIN,a.com,DIRECT");
         let mut rules = rules;
         reorder(&mut rules, 0, 1);
         assert_eq!(rules[0].id, 2);

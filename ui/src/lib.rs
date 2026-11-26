@@ -15,6 +15,9 @@ pub mod dashboard;
 pub mod dns_queries;
 pub mod drag;
 pub mod edges;
+pub mod extend;
+mod extend_app;
+pub use extend_app::{exit_section, global_view as extend_global_view, main_view as extend_view};
 pub mod fonts;
 pub mod http_capture;
 pub mod icon_picker;
@@ -96,7 +99,7 @@ slint::include_modules!();
 use bridge::Bridge;
 use serde_json::{json, Value};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -646,7 +649,7 @@ impl App {
     /// The file and overlay `config.apply` and `profile.build` take for a profile. A custom
     /// profile's file is written first, from its groups' proxies.
     fn profile_params(&self, bridge: &Bridge, id: &str) -> Result<(PathBuf, Value), String> {
-        let (path, settings, mut own, base, rule_sets, custom) = {
+        let (path, settings, mut own, base, rule_sets, custom, added, targets) = {
             let store = self.store.lock().unwrap();
             let Some(p) = store.state.profiles.iter().find(|p| p.id == id) else {
                 return Err("添加一个配置文件后即可开始使用".into());
@@ -664,6 +667,8 @@ impl App {
                 base,
                 rule_sets,
                 custom,
+                extend::added_rules(&store.state, p),
+                p.exit_targets.clone(),
             )
         };
         own.rule_providers = self.rule_providers(rule_sets);
@@ -682,27 +687,58 @@ impl App {
             json!({"profile": profile_ref(&path)}),
             CALL,
         )?;
-        let added = if base.is_some() || settings.added_rules.is_empty() {
-            Vec::new()
+        let match_rules: Vec<String> = inspect
+            .get("matchRules")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let policies: BTreeSet<String> = if settings.mitm.enable {
+            self.module_exits().into_iter().map(|(e, _)| e).collect()
         } else {
-            let match_rules: Vec<String> = inspect
-                .get("matchRules")
-                .and_then(Value::as_array)
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            rules::overlay_rules(&settings.added_rules, &match_rules)
+            BTreeSet::new()
         };
-        let overlay = profile::overlay_for(
+        let named = added.iter().any(|r| r.custom_exit) || !policies.is_empty();
+        let (names, fallback) = match &base {
+            Some(b) => {
+                let mut names = extend::config_outbounds(b).names();
+                names.extend(
+                    own.groups
+                        .iter()
+                        .filter_map(|g| g.get("name").and_then(Value::as_str).map(str::to_string)),
+                );
+                (names, extend::match_target(&own.rules))
+            }
+            None => (
+                if named {
+                    self.profile_outbounds(bridge, id, &path)
+                        .map(|o| o.names())
+                        .unwrap_or_default()
+                } else {
+                    BTreeSet::new()
+                },
+                extend::match_target(&match_rules),
+            ),
+        };
+        let lines = extend::overlay_rules(&added, &targets, &names, fallback.as_deref());
+        let mut overlay = profile::overlay_for(
             inspect.get("config").unwrap_or(&Value::Null),
             store::mode_name(settings.mode),
             &settings,
             &own,
-            added,
+            lines,
         );
+        if !policies.is_empty() {
+            if let Some(m) = overlay.get_mut("mitm").and_then(Value::as_object_mut) {
+                m.insert(
+                    "module-policy".into(),
+                    extend::module_policy(&policies, &targets, &names, fallback.as_deref()),
+                );
+            }
+        }
         Ok((path, overlay))
     }
 
@@ -2599,6 +2635,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     app.bind_access(&ui);
     app.bind_custom_profile(&ui);
     app.bind_profile_more(&ui);
+    app.bind_extend(&ui);
     app.bind_backup(&ui);
     let ticker = slint::Timer::default();
     let a = app.clone();

@@ -4612,6 +4612,81 @@ component SettingsPage inherits Rectangle {
     }
 }
 
+// `ExtendView`: 脚本, the profile's own 附加规则 under their header actions, then
+// 控制全局附加规则 and 出口; 立即应用 shows in the bar while the active profile has changes.
+component ExtendPage inherits Rectangle {
+    in property <[SetSection]> top;
+    in property <[SetSection]> rules;
+    in property <[SetSection]> bottom;
+    in property <bool> selecting;
+    in property <bool> apply;
+    in property <bool> applying;
+    callback back();
+    callback clicked(string);
+    callback toggled(string, bool);
+    background: Theme.s.page;
+    VerticalLayout {
+        AppBar {
+            title: "扩展";
+            can-back: true;
+            back => { root.back(); }
+            if root.applying: VerticalLayout {
+                alignment: center;
+                Spinner { width: 22px; height: 22px; indeterminate: true; }
+            }
+            if root.apply || root.applying: VerticalLayout {
+                alignment: center;
+                TextButton {
+                    text: "立即应用";
+                    filled: true;
+                    enabled: !root.applying;
+                    clicked => { root.clicked("apply"); }
+                }
+            }
+        }
+        Flickable {
+            content-height: ext-body.preferred-height + Dock.pad;
+            ext-body := VerticalLayout {
+                alignment: start;
+                padding-bottom: 24px;
+                Sections {
+                    sections: root.top;
+                    clicked(id) => { root.clicked(id); }
+                    toggled(id, on) => { root.toggled(id, on); }
+                }
+                HorizontalLayout {
+                    padding-left: 30px;
+                    padding-right: 16px;
+                    padding-top: 12px;
+                    spacing: 4px;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text { text: "附加规则"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+                        Text { text: "在脚本之后插入，排在配置规则前面"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                    }
+                    if root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.delete; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-delete"); } } }
+                    if root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.select-all; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-select-all"); } } }
+                    if !root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.bolt; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-presets"); } } }
+                    if !root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.add-circle; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-add"); } } }
+                }
+                Sections {
+                    sections: root.rules;
+                    long-press: true;
+                    clicked(id) => { root.clicked(id); }
+                    toggled(id, on) => { root.toggled(id, on); }
+                }
+                Sections {
+                    sections: root.bottom;
+                    clicked(id) => { root.clicked(id); }
+                    toggled(id, on) => { root.toggled(id, on); }
+                }
+            }
+        }
+    }
+}
+
 // `_IconSetPreviewView`: the set's icons as `SliverIconGrid` (88 wide at most, 8 apart, a
 // 56px plate holding the 40px icon over its label), searchable by label. Only the rows near
 // the view ask for their pictures.
@@ -8496,6 +8571,23 @@ export component AppWindow inherits Window {
     callback pm-clicked(string);
     callback pm-toggled(string, bool);
     callback pm-back();
+    // 扩展 ("extend") and the pages it opens ("ext"): 编辑全局规则 and the added rules pages,
+    // the one on top described by `ext-meta`.
+    in property <[SetSection]> ext-top;
+    in property <[SetSection]> ext-rules;
+    in property <[SetSection]> ext-bottom;
+    in property <bool> ext-selecting;
+    in property <bool> ext-apply;
+    in property <bool> ext-applying;
+    in property <PageMeta> ext-meta;
+    in property <[SetSection]> ext-sections;
+    in-out property <bool> ext-searching;
+    in-out property <string> ext-query;
+    callback ext-open(string);
+    callback ext-clicked(string);
+    callback ext-toggled(string, bool);
+    callback ext-back();
+    callback ext-search(string);
     callback custom-row(string);
     in-out property <string> editor-parent;
     in-out property <string> placeholder-title;
@@ -8997,6 +9089,8 @@ export component AppWindow inherits Window {
                 if (root.tab == 2 && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
                 if (root.tab == 2 && root.profiles-page == "group") { root.pg-back(); return accept; }
                 if (root.tab == 2 && root.profiles-page == "pmore") { root.pm-back(); return accept; }
+                if (root.tab == 2 && root.profiles-page == "ext" && root.ext-searching) { root.ext-query = ""; root.ext-searching = false; return accept; }
+                if (root.tab == 2 && (root.profiles-page == "ext" || root.profiles-page == "extend")) { root.ext-back(); return accept; }
                 if (root.tab == 2 && root.profiles-page == "group-members" && root.pg-pick-searching) { root.pg-pick-query = ""; root.pg-pick-searching = false; return accept; }
                 if (root.tab == 2 && root.profiles-page == "group-members") { root.pg-pick("back"); return accept; }
                 if (root.tab == 2 && root.profiles-page == "group-icon" && root.gi-searching) { root.gi-query = ""; root.gi-searching = false; return accept; }
@@ -9365,6 +9459,40 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
+                }
+                if root.tab == 2 && root.profiles-page == "extend": ExtendPage {
+                    width: parent.width;
+                    height: parent.height;
+                    top: root.ext-top;
+                    rules: root.ext-rules;
+                    bottom: root.ext-bottom;
+                    selecting: root.ext-selecting;
+                    apply: root.ext-apply;
+                    applying: root.ext-applying;
+                    back => { root.ext-back(); }
+                    clicked(id) => { root.ext-clicked(id); }
+                    toggled(id, on) => { root.ext-toggled(id, on); }
+                }
+                if root.tab == 2 && root.profiles-page == "ext": SettingsPage {
+                    width: parent.width;
+                    height: parent.height;
+                    title: root.ext-meta.title;
+                    action-glyph: Glyphs.of(root.ext-meta.action);
+                    action2-glyph: Glyphs.of(root.ext-meta.action2);
+                    long-press: root.ext-meta.long-press;
+                    searchable: root.ext-meta.search;
+                    searching <=> root.ext-searching;
+                    query <=> root.ext-query;
+                    search(q) => { root.ext-search(q); }
+                    sections: root.ext-sections;
+                    empty: root.ext-meta.empty;
+                    empty-desc: root.ext-meta.empty-desc;
+                    empty-action: root.ext-meta.empty-action;
+                    back => { root.ext-back(); }
+                    action => { root.ext-clicked("action"); }
+                    action2 => { root.ext-clicked("action2"); }
+                    clicked(id) => { root.ext-clicked(id); }
+                    toggled(id, on) => { root.ext-toggled(id, on); }
                 }
                 if root.tab == 2 && root.profiles-page == "group-members": MemberPickerPage {
                     width: parent.width;
@@ -9887,10 +10015,7 @@ export component AppWindow inherits Window {
                 if (id == "export") { root.export-profile(root.menu-item.id); }
                 if (id == "delete") { root.delete-profile(root.menu-item.id); }
                 if (id == "rename") { root.rename-profile(root.menu-item.id); }
-                if (id == "extend") {
-                    root.placeholder-title = "扩展";
-                    root.profiles-page = "placeholder";
-                }
+                if (id == "extend") { root.ext-open(root.menu-item.id); }
             }
             dismiss => { root.menu-open = false; }
         }
