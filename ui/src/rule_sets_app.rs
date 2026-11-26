@@ -438,6 +438,7 @@ impl App {
         match self.compile_rule_set(s, previous.as_ref(), content, refresh) {
             Ok(next) => {
                 let dir = self.rule_sets_dir();
+                let mut renamed = false;
                 if let Some(p) = &previous {
                     if p.label != next.label {
                         let mut store = self.store.lock().unwrap();
@@ -446,8 +447,10 @@ impl App {
                             &p.label,
                             &next.label,
                         );
+                        renamed = true;
                     }
                 }
+                let label = next.label.clone();
                 if let Some(p) = previous.filter(|p| p.file_name() != next.file_name()) {
                     clear_files(&dir, &p);
                 }
@@ -457,6 +460,9 @@ impl App {
                         None => sets.push(next),
                     }
                 });
+                if renamed {
+                    self.apply_if_rule_set_named(&label);
+                }
                 true
             }
             Err(e) => {
@@ -579,6 +585,31 @@ impl App {
         clear_files(&self.rule_sets_dir(), &s);
         let id = id.to_string();
         self.update_rule_sets(move |sets| sets.retain(|x| x.id != id));
+        self.apply_if_rule_set_named(&s.label);
+    }
+
+    fn apply_if_rule_set_named(self: &Arc<Self>, label: &str) {
+        let uses = {
+            let store = self.store.lock().unwrap();
+            crate::custom_profile::active_uses(&store.state, |s, id| {
+                crate::profile_rules::referenced_rule_sets(s, id)
+                    .iter()
+                    .any(|n| n == label)
+            })
+        };
+        if uses {
+            self.reapply();
+        }
+    }
+
+    /// An imported rule provider: kept under `label`, downloaded or compiled from `content`.
+    pub(crate) fn import_rule_set(
+        self: &Arc<Self>,
+        label: &str,
+        url: &str,
+        content: Option<Vec<u8>>,
+    ) {
+        self.put_rule_set(new_set(label, url), None, content, false);
     }
 }
 

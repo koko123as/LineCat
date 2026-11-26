@@ -55,6 +55,8 @@ mod theme_app;
 pub mod tun_sniffer_ntp;
 pub use theme_app::{apply as apply_theme, show_color_page};
 pub mod colors;
+pub mod custom_import;
+mod custom_import_app;
 pub mod custom_profile;
 mod custom_profile_app;
 pub mod dialers;
@@ -201,6 +203,7 @@ impl Ingest {
 enum PendingKey {
     Link { label: String, url: String },
     File { id: String, name: String },
+    CustomImport { profile_id: String },
 }
 
 /// The edit page's fields.
@@ -1464,6 +1467,10 @@ impl App {
             return;
         };
         let key = key.trim().to_string();
+        if let PendingKey::CustomImport { profile_id } = pending {
+            self.spawn(move |app| app.custom_import_key(profile_id, key));
+            return;
+        }
         if key.is_empty() {
             if let PendingKey::File { id, .. } = &pending {
                 let _ = std::fs::remove_file(self.temp_for(&format!("{id}.src")));
@@ -1480,6 +1487,7 @@ impl App {
                     }
                 }
                 PendingKey::File { id, name } => app.finish_file(id, name, key),
+                PendingKey::CustomImport { .. } => {}
             }
             app.ui(|ui| ui.set_adding(false));
         });
@@ -2087,6 +2095,7 @@ impl App {
             ("pg-save", _) => self.pg_save_answer(yes),
             ("pr-delete", true) => self.delete_profile_rules(&arg),
             ("pr-save", _) => self.pr_save_answer(yes),
+            ("ci-replace", _) => self.custom_import_replace(yes),
             ("icon-record-delete", true) => self.delete_icon_record(&arg),
             (a, _) if a.starts_with("mitm-") => self.mitm_confirmed(a, &arg, yes),
             ("ua-delete", true) => self.delete_user_agent(&arg),

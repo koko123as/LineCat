@@ -306,6 +306,23 @@ pub fn rename_rule_set(r: &mut ProfileRule, old: &str, new: &str) {
     }
 }
 
+/// `renamedRuleSets`: every name looked up once, so a rename never chains into another.
+pub fn rename_rule_sets(r: &mut ProfileRule, names: &std::collections::HashMap<String, String>) {
+    if r.action == "RULE-SET" {
+        if let Some(n) = names.get(&r.rule_provider) {
+            r.rule_provider = n.clone();
+        }
+    } else if nests_rules(&r.action) {
+        let mut content = r.content.clone();
+        for (s, e) in nested_rule_sets(&r.content).into_iter().rev() {
+            if let Some(n) = names.get(&r.content[s..e]) {
+                content.replace_range(s..e, n);
+            }
+        }
+        r.content = content;
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Issue {
     InvalidPayload(PayloadError),

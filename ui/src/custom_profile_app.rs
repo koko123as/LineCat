@@ -38,6 +38,13 @@ impl App {
             match action.as_str() {
                 "rename" => a.ask_rename(&id),
                 "preview" => a.preview(id),
+                "import-url" => a.open_input(
+                    crate::custom_import_app::URL_INPUT,
+                    "通过URL导入",
+                    "URL",
+                    "",
+                ),
+                "import-file" => a.custom_import_from_file(id),
                 _ => {}
             }
         });
@@ -150,6 +157,7 @@ impl App {
         self.ui(|ui| {
             ui.set_custom_open(false);
             ui.set_custom_menu_open(false);
+            ui.set_custom_import_open(false);
             let page = ui.get_profiles_page();
             if matches!(
                 page.as_str(),
@@ -232,6 +240,9 @@ impl App {
 
     /// `validateProfileName`.
     pub(crate) fn custom_profile_check(&self, key: &str, value: &str) -> Option<String> {
+        if key == crate::custom_import_app::URL_INPUT {
+            return Some(self.custom_import_url_check(value).unwrap_or_default());
+        }
         key.starts_with(RENAME)
             .then(|| {
                 value
@@ -243,6 +254,12 @@ impl App {
     }
 
     pub(crate) fn custom_profile_input(self: &Arc<Self>, key: &str, value: &str) -> bool {
+        if key == crate::custom_import_app::URL_INPUT {
+            if let Some(id) = page_id() {
+                self.custom_import_from_url(id, value.trim().to_string());
+            }
+            return true;
+        }
         let Some(id) = key.strip_prefix(RENAME) else {
             return false;
         };

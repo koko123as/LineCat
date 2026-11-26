@@ -2182,6 +2182,16 @@ fn main() {
         ("rules-yaml-tablet", 2, "", "editor", 1, "r-yaml"),
         ("custom-issues", 2, "", "custom", 1, "issues"),
         ("custom-issues-small", 2, "", "custom", 1, "issues"),
+        ("custom-import", 2, "", "custom", 1, "cimport"),
+        ("custom-import-small", 2, "", "custom", 1, "cimport"),
+        ("custom-import-wide", 2, "", "custom", 1, "cimport"),
+        ("custom-import-tablet", 2, "", "custom", 1, "cimport"),
+        ("custom-importing", 2, "", "custom", 1, "cimporting"),
+        ("custom-importing-small", 2, "", "custom", 1, "cimporting"),
+        ("custom-replace", 2, "", "custom", 1, "creplace"),
+        ("custom-replace-small", 2, "", "custom", 1, "creplace"),
+        ("custom-replace-wide", 2, "", "custom", 1, "creplace"),
+        ("custom-replace-tablet", 2, "", "custom", 1, "creplace"),
         ("custom-menu", 2, "", "custom", 1, "cmenu"),
         ("custom-menu-wide", 2, "", "custom", 1, "cmenu"),
         ("custom-placeholder", 2, "", "placeholder", 1, "custom"),
@@ -2799,10 +2809,23 @@ fn main() {
             ui.set_ctx_w(140.0);
             ui.set_ctx_h(40.0);
         }
+        ui.set_custom_import_open(*overlay == "cimport");
+        if *overlay == "cimport" {
+            ui.set_ctx_x(w as f32 - 8.0 - 72.0);
+            ui.set_ctx_y(10.0);
+            ui.set_ctx_w(72.0);
+            ui.set_ctx_h(36.0);
+        }
+        ui.set_custom_importing(*overlay == "cimporting");
         ui.set_confirm_title("提示".into());
-        ui.set_confirm_text("确定删除当前配置吗？".into());
-        ui.set_confirm_action("delete".into());
-        ui.set_confirm_open(*overlay == "confirm");
+        if *overlay == "creplace" {
+            ui.set_confirm_text("导入会替换此配置现有的策略组、规则和设置".into());
+            ui.set_confirm_action("ci-replace".into());
+        } else {
+            ui.set_confirm_text("确定删除当前配置吗？".into());
+            ui.set_confirm_action("delete".into());
+        }
+        ui.set_confirm_open(matches!(*overlay, "confirm" | "creplace"));
         // "speed:<up>:<down>": the speed tiles with changing values, rendered in order
         // to catch a value width that stays at an older, shorter text.
         let mut traffic = base_traffic.clone();

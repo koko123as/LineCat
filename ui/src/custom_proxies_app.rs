@@ -33,6 +33,9 @@ fn verdicts() -> &'static Mutex<HashMap<String, String>> {
     V.get_or_init(Default::default)
 }
 
+/// What the list held when it opened and every name seen since (`_opened`, `_seenNames`).
+static SESSION: Mutex<Option<(Vec<Value>, BTreeSet<String>)>> = Mutex::new(None);
+
 fn key_of(definition: &Value) -> String {
     serde_json::to_string(definition).unwrap_or_default()
 }
@@ -300,6 +303,16 @@ impl App {
             let mut store = self.store.lock().unwrap();
             f(&mut store.state.settings.custom_proxies);
             store.save();
+            if let Some((_, seen)) = SESSION.lock().unwrap().as_mut() {
+                seen.extend(
+                    store
+                        .state
+                        .settings
+                        .custom_proxies
+                        .iter()
+                        .map(CustomProxy::name),
+                );
+            }
         }
         self.publish_settings();
         self.ui(|ui| ui.set_meta_rev(ui.get_meta_rev() + 1));
@@ -400,6 +413,43 @@ impl App {
         }
         if page == LIST {
             self.spawn(|app| app.check_custom_proxies());
+        }
+        self.track_custom_proxies(page);
+    }
+
+    fn track_custom_proxies(self: &Arc<Self>, page: &str) {
+        let shown = [LIST, FORM, "editor"].contains(&page);
+        let mut session = SESSION.lock().unwrap();
+        if shown {
+            if session.is_none() && page == LIST {
+                let proxies = self.custom_proxies();
+                *session = Some((
+                    proxies.iter().map(|p| p.definition.clone()).collect(),
+                    proxies.iter().map(CustomProxy::name).collect(),
+                ));
+            }
+            return;
+        }
+        let Some((opened, seen)) = session.take() else {
+            return;
+        };
+        drop(session);
+        let latest: Vec<Value> = self
+            .custom_proxies()
+            .into_iter()
+            .map(|p| p.definition)
+            .collect();
+        if latest == opened {
+            return;
+        }
+        let uses = {
+            let store = self.store.lock().unwrap();
+            crate::custom_profile::active_uses(&store.state, |s, id| {
+                crate::custom_profile::names_proxies(s, id, &seen)
+            })
+        };
+        if uses {
+            self.reapply();
         }
     }
 

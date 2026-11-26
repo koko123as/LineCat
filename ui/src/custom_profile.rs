@@ -192,6 +192,41 @@ pub fn is_untouched(state: &State, profile_id: &str, initial_label: &str) -> boo
         && rules(state, profile_id).is_empty()
 }
 
+pub fn is_empty(state: &State, profile_id: &str) -> bool {
+    state
+        .profiles
+        .iter()
+        .find(|p| p.id == profile_id)
+        .is_none_or(|p| p.overrides.is_default())
+        && groups_count(state, profile_id) == 0
+        && rules(state, profile_id).is_empty()
+        && !state
+            .proxy_dialers
+            .iter()
+            .any(|d| d.profile_id == profile_id)
+}
+
+/// `_currentUses`: the active profile is a custom one and `uses` holds for it.
+pub fn active_uses(state: &State, uses: impl Fn(&State, &str) -> bool) -> bool {
+    state
+        .active
+        .as_deref()
+        .and_then(|id| state.profiles.iter().find(|p| p.id == id))
+        .is_some_and(|p| p.is_custom() && uses(state, &p.id))
+}
+
+pub fn names_proxies(
+    state: &State,
+    profile_id: &str,
+    names: &std::collections::BTreeSet<String>,
+) -> bool {
+    groups(state, profile_id).iter().any(|g| {
+        crate::proxy_groups::names(&g.definition, "proxies")
+            .iter()
+            .any(|n| names.contains(n))
+    })
+}
+
 /// What the profile page's `_inputs` compare to tell an edit on the way out.
 pub fn snapshot(state: &State, profile_id: &str) -> Value {
     json!({

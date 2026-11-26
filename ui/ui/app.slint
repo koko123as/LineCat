@@ -3557,9 +3557,9 @@ component GroupRowView inherits Rectangle {
     }
 }
 
-// CustomProfileView: the title opens 重命名 / 运行时配置, 导入 stays off until importing
-// lands, then the issue banner, the overview rows and `CustomProxyGroupsSection`, whose
-// header carries the groups' own actions.
+// CustomProfileView: the title opens 重命名 / 运行时配置, 导入 opens 通过URL导入 / 通过文件导入
+// (a spinner in its place while importing), then the issue banner, the overview rows and
+// `CustomProxyGroupsSection`, whose header carries the groups' own actions.
 component CustomProfilePage inherits Rectangle {
     in property <string> title;
     in property <[CustomRow]> rows;
@@ -3570,8 +3570,10 @@ component CustomProfilePage inherits Rectangle {
     in property <[string]> group-kinds;
     in property <bool> selecting;
     in property <bool> sorting;
+    in property <bool> importing;
     callback back();
     callback title-menu(length, length, length, length);
+    callback import-menu(length, length, length, length);
     callback open-row(CustomRow);
     callback group(string);
     background: Theme.s.page;
@@ -3612,7 +3614,16 @@ component CustomProfilePage inherits Rectangle {
             }
             VerticalLayout {
                 alignment: center;
-                TextButton { text: "导入"; filled: true; enabled: false; }
+                if root.importing: HorizontalLayout {
+                    width: 64px;
+                    alignment: center;
+                    Spinner { width: 22px; height: 22px; indeterminate: true; }
+                }
+                if !root.importing: TextButton {
+                    text: "导入";
+                    filled: true;
+                    clicked => { root.import-menu(self.absolute-position.x, self.absolute-position.y, self.width, self.height); }
+                }
             }
         }
         Flickable {
@@ -8422,6 +8433,8 @@ export component AppWindow inherits Window {
     in property <int> custom-group-count;
     in-out property <bool> custom-open;
     in-out property <bool> custom-menu-open;
+    in-out property <bool> custom-import-open;
+    in-out property <bool> custom-importing;
     in property <[GroupRow]> custom-groups;
     in property <[string]> custom-group-titles;
     in property <[string]> custom-group-kinds;
@@ -8973,6 +8986,7 @@ export component AppWindow inherits Window {
                 if (root.age-open) { root.age-open = false; root.age-submit(""); return accept; }
                 if (root.menu-open) { root.menu-open = false; return accept; }
                 if (root.custom-menu-open) { root.custom-menu-open = false; return accept; }
+                if (root.custom-import-open) { root.custom-import-open = false; return accept; }
                 if (root.add-menu-open) { root.add-menu-open = false; return accept; }
                 if (root.link-open) { root.link-open = false; return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "group") { root.group-yaml-closed(); root.editor-parent = ""; root.profiles-page = "group"; return accept; }
@@ -9251,7 +9265,15 @@ export component AppWindow inherits Window {
                     group-kinds: root.custom-group-kinds;
                     selecting: root.custom-group-selecting;
                     sorting: root.custom-group-sorting;
+                    importing: root.custom-importing;
                     group(a) => { root.custom-group(a); }
+                    import-menu(x, y, w, h) => {
+                        root.ctx-x = x;
+                        root.ctx-y = y;
+                        root.ctx-w = w;
+                        root.ctx-h = h;
+                        root.custom-import-open = true;
+                    }
                     back => { root.custom-back(); }
                     title-menu(x, y, w, h) => {
                         root.ctx-x = x;
@@ -9889,6 +9911,24 @@ export component AppWindow inherits Window {
                 root.custom-action(id);
             }
             dismiss => { root.custom-menu-open = false; }
+        }
+
+        // The custom profile page's 导入 menu.
+        if root.custom-import-open: AnchorMenu {
+            items: [
+                { id: "import-url", glyph: "cloud", label: "通过URL导入", enabled: true },
+                { id: "import-file", glyph: "import-file", label: "通过文件导入", enabled: true },
+            ];
+            menu-width: 200px;
+            ax: root.ctx-x;
+            ay: root.ctx-y;
+            aw: root.ctx-w;
+            ah: root.ctx-h;
+            picked(id) => {
+                root.custom-import-open = false;
+                root.custom-action(id);
+            }
+            dismiss => { root.custom-import-open = false; }
         }
 
         // 从链接导入 (showNamedUrlsForm): a name, the link and an age key, or a batch of links.
@@ -10572,8 +10612,8 @@ export component AppWindow inherits Window {
                 spacing: 8px;
                 TextButton { text: root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save" ? "不保存" : "取消"; clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, false); } }
                 TextButton {
-                    text: root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" || root.confirm-action == "color-delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "pr-delete" || root.confirm-action == "icon-record-delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : root.confirm-action == "color-reset" ? "重置" : "确定";
-                    danger: root.confirm-action == "delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "pr-delete" || root.confirm-action == "icon-record-delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset";
+                    text: root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" || root.confirm-action == "color-delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "pr-delete" || root.confirm-action == "icon-record-delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : root.confirm-action == "color-reset" ? "重置" : root.confirm-action == "ci-replace" ? "替换" : "确定";
+                    danger: root.confirm-action == "delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "pr-delete" || root.confirm-action == "icon-record-delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset" || root.confirm-action == "ci-replace";
                     clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, true); }
                 }
             }
