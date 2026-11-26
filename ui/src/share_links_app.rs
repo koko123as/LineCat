@@ -30,7 +30,7 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
 const LINK_KEY: &str = "cp-link";
 
 impl App {
-    fn group_names(&self) -> BTreeSet<String> {
+    pub(crate) fn group_names(&self) -> BTreeSet<String> {
         self.store
             .lock()
             .unwrap()

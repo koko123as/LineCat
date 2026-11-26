@@ -20,6 +20,7 @@ struct State {
     query: String,
     editing: Option<&'static str>,
     rev: u64,
+    selected: BTreeSet<String>,
 }
 
 fn state() -> &'static Mutex<State> {
@@ -64,6 +65,10 @@ pub fn page_meta(proxies: &[CustomProxy], page: &str) -> Option<PageMeta> {
             long_press: true,
             search: true,
             action_empty: !searching,
+            selecting: st
+                .selected
+                .iter()
+                .any(|id| proxies.iter().any(|p| &p.id == id)),
             ..Default::default()
         }),
         FORM => Some(PageMeta {
@@ -87,6 +92,7 @@ pub fn list_sections(
     proxies: &[CustomProxy],
     query: &str,
     errors: &HashMap<String, String>,
+    selected: &BTreeSet<String>,
 ) -> Vec<SetSection> {
     let rows: Vec<SetRow> = cp::search(proxies, query)
         .into_iter()
@@ -98,7 +104,8 @@ pub fn list_sections(
             let name = p.name();
             SetRow {
                 id: format!("cp:{}", p.id).into(),
-                kind: "action".into(),
+                kind: "select".into(),
+                on: selected.contains(&p.id),
                 title: if name.is_empty() { "-".into() } else { name }.into(),
                 subtitle: p.kind().into(),
                 invalid: !issues(p, proxies, &BTreeSet::new(), error).is_empty(),
@@ -240,9 +247,12 @@ pub fn editor_issue(d: &Draft, proxies: &[CustomProxy]) -> String {
 pub fn sections(proxies: &[CustomProxy], page: &str) -> Option<Vec<SetSection>> {
     match page {
         LIST => {
-            let query = state().lock().unwrap().query.clone();
+            let (query, selected) = {
+                let st = state().lock().unwrap();
+                (st.query.clone(), st.selected.clone())
+            };
             let errors = verdicts().lock().unwrap().clone();
-            Some(list_sections(proxies, &query, &errors))
+            Some(list_sections(proxies, &query, &errors, &selected))
         }
         FORM => Some(
             state()
@@ -286,6 +296,15 @@ pub(crate) fn new_id() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_micros().to_string())
         .unwrap_or_default()
+}
+
+/// `_handleSelectAll`: every shown row, or none once all of them are selected.
+fn select_all(selected: &BTreeSet<String>, visible: &BTreeSet<String>) -> BTreeSet<String> {
+    if visible.is_subset(selected) {
+        BTreeSet::new()
+    } else {
+        visible.clone()
+    }
 }
 
 fn field_of(id: &str) -> Option<&'static cp::Field> {
@@ -411,6 +430,9 @@ impl App {
             if page != "editor" {
                 st.editing = None;
             }
+            if page != LIST {
+                st.selected.clear();
+            }
             if ![LIST, FORM, "editor"].contains(&page) && !st.query.is_empty() {
                 st.query.clear();
                 self.ui(|ui| {
@@ -525,13 +547,122 @@ impl App {
                 let titles = self.custom_proxy_titles();
                 self.ui(move |ui| ui.set_set_sort_titles(ModelRc::new(VecModel::from(titles))));
             }
+        } else if let Some(pid) = id.strip_prefix("select:cp:") {
+            self.toggle_custom_proxy(pid);
+        } else if id == "sel-clear" {
+            self.set_custom_proxies_selected(BTreeSet::new());
+        } else if id == "sel-all" {
+            let visible = self.visible_custom_proxies();
+            let next = select_all(&state().lock().unwrap().selected, &visible);
+            self.set_custom_proxies_selected(next);
+        } else if id == "sel-delete" {
+            self.delete_selected_custom_proxies();
         } else if let Some(pid) = id.strip_prefix("long:cp:") {
             if let Some(i) = self.custom_proxies().iter().position(|p| p.id == pid) {
                 self.custom_proxy_menu(i);
             }
         } else if let Some(pid) = id.strip_prefix("cp:") {
-            self.open_custom_proxy(Some(pid));
+            if state().lock().unwrap().selected.is_empty() {
+                self.open_custom_proxy(Some(pid));
+            } else {
+                self.toggle_custom_proxy(pid);
+            }
         }
+    }
+
+    fn visible_custom_proxies(&self) -> BTreeSet<String> {
+        let query = state().lock().unwrap().query.clone();
+        cp::search(&self.custom_proxies(), &query)
+            .into_iter()
+            .map(|p| p.id.clone())
+            .collect()
+    }
+
+    fn toggle_custom_proxy(self: &Arc<Self>, id: &str) {
+        let mut next = state().lock().unwrap().selected.clone();
+        if !next.remove(id) {
+            next.insert(id.to_string());
+        }
+        self.set_custom_proxies_selected(next);
+    }
+
+    fn set_custom_proxies_selected(self: &Arc<Self>, selected: BTreeSet<String>) {
+        state().lock().unwrap().selected = selected;
+        self.publish_settings();
+        self.ui(|ui| ui.set_meta_rev(ui.get_meta_rev() + 1));
+    }
+
+    /// `_handleDelete` on the shown selected rows; the hidden ones stay selected.
+    fn delete_selected_custom_proxies(self: &Arc<Self>) {
+        let visible = self.visible_custom_proxies();
+        let ids: BTreeSet<String> = state()
+            .lock()
+            .unwrap()
+            .selected
+            .intersection(&visible)
+            .cloned()
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        let text = self.delete_message(&ids, "确定删除选中的代理吗？");
+        let arg = ids.into_iter().collect::<Vec<_>>().join(",");
+        self.confirm("提示", text, "cp-delete", arg);
+    }
+
+    /// `_deleteMessage`: the plain question, or which custom profiles still use the proxies.
+    fn delete_message(&self, ids: &BTreeSet<String>, fallback: &str) -> String {
+        let names: BTreeSet<String> = self
+            .custom_proxies()
+            .iter()
+            .filter(|p| ids.contains(&p.id))
+            .map(CustomProxy::name)
+            .collect();
+        let users = crate::proxy_groups::proxy_users(&self.store.lock().unwrap().state, &names);
+        if users.is_empty() {
+            return fallback.to_string();
+        }
+        let names: Vec<String> = names.into_iter().collect();
+        format!(
+            "{} 仍被 {} 使用，删除后这些配置会异常。确定删除吗？",
+            names.join(", "),
+            users.join(", ")
+        )
+    }
+
+    /// `addToLocalProxies`: the node's definition from the Core, kept unless a local proxy
+    /// already holds it.
+    pub(crate) fn add_to_local_proxies(self: &Arc<Self>, name: &str) {
+        let name = name.to_string();
+        self.spawn(move |app| {
+            let found = app.bridge().and_then(|b| {
+                b.call("proxy.definition", json!({ "name": name }), CALL)
+                    .map(|r| r.get("proxy").and_then(Value::as_object).cloned())
+                    .or_else(|e| {
+                        let missing = e.contains("not_found") || e.contains("not found");
+                        if missing {
+                            Ok(None)
+                        } else {
+                            Err(e)
+                        }
+                    })
+            });
+            let definition = match found {
+                Ok(Some(d)) => d,
+                Ok(None) => return app.alert("提示", format!("以下代理或策略不存在：{name}")),
+                Err(e) => return app.alert("提示", e),
+            };
+            let proxies = app.custom_proxies();
+            let existing: Vec<Value> = proxies.iter().map(|p| p.definition.clone()).collect();
+            let groups = app.group_names().into_iter().collect();
+            match crate::custom_import::import_proxy(&definition, &existing, &groups) {
+                (name, None) => app.toast(format!("本地代理中已有 {name}")),
+                (name, Some(added)) => {
+                    app.update_custom_proxies(|s| s.push(CustomProxy::new(new_id(), added)));
+                    app.toast(format!("已将 {name} 添加到本地代理"));
+                }
+            }
+        });
     }
 
     fn custom_proxy_menu(self: &Arc<Self>, index: usize) {
@@ -566,14 +697,22 @@ impl App {
         };
         match action {
             "edit" => self.open_custom_proxy(Some(&p.id)),
-            "delete" => self.confirm("提示", "确定删除当前代理吗？".into(), "cp-delete", p.id),
+            "delete" => {
+                let text = self.delete_message(&[p.id.clone()].into(), "确定删除当前代理吗？");
+                self.confirm("提示", text, "cp-delete", p.id)
+            }
             _ => {}
         }
     }
 
-    pub(crate) fn delete_custom_proxy(self: &Arc<Self>, id: &str) {
-        let id = id.to_string();
-        self.update_custom_proxies(move |s| s.retain(|p| p.id != id));
+    /// The confirmed delete of the proxies `ids` names, comma separated.
+    pub(crate) fn delete_custom_proxy(self: &Arc<Self>, ids: &str) {
+        let ids: BTreeSet<String> = ids.split(',').map(String::from).collect();
+        {
+            let mut st = state().lock().unwrap();
+            st.selected.retain(|id| !ids.contains(id));
+        }
+        self.update_custom_proxies(move |s| s.retain(|p| !ids.contains(&p.id)));
     }
 
     pub(crate) fn draft(&self) -> Option<Draft> {
@@ -875,22 +1014,34 @@ mod tests {
         ];
         let mut errors = HashMap::new();
         errors.insert(key_of(&all[2].definition), "bad".to_string());
-        let s = list_sections(&all, "", &errors);
+        let s = list_sections(&all, "", &errors, &BTreeSet::new());
         let rows: Vec<SetRow> = s[0].rows.iter().collect();
         assert_eq!(rows.len(), 3);
         assert!(rows.iter().all(|r| r.invalid));
         assert_eq!(rows[1].subtitle, "vmess");
         assert_eq!(
-            list_sections(&all, "a.example", &errors)[0]
+            list_sections(&all, "a.example", &errors, &BTreeSet::new())[0]
                 .rows
                 .row_count(),
             1
         );
-        assert!(list_sections(&all, "zz", &errors).is_empty());
-        assert!(list_sections(&all[2..], "", &HashMap::new())[0]
-            .rows
-            .iter()
-            .all(|r| !r.invalid));
+        assert!(list_sections(&all, "zz", &errors, &BTreeSet::new()).is_empty());
+        assert!(
+            list_sections(&all[2..], "", &HashMap::new(), &["3".to_string()].into())[0]
+                .rows
+                .iter()
+                .all(|r| !r.invalid && r.on && r.kind == "select")
+        );
+    }
+
+    #[test]
+    fn select_all_takes_the_shown_rows_or_clears() {
+        let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>();
+        assert_eq!(
+            select_all(&set(&["1"]), &set(&["1", "2"])),
+            set(&["1", "2"])
+        );
+        assert!(select_all(&set(&["1", "2", "3"]), &set(&["1", "2"])).is_empty());
     }
 
     #[test]

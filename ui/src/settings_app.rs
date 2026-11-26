@@ -350,7 +350,10 @@ impl App {
             }
         });
         let a = self.clone();
-        ui.on_ctx_picked(move |kind, arg, _, id| {
+        ui.on_ctx_picked(move |kind, arg, b, id| {
+            if kind == "node" && id == "add-local" {
+                return a.add_to_local_proxies(&b);
+            }
             if kind == "pg" {
                 return a.group_menu_picked(&arg, &id);
             }

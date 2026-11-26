@@ -50,6 +50,7 @@ pub struct Groups {
     pub order: Vec<String>,
     pub groups: HashMap<String, Group>,
     pub kinds: HashMap<String, String>,
+    pub providers: HashMap<String, String>,
 }
 
 impl Groups {
@@ -58,6 +59,7 @@ impl Groups {
             |g: &Value, k: &str| g.get(k).and_then(Value::as_str).unwrap_or("").to_string();
         let mut groups = HashMap::new();
         let mut kinds = HashMap::new();
+        let mut providers = HashMap::new();
         for g in v
             .get("groups")
             .and_then(Value::as_array)
@@ -95,6 +97,9 @@ impl Groups {
                 n.get("type").and_then(Value::as_str),
             ) {
                 kinds.entry(name.into()).or_insert_with(|| kind.into());
+                if let Some(p) = n.get("provider-name").and_then(Value::as_str) {
+                    providers.insert(name.to_string(), p.to_string());
+                }
             }
         }
         let order = v
@@ -110,6 +115,7 @@ impl Groups {
             order,
             groups,
             kinds,
+            providers,
         }
     }
 
@@ -184,6 +190,7 @@ pub struct View<'a> {
     pub style: &'a ProxiesStyle,
     pub query: &'a str,
     pub testing: &'a HashSet<String>,
+    pub custom_profile: bool,
 }
 
 impl View<'_> {
@@ -242,6 +249,7 @@ impl View<'_> {
                         delay: self.delay_of(self.delays, n),
                         selected: **n == g.now,
                         pinned: g.computed() && **n == g.fixed,
+                        addable: addable_to_local(self.groups, n, self.custom_profile),
                     }
                 })
                 .collect();
@@ -259,6 +267,22 @@ impl View<'_> {
         }
         out
     }
+}
+
+/// `_isAddableToLocal`: a custom profile's own nodes already are local proxies.
+pub fn addable_to_local(groups: &Groups, name: &str, custom_profile: bool) -> bool {
+    const GROUP_TYPES: &[&str] = &[
+        "Selector",
+        "URLTest",
+        "Fallback",
+        "LoadBalance",
+        "Relay",
+        "Smart",
+    ];
+    let kind = groups.kinds.get(name).map(String::as_str).unwrap_or("");
+    (groups.providers.contains_key(name) || !custom_profile)
+        && !crate::custom_proxies::RESERVED_NAMES.contains(&name)
+        && !GROUP_TYPES.contains(&kind)
 }
 
 /// The proxies a group's delay test measures: its nodes (only the ones the search shows),
@@ -372,8 +396,20 @@ mod tests {
             style: s,
             query: q,
             testing: t,
+            custom_profile: false,
         }
         .build()
+    }
+
+    #[test]
+    fn only_plain_nodes_go_to_local_proxies() {
+        let mut g = sample();
+        assert!(addable_to_local(&g, "香港", false));
+        assert!(!addable_to_local(&g, "自动", false));
+        assert!(!addable_to_local(&g, "DIRECT", false));
+        assert!(!addable_to_local(&g, "香港", true));
+        g.providers.insert("香港".into(), "sub".into());
+        assert!(addable_to_local(&g, "香港", true));
     }
 
     fn names(g: &ProxyGroup) -> Vec<String> {

@@ -762,14 +762,47 @@ pub fn profile_issues(data: &Data) -> BTreeMap<u64, Vec<Issue>> {
 /// `groupsInUse` with `proxyNamesInUse`: the names of `ids` that the profile's other groups,
 /// rules, dialers, DNS or NTP still name.
 pub fn in_use(state: &State, profile_id: &str, ids: &BTreeSet<u64>) -> Vec<String> {
-    let groups = cp::groups(state, profile_id);
-    let names_of: Vec<String> = groups
+    let referenced = referenced(state, profile_id, ids);
+    let mut out: Vec<String> = Vec::new();
+    for g in cp::groups(state, profile_id)
         .iter()
         .filter(|g| ids.contains(&g.id))
-        .map(|g| g.name().to_string())
-        .collect();
+    {
+        let n = g.name().to_string();
+        if referenced.contains(&n) && !out.contains(&n) {
+            out.push(n);
+        }
+    }
+    out
+}
+
+/// `proxyUsers`: the labels of the custom profiles whose groups, rules, dialers, DNS or NTP
+/// name one of `names` that is not one of their own groups.
+pub fn proxy_users(state: &State, names: &BTreeSet<String>) -> Vec<String> {
+    state
+        .profiles
+        .iter()
+        .filter(|p| p.is_custom())
+        .filter(|p| {
+            let own: HashSet<String> = cp::groups(state, &p.id)
+                .iter()
+                .map(|g| g.name().to_string())
+                .collect();
+            let referenced = referenced(state, &p.id, &BTreeSet::new());
+            names
+                .iter()
+                .any(|n| !own.contains(n) && referenced.contains(n))
+        })
+        .map(|p| p.label())
+        .collect()
+}
+
+fn referenced(state: &State, profile_id: &str, skipped: &BTreeSet<u64>) -> HashSet<String> {
     let mut referenced: HashSet<String> = HashSet::new();
-    for g in groups.iter().filter(|g| !ids.contains(&g.id)) {
+    for g in cp::groups(state, profile_id)
+        .iter()
+        .filter(|g| !skipped.contains(&g.id))
+    {
         referenced.extend(names(&g.definition, "proxies"));
         let selected = text(&g.definition, "default-selected");
         if !selected.is_empty() {
@@ -792,13 +825,7 @@ pub fn in_use(state: &State, profile_id: &str, ids: &BTreeSet<u64>) -> Vec<Strin
         referenced.extend(crate::profile_refs::dns_proxies(&p.overrides));
         referenced.extend(crate::profile_refs::ntp_proxy(&p.overrides));
     }
-    let mut out: Vec<String> = Vec::new();
-    for n in names_of {
-        if referenced.contains(&n) && !out.contains(&n) {
-            out.push(n);
-        }
-    }
-    out
+    referenced
 }
 
 /// `copiedProxyName`: the name without its number, numbered from 01 apart from `taken`.
@@ -1878,6 +1905,23 @@ mod tests {
         let dns = &mut s.profiles[0].overrides.dns;
         dns.model.insert("nameserver".into(), json!(["ts://e/dns"]));
         assert_eq!(in_use(&s, "p", &[5].into()), ["e"]);
+    }
+
+    #[test]
+    fn proxy_users_are_the_custom_profiles_naming_a_proxy() {
+        let mut s = state_with(&[(
+            "a",
+            json!({"name": "a", "type": "select", "proxies": ["hk", "b"]}),
+        )]);
+        let names = |v: &[&str]| v.iter().map(|n| n.to_string()).collect::<BTreeSet<_>>();
+        assert_eq!(proxy_users(&s, &names(&["hk", "jp"])), ["c"]);
+        assert!(proxy_users(&s, &names(&["jp"])).is_empty());
+        assert!(
+            proxy_users(&s, &names(&["a"])).is_empty(),
+            "own groups are not proxies"
+        );
+        s.profiles[0].kind = "url".into();
+        assert!(proxy_users(&s, &names(&["hk"])).is_empty());
     }
 
     fn m(kind: MemberKind, n: &str) -> Member {

@@ -492,6 +492,17 @@ fn import_proxies(
     }
 }
 
+/// `importProxy`: the name taken, and the proxy to add unless a local one holds it already.
+pub fn import_proxy(
+    definition: &Map<String, Value>,
+    existing: &[Value],
+    group_names: &HashSet<String>,
+) -> (String, Option<Map<String, Value>>) {
+    let imported = import_proxies(std::slice::from_ref(definition), &[], existing, group_names);
+    let name = imported.names.into_values().next().unwrap_or_default();
+    (name, imported.added.into_iter().next())
+}
+
 /// `_renamedList`: each name once, renamed.
 fn renamed_list(v: &Value, names: &HashMap<String, String>) -> Value {
     let mut out: Vec<String> = Vec::new();
@@ -702,6 +713,30 @@ fn import_overrides(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_node_is_added_once_and_named_apart() {
+        let def = |name: &str, port: u16| {
+            json!({"name": name, "type": "ss", "server": "a", "port": port, "cipher": "aes-128-gcm", "password": "p"})
+                .as_object()
+                .unwrap()
+                .clone()
+        };
+        let groups: HashSet<String> = ["G".to_string()].into();
+        let (name, added) = import_proxy(&def("hk", 1), &[], &groups);
+        assert_eq!(name, "hk");
+        assert_eq!(added.unwrap()["name"], "hk");
+        let held = [Value::Object(def("hk", 1))];
+        assert_eq!(
+            import_proxy(&def("hk", 1), &held, &groups),
+            ("hk".into(), None)
+        );
+        let (name, added) = import_proxy(&def("hk", 2), &held, &groups);
+        assert_ne!(name, "hk");
+        assert_eq!(added.unwrap()["name"], json!(name));
+        let (name, _) = import_proxy(&def("G", 3), &[], &groups);
+        assert_ne!(name, "G");
+    }
     use super::*;
 
     fn app() -> AppSide {

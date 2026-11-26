@@ -482,7 +482,16 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
                 let key = serde_json::to_string(&p.definition).unwrap_or_default();
                 errors.insert(key, "invalid private key".to_string());
             }
-            seasoncat_ui::custom_proxies_sections(&s.custom_proxies, query, &errors)
+            let selected = if overlay == "select" {
+                s.custom_proxies
+                    .iter()
+                    .take(2)
+                    .map(|p| p.id.clone())
+                    .collect()
+            } else {
+                std::collections::BTreeSet::new()
+            };
+            seasoncat_ui::custom_proxies_sections(&s.custom_proxies, query, &errors, &selected)
         }
         "custom-proxy" => {
             let draft = sample_draft(overlay);
@@ -602,6 +611,7 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
     if page == "custom-proxies" && overlay == "search" {
         meta.action2 = "".into();
     }
+    meta.selecting = page == "custom-proxies" && overlay == "select";
     ui.on_page_meta(move |_, _| meta.clone());
     ui.set_set_searching(page == "custom-proxies" && overlay == "search");
     ui.set_set_query(
@@ -1824,6 +1834,7 @@ fn main() {
         delay,
         selected,
         pinned,
+        addable: !kind.contains('('),
     };
     let nodes = vec![
         node("自动选择", "URLTest(日本 03)", 92, false, false),
@@ -2462,6 +2473,31 @@ fn main() {
         ("set-cproxies-tablet", 3, "", "custom-proxies", 1, ""),
         ("set-cproxies-empty", 3, "", "custom-proxies", 1, "empty"),
         ("set-cproxies-search", 3, "", "custom-proxies", 1, "search"),
+        ("set-cproxies-select", 3, "", "custom-proxies", 1, "select"),
+        (
+            "set-cproxies-select-small",
+            3,
+            "",
+            "custom-proxies",
+            1,
+            "select",
+        ),
+        (
+            "set-cproxies-select-wide",
+            3,
+            "",
+            "custom-proxies",
+            1,
+            "select",
+        ),
+        (
+            "set-cproxies-select-tablet",
+            3,
+            "",
+            "custom-proxies",
+            1,
+            "select",
+        ),
         ("set-cproxies-addmenu", 3, "", "custom-proxies", 1, "cp-add"),
         (
             "set-cproxies-addmenu-small",
@@ -3148,15 +3184,24 @@ fn main() {
         if *overlay == "nodemenu" {
             ui.set_ctx_kind("node".into());
             ui.set_ctx_names(ModelRc::default());
-            ui.set_ctx_items(ModelRc::new(VecModel::from(vec![ActionItem {
-                id: "select".into(),
-                glyph: "check-circle".into(),
-                label: "选中".into(),
-                check: true,
-                checked: true,
-                enabled: true,
-                ..Default::default()
-            }])));
+            ui.set_ctx_items(ModelRc::new(VecModel::from(vec![
+                ActionItem {
+                    id: "select".into(),
+                    glyph: "check-circle".into(),
+                    label: "选中".into(),
+                    check: true,
+                    checked: true,
+                    enabled: true,
+                    ..Default::default()
+                },
+                ActionItem {
+                    id: "add-local".into(),
+                    glyph: "list-add".into(),
+                    label: "添加到本地代理".into(),
+                    enabled: true,
+                    ..Default::default()
+                },
+            ])));
             ui.set_ctx_x(16.0);
             ui.set_ctx_y(130.0);
             ui.set_ctx_w(w as f32 / 2.0 - 20.0);

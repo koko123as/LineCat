@@ -2161,11 +2161,12 @@ impl App {
     }
 
     fn publish_groups(self: &Arc<Self>) {
-        let (mode, style) = {
+        let (mode, style, custom_profile) = {
             let store = self.store.lock().unwrap();
             (
                 store.state.settings.mode,
                 store.state.settings.proxies.clone(),
+                store.active().is_some_and(|p| p.is_custom()),
             )
         };
         let groups = self.groups.lock().unwrap().clone();
@@ -2188,6 +2189,7 @@ impl App {
                 style: &style,
                 query: &query,
                 testing: &testing,
+                custom_profile,
             }
             .build();
             // The tab style shows one group at a time: keep the open group while it is
