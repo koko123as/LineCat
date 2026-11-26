@@ -989,6 +989,7 @@ impl App {
             ui.set_tools_editor_text(text.into());
             ui.set_tools_editor_guard(guard);
             ui.set_tools_editor_readonly(false);
+            ui.set_tools_editor_title_editable(false);
             ui.set_tools_editor_parent(parent);
             ui.set_tools_page("editor".into());
         });
@@ -1772,14 +1773,15 @@ impl App {
         }
     }
 
-    /// `onPop`: a module whose text changed asks to save it first.
-    pub(crate) fn mitm_editor_back(self: &Arc<Self>, text: String) {
+    /// `onPop`: a module whose text changed asks to save it first; false when the
+    /// editor is not a MITM text's.
+    pub(crate) fn mitm_editor_back(self: &Arc<Self>, text: String) -> bool {
         let (editor, original) = {
             let st = state().lock().unwrap();
             (st.editor.clone(), st.editor_text.clone())
         };
         let Some((editor, parent)) = editor else {
-            return;
+            return false;
         };
         if editor != Editor::Hosts && text != original {
             state().lock().unwrap().unsaved = text;
@@ -1787,6 +1789,7 @@ impl App {
         } else {
             self.mitm_go(&parent);
         }
+        true
     }
 
     pub(crate) fn mitm_editor_save(self: &Arc<Self>, text: &str) -> bool {

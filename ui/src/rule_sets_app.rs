@@ -263,6 +263,7 @@ impl App {
             ui.set_tools_editor_text(text.into());
             ui.set_tools_editor_guard(false);
             ui.set_tools_editor_readonly(false);
+            ui.set_tools_editor_title_editable(false);
             ui.set_tools_editor_parent("rule-sets".into());
             ui.set_tools_page("editor".into());
         });
@@ -299,6 +300,7 @@ impl App {
                         ui.set_tools_editor_text(text.into());
                         ui.set_tools_editor_guard(false);
                         ui.set_tools_editor_readonly(true);
+                        ui.set_tools_editor_title_editable(false);
                         ui.set_tools_editor_parent("rule-sets".into());
                         ui.set_tools_page("editor".into());
                     });

@@ -842,6 +842,7 @@ impl App {
             ui.set_tools_editor_guard(false);
             ui.set_tools_editor_parent(FORM.into());
             ui.set_tools_editor_readonly(false);
+            ui.set_tools_editor_title_editable(false);
             ui.set_tools_page("editor".into());
         });
     }

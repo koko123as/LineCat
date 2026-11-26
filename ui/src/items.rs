@@ -62,6 +62,40 @@ pub fn script_name_issue(scripts: &[Script], id: Option<&str>, name: &str) -> Op
     None
 }
 
+/// What the script editor's save does with `title` (`_handleEditorSave`).
+#[derive(Debug, PartialEq)]
+pub enum ScriptSave {
+    Unchanged,
+    AskName,
+    Exists,
+    Save(String),
+}
+
+/// `_isDirty`: the text or the title differs from what the editor opened with.
+pub fn script_dirty(opened: (&str, &str), title: &str, text: &str) -> bool {
+    opened != (title, text)
+}
+
+pub fn script_save(
+    scripts: &[Script],
+    id: Option<&str>,
+    opened: (&str, &str),
+    title: &str,
+    text: &str,
+) -> ScriptSave {
+    if !script_dirty(opened, title, text) {
+        return ScriptSave::Unchanged;
+    }
+    let label = title.trim();
+    if label.is_empty() {
+        return ScriptSave::AskName;
+    }
+    match script_name_issue(scripts, id, label) {
+        Some(_) => ScriptSave::Exists,
+        None => ScriptSave::Save(label.to_string()),
+    }
+}
+
 /// A name for an imported script: the file name without its extension, made unique.
 pub fn import_name(scripts: &[Script], file: &str) -> String {
     let base = file
@@ -149,5 +183,44 @@ mod tests {
         assert_eq!(st.profiles[1].script_id, None);
         assert!(drop_script(&mut st, "s1"));
         assert_eq!(st.profiles[0].script_id, None);
+    }
+
+    #[test]
+    fn the_script_editor_saves_by_its_title() {
+        let scripts = [
+            Script {
+                id: "1".into(),
+                label: "main".into(),
+                ..Default::default()
+            },
+            Script {
+                id: "2".into(),
+                label: "other".into(),
+                ..Default::default()
+            },
+        ];
+        let opened = ("main", "a");
+        assert!(!script_dirty(opened, "main", "a"));
+        assert!(script_dirty(opened, "main2", "a"));
+        assert!(script_dirty(opened, "main", "b"));
+        let save = |id, title, text| script_save(&scripts, id, opened, title, text);
+        assert_eq!(save(Some("1"), "main", "a"), ScriptSave::Unchanged);
+        assert_eq!(
+            save(Some("1"), "main", "b"),
+            ScriptSave::Save("main".into())
+        );
+        assert_eq!(
+            save(Some("1"), " new ", "a"),
+            ScriptSave::Save("new".into())
+        );
+        assert_eq!(save(Some("1"), "other", "a"), ScriptSave::Exists);
+        assert_eq!(
+            script_save(&scripts, None, ("", "t"), "", "u"),
+            ScriptSave::AskName
+        );
+        assert_eq!(
+            script_save(&scripts, None, ("", "t"), "main", "t"),
+            ScriptSave::Exists
+        );
     }
 }

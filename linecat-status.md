@@ -54,6 +54,37 @@ landed and what is left.
 | 7b dashboard sheets | "open the dashboard's jumps in sheets" | As FlClash, the dashboard no longer switches tab to show more. The connection stats card (`openDashboardFeed`) opens the requests page in a snap sheet over the dashboard (`showSnapSheet`: 9/16 of the height, the handle drags it to 0.9, let go below half it closes), on DNS for the DNS figure, the same on phone and wide windows; the sheet keeps its own segment, search, filters and selection (`ReqState::open_sheet` / `close_sheet` swap them with the 请求 tab's), and `req-visible` covers it so the feeds keep polling. The group card (`showProxiesSheet`) opens `Proxies` with `picker` (no locate in the bar, no ⋯) in the same sheet, searching on its own and giving the proxies page its query back on close. The profiles card with no profile (`_openProfile` → `showProfilesSheet`) opens the profile picker, which shows 暂无配置 with 添加配置 (AddProfileMenu) when empty. Back closes the detail, then the sheet's search, then the sheet; switching tab closes them. |
 | 7c scripts pushed over extend | "push the scripts page over the extend page" | 扩展 → 前往配置脚本 pushes 脚本 over the extend page as FlClash (`profiles/extend/script.dart`, `BaseNavigator.push`) instead of switching to 工具: `open-tools` from another tab sets `tools-over`, the tools pages draw over the current one (a page-coloured layer under them takes the touches) while the bar keeps its tab, and back or ← off the pushed page (`tools-up`) returns to the extend page rather than 进阶配置; inside, 脚本 → editor and back work as on 工具. A tab switch drops the pushed page. The back key takes the focus first, so a search field that closes no longer leaves back with nothing focused (found by the new headless test, `ui/tests/navigation.rs`, which also covers the dashboard sheets' back order). |
 | 7d left-out fixes | "finish the left-out tool fixes" | The tools editor hands its save to one owner: opening it for a rule set, a script, a proxy or share links releases a MITM module still held (`mitm_app::release_editor`), and the MITM save reads `editor` with `clone`, so a script save is no longer taken by the module before it. The saved proxy's form ends with 操作 → a red 删除 (`_handleDelete`), confirming with 删除 in red as the list's delete does, and closing the form when it goes. 规则集 → 通过URL导入 takes several URLs at once (comma, space or line separated), each a new set named after its file and made unique, skipping URLs already added (规则集当前已存在 when none is new). A restored backup brings the icon records along, the later use of each URL winning. Saving, updating or deleting a script the current profile runs applies the profile again (`_applyIfInUse`); deleting one also unsets it on every profile using it. |
+| 7e script editor title | "edit the script name in the editor" | As FlClash (`titleEditable`, `_isDirty`, `_handleEditorSave` / `_handleEditorPop`), the script editor's title is a field showing 未命名 while empty: save uses it as the name (none asks 请输入脚本名称 first, a taken one alerts 名称当前已存在, nothing changed saves nothing), and back with the text or the title changed asks 是否保存更改？ (确定 saves, 取消 leaves unsaved, the back key keeps the page). Other editors keep a fixed title. |
+
+## Audit: entries that must really work
+
+Every entry of the four tabs and the wide 请求 tab, checked from the Slint callback to what reads the result: every
+`AppWindow` callback has a Rust handler, every UiBridge method the UI calls exists in `UiBridge.kt`, and every Core
+method it calls is one the Flutter UI's `rpc_core_api.dart` calls too. 修前 is the state before batch 7a.
+
+| 页面 | 入口 | FlClash 做法 | 修前 | 修后 | 调用链 | 验证 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 仪表盘 | 连接统计卡 | `openDashboardFeed` → `showSnapSheet` 中的 RequestsView | 切到请求 tab | 仪表盘上的可拖动底部面板 (7b) | `open-stats` → `ReqState::open_sheet` → `req-visible` 覆盖弹层，连接/DNS 轮询继续 | `tests/navigation.rs`；截图 dash-sheet 四尺寸 |
+| 仪表盘 | 连接统计卡 DNS 数字 | 同上，定位 DNS 分段 | 切 tab | 面板直接在 DNS 分段 (7b) | 同上，segment = dns | 单测 `requests_view`；截图 |
+| 仪表盘 | 代理组卡 | `showProxiesSheet`，ProxiesView(picker) | 切到代理 tab | 弹层里的代理页（无定位、无 ⋯），关闭仍在仪表盘并还原代理页搜索词 (7b) | `open-group` → `picker-open` → `proxy.select`（Core） | `tests/navigation.rs` 返回顺序；截图 |
+| 仪表盘 | 无配置时的配置卡 | `_openProfile` → `showProfilesSheet` | 切到配置 tab | 配置选择面板，空时 暂无配置 + 添加配置 (7b) | `open-profiles` → 配置选择 → `config.apply` | 截图 |
+| 仪表盘 | 内存卡 → 释放内存 | `core.releaseMemory` | 已生效 | 不变 | `core.releaseMemory`（Core） | 真机 |
+| 仪表盘 | 服务异常徽标 / IP 卡 / 编辑仪表盘 | 同名组件 | 已生效（拖动顺序存 store） | 不变 | `engine.state` / IP 探测 / store `dashboard` | 截图 + 单测 |
+| 代理 | 搜索、定位、⋯、组内选择、测速 | ProxiesView | 已生效 | 弹层与 tab 搜索状态独立 (7b) | `proxy.select`、`delay.test`（Core） | 单测 + 真机 |
+| 配置 | 空列表 添加 / 配置选择 | ProfilesView + AddProfileMenu | 已生效 | 不变 | `config.apply`，存 store `profiles` | 截图 |
+| 配置 | 扩展 → 前往配置脚本 | `BaseNavigator.push(ScriptsView)` | 切到工具 tab | 在当前页 push 脚本页，底栏不变，返回回扩展页 (7c) | `open-tools` → `tools-over` / `tools-up` | `tests/navigation.rs`；截图 extend-scripts 四尺寸 |
+| 配置/工具 | 脚本：空列表添加 | `ListEditorAddAction` 顶栏常驻 | 空时无添加入口 | 顶栏 ⊕ 常驻，空态只显示 暂无脚本 (7a) | `set-clicked(scripts, add)` → `items_picked` | 单测 `page_meta`；截图 |
+| 配置/工具 | 脚本编辑器 标题 | `titleEditable`，空为 未命名，`名称当前已存在` | 标题只读，改名只能走 重命名 菜单 | 标题可编辑，保存时以标题为名；空名先问名，重名提示 (7e) | `tools-editor-save` → `script_editor_save` → `items::script_save` → 写 `scripts/<id>.js` + store `scripts` | 单测 `the_script_editor_saves_by_its_title`；截图 set-script-editor |
+| 配置/工具 | 脚本编辑器 返回 | `_isDirty` 时 `showSaveChanges`：确定保存，取消放弃，返回键留在页上 | 直接离开，未保存的改动丢失 | 是否保存更改？ (7e) | `tools-editor-back` → `tools_editor_back` → `script-save` | 单测 `script_dirty`；截图 set-script-editor-ask |
+| 配置/工具 | 脚本 保存/更新/删除 | `_applyIfInUse` 重新应用当前配置 | 只写文件，当前配置仍跑旧脚本 | 当前配置用到时重新应用；删除时解除各配置的引用 (7d) | `reapply` → `config.apply` | 单测 `the_current_profile_reapplies_its_script` |
+| 工具 | 筛选 / 规则集 / 图标集 / 附加规则 / 主机名 / 模块 / 用户代理 空列表 | 顶栏添加常驻（附加规则多选时隐藏） | 空时无添加入口 | 顶栏 ⊕ 常驻 (7a) | `set-clicked(page, add)` | 单测 + 截图 |
+| 工具 | 规则集 → 通过URL导入 多个 URL | `showNamedUrlsForm` 批量 | 只收一个 URL | 多个 URL 各建一个规则集，按文件名去重命名 (7d) | `rs-url` → `batch_imports` → `put_rule_set` → `ruleSet.compile` | 单测 `several_urls_import_as_new_sets` |
+| 工具 | 自定义代理表单 删除 | `_handleDelete` | 表单无删除 | 操作 → 红色 删除，确认按钮红色 删除 (7d) | `cp-delete` → `delete_custom_proxy` → store | 单测 `only_a_saved_proxy_offers_delete`；截图 set-cproxy-easytier-tablet |
+| 工具 | MITM 模块编辑器保存 | 各编辑器各自保存 | MITM 保存用 `take`，可能截走脚本保存 | `clone` + 其它编辑器打开时释放 MITM 编辑状态 (7d) | `tools_editor_save` 依次分发 | 单测 `another_editor_takes_the_save` |
+| 工具 | 备份/恢复 图标使用记录 | 数据库整体备份 | 恢复不含图标记录 | 恢复合并图标记录，较新的使用时间优先 (7d) | `backup::apply` → store `icon_records` | 单测 `icon_records_restore_with_the_later_use` |
+| 宽屏 请求 tab | 分段、搜索、筛选、多选 | RequestsView | 已生效 | 与仪表盘弹层的状态互相独立 (7b) | `ReqState` 交换；`connection.close`、`mitm.exchanges`（Core） | 单测 + 截图 wide |
+| 配置 | `PlaceholderPage` | 无 | 无入口设置 `placeholder-title`，不可达 | 不变（死代码，未删以免越界） | — | grep |
+| 工具 | 资源页 `pending` 行状态 | 文件读取中显示 pending | 文件同步就地读取 | 不做：没有可观察的读取中状态 | — | — |
 
 ## Remaining
 

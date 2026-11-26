@@ -2594,6 +2594,19 @@ fn main() {
         ("set-filters-wide", 3, "", "filters", 1, ""),
         ("set-filters-tablet", 3, "", "filters", 1, ""),
         ("set-scripts", 3, "", "scripts", 1, ""),
+        ("set-script-editor", 3, "", "editor", 1, "script-ed"),
+        ("set-script-editor-small", 3, "", "editor", 1, "script-ed"),
+        ("set-script-editor-wide", 3, "", "editor", 1, "script-ed"),
+        ("set-script-editor-tablet", 3, "", "editor", 1, "script-ed"),
+        ("set-script-editor-ask", 3, "", "editor", 1, "script-ask"),
+        (
+            "set-script-editor-ask-wide",
+            3,
+            "",
+            "editor",
+            1,
+            "script-ask",
+        ),
         ("set-scripts-small", 3, "", "scripts", 1, ""),
         ("set-scripts-wide", 3, "", "scripts", 1, ""),
         ("set-scripts-tablet", 3, "", "scripts", 1, ""),
@@ -3180,6 +3193,7 @@ fn main() {
             ui.set_profiles_page("".into());
         }
         ui.set_tools_over(false);
+        ui.set_tools_editor_title_editable(false);
         if name.starts_with("extend-scripts") {
             ui.invoke_open_tools("scripts".into());
             settings_shot(&ui, w, "scripts", "");
@@ -3206,6 +3220,21 @@ fn main() {
             ui.set_ctx_w(40.0);
             ui.set_ctx_h(40.0);
             ui.set_ctx_kind("cp-add".into());
+        }
+        if overlay.starts_with("script-") {
+            ui.set_tools_editor_title("".into());
+            ui.set_tools_editor_title_editable(true);
+            ui.set_tools_editor_guard(true);
+            ui.set_tools_editor_text("// main(config) returns the config to run\nconst main = (config) => {\n  return config;\n};".into());
+            ui.set_tools_editor_parent("scripts".into());
+            ui.set_tools_editor_readonly(false);
+        }
+        if *overlay == "script-ask" {
+            ui.set_tools_editor_title("签到".into());
+            ui.set_confirm_title("提示".into());
+            ui.set_confirm_text("是否保存更改？".into());
+            ui.set_confirm_action("script-save".into());
+            ui.set_confirm_open(true);
         }
         if *overlay == "cp-links" {
             ui.set_tools_editor_title("代理".into());
@@ -3356,7 +3385,7 @@ fn main() {
             ui.set_ctx_h(36.0);
         }
         ui.set_custom_importing(*overlay == "cimporting");
-        if *overlay != "trust-remove" {
+        if *overlay != "trust-remove" && *overlay != "script-ask" {
             ui.set_confirm_title("提示".into());
             if *overlay == "creplace" {
                 ui.set_confirm_text("导入会替换此配置现有的策略组、规则和设置".into());

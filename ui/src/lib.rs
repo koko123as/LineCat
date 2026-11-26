@@ -2156,6 +2156,7 @@ impl App {
             ("clear-data", true) => self.clear_data(),
             ("rules-delete", true) => self.delete_selected_rules(),
             ("script-delete", true) => self.delete_script(&arg),
+            ("script-save", yes) => self.script_save_answer(yes),
             ("rs-delete", true) => self.delete_rule_set(&arg),
             ("is-delete", true) => self.delete_icon_set(&arg),
             ("cp-delete", true) => self.delete_custom_proxy(&arg),
@@ -2603,9 +2604,17 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         }
     });
     let a = app.clone();
-    ui.on_tools_editor_save(move |text| a.tools_editor_save(text.into()));
+    let w = ui.as_weak();
+    ui.on_tools_editor_save(move |text| {
+        let title = w.upgrade().map(|ui| ui.get_tools_editor_title());
+        a.tools_editor_save(text.into(), title.unwrap_or_default().into());
+    });
     let a = app.clone();
-    ui.on_tools_editor_back(move |text| a.mitm_editor_back(text.into()));
+    let w = ui.as_weak();
+    ui.on_tools_editor_back(move |text| {
+        let title = w.upgrade().map(|ui| ui.get_tools_editor_title());
+        a.tools_editor_back(text.into(), title.unwrap_or_default().into());
+    });
     let a = app.clone();
     ui.on_preview_profile(move |id| a.preview(id.into()));
     let a = app.clone();

@@ -823,6 +823,8 @@ component Fab inherits Rectangle {
 component AppBar inherits HorizontalLayout {
     in property <string> title;
     in property <bool> can-back;
+    // The page puts its own title among the children, as the editor's editable one.
+    in property <bool> custom-title;
     callback back();
     height: 56px;
     padding-left: can-back ? 4px : 16px;
@@ -832,7 +834,7 @@ component AppBar inherits HorizontalLayout {
         alignment: center;
         IconButton { glyph: Icons.back; tint: Theme.s.on-surface; clicked => { root.back(); } }
     }
-    Text {
+    if !root.custom-title: Text {
         horizontal-stretch: 1;
         text: root.title;
         font-size: 22px * Type.scale;
@@ -3905,9 +3907,11 @@ component EditProfilePage inherits Rectangle {
 
 // EditorPage: the profile file to edit, or the runtime config to read.
 component EditorPage inherits Rectangle {
-    in property <string> title;
+    in-out property <string> title;
     in-out property <string> text;
     in property <bool> readonly;
+    // `titleEditable`: the title is a field, 未命名 while empty.
+    in property <bool> title-editable;
     callback save(string);
     callback back();
     background: Theme.s.page;
@@ -3915,7 +3919,28 @@ component EditorPage inherits Rectangle {
         AppBar {
             title: root.title;
             can-back: true;
+            custom-title: root.title-editable;
             back => { root.back(); }
+            if root.title-editable: Rectangle {
+                horizontal-stretch: 1;
+                if root.title == "": Text {
+                    x: 0;
+                    width: parent.width;
+                    text: "未命名";
+                    font-size: 22px * Type.scale;
+                    color: Theme.s.on-surface-variant;
+                    vertical-alignment: center;
+                }
+                TextInput {
+                    width: parent.width;
+                    text <=> root.title;
+                    single-line: true;
+                    font-size: 22px * Type.scale;
+                    color: Theme.s.on-surface;
+                    vertical-alignment: center;
+                    selection-background-color: Theme.s.primary-container;
+                }
+            }
             if !root.readonly: VerticalLayout {
                 alignment: center;
                 TextButton { text: "保存"; clicked => { root.save(editor.text); } }
@@ -9040,7 +9065,8 @@ export component AppWindow inherits Window {
     in property <[SetSection]> tools-sections;
     in property <[SetSection]> page-sections;
     // The tools tab's text editor (a script's content), and the page it returns to.
-    in property <string> tools-editor-title;
+    in-out property <string> tools-editor-title;
+    in property <bool> tools-editor-title-editable;
     in-out property <string> tools-editor-text;
     in property <string> tools-editor-parent;
     in property <bool> tools-editor-readonly;
@@ -9315,7 +9341,7 @@ export component AppWindow inherits Window {
                 if (root.group-sheet-open && root.group-sheet-searching) { root.group-sheet-searching = false; root.search-proxies(""); return accept; }
                 if (root.group-sheet-open) { root.close-group-sheet(); return accept; }
                 if (root.tab == 1 && root.proxy-searching) { root.proxy-searching = false; root.search-proxies(""); return accept; }
-                if (root.confirm-open && (root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save")) { root.confirm-open = false; return accept; }
+                if (root.confirm-open && (root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save" || root.confirm-action == "script-save")) { root.confirm-open = false; return accept; }
                 if (root.confirm-open) {
                     root.confirm-open = false;
                     root.confirm-answer(root.confirm-action, root.confirm-arg, false);
@@ -9885,7 +9911,8 @@ export component AppWindow inherits Window {
                 if root.tools-shown && root.tools-page == "editor": EditorPage {
                     width: parent.width;
                     height: parent.height;
-                    title: root.tools-editor-title;
+                    title <=> root.tools-editor-title;
+                    title-editable: root.tools-editor-title-editable;
                     readonly: root.tools-editor-readonly;
                     text <=> root.tools-editor-text;
                     save(t) => { root.tools-editor-save(t); }

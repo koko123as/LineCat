@@ -1,7 +1,7 @@
 //! The filters and scripts pages on `App`'s side (lib/views/config/filters.dart,
 //! lib/views/config/scripts.dart).
 
-use crate::items::{self, Filter, Script};
+use crate::items::{self, Filter, Script, ScriptSave};
 use crate::{profile, store, ActionItem, App, PageMeta, SetRow, SetSection, CALL};
 use serde_json::{json, Value};
 use slint::{ModelRc, SharedString, VecModel};
@@ -16,6 +16,9 @@ use std::time::Duration;
 struct Editing {
     script: Option<String>,
     pending: String,
+    /// The title and text the script editor opened with, for `_isDirty`.
+    opened: (String, String),
+    pending_title: String,
 }
 
 fn syncing() -> &'static Mutex<BTreeSet<String>> {
@@ -198,7 +201,10 @@ impl App {
             return Some(items::filter_issue(&settings.filters, at, v1, v2).unwrap_or_default());
         }
         if key == "script-name" {
-            return Some(items::script_name_issue(&settings.scripts, None, v1).unwrap_or_default());
+            let id = editing().lock().unwrap().script.clone();
+            return Some(
+                items::script_name_issue(&settings.scripts, id.as_deref(), v1).unwrap_or_default(),
+            );
         }
         if let Some(id) = key.strip_prefix("script-rename:") {
             return Some(
@@ -253,9 +259,11 @@ impl App {
         }
         match key {
             "script-name" => {
-                let content = std::mem::take(&mut editing().lock().unwrap().pending);
-                self.add_script(v1.trim(), None, content.as_bytes());
-                self.ui(|ui| ui.set_tools_page("scripts".into()));
+                let (id, content) = {
+                    let mut e = editing().lock().unwrap();
+                    (e.script.clone(), std::mem::take(&mut e.pending))
+                };
+                self.put_script(id, v1.trim(), &content);
             }
             "script-url" => {
                 let url = v1.trim().to_string();
@@ -299,8 +307,7 @@ impl App {
     pub(crate) fn items_picked(self: &Arc<Self>, key: &str, value: &str) -> bool {
         match (key, value) {
             ("script-add", "new") => {
-                *editing().lock().unwrap() = Editing::default();
-                self.open_tools_editor("脚本", SCRIPT_TEMPLATE, "scripts");
+                self.open_script_editor(None, "", SCRIPT_TEMPLATE);
             }
             ("script-add", "url") => self.open_input("script-url", "通过URL导入", "URL", ""),
             ("script-add", "file") => self.spawn(|app| app.import_script_file()),
@@ -314,8 +321,7 @@ impl App {
                     "edit" => {
                         let text = std::fs::read_to_string(self.script_path(id))
                             .unwrap_or_else(|_| SCRIPT_TEMPLATE.into());
-                        editing().lock().unwrap().script = Some(id.to_string());
-                        self.open_tools_editor(&s.label, &text, "scripts");
+                        self.open_script_editor(Some(id), &s.label, &text);
                     }
                     "rename" => self.open_input(
                         &format!("script-rename:{id}"),
@@ -406,12 +412,26 @@ impl App {
             ui.set_tools_editor_guard(false);
             ui.set_tools_editor_parent(parent);
             ui.set_tools_editor_readonly(false);
+            ui.set_tools_editor_title_editable(false);
             ui.set_tools_page("editor".into());
         });
     }
 
-    /// The tools editor's save: a script's new content, or a new script to name.
-    pub(crate) fn tools_editor_save(self: &Arc<Self>, text: String) {
+    /// `titleEditable` on: the script's name is the editor's title, 未命名 for a new one.
+    fn open_script_editor(self: &Arc<Self>, id: Option<&str>, title: &str, text: &str) {
+        *editing().lock().unwrap() = Editing {
+            script: id.map(String::from),
+            opened: (title.to_string(), text.to_string()),
+            ..Default::default()
+        };
+        self.open_tools_editor(title, text, "scripts");
+        self.ui(|ui| {
+            ui.set_tools_editor_title_editable(true);
+            ui.set_tools_editor_guard(true);
+        });
+    }
+
+    pub(crate) fn tools_editor_save(self: &Arc<Self>, text: String, title: String) {
         if self.override_yaml_save(&text, false)
             || self.share_links_editor_save(&text)
             || self.custom_proxy_editor_save(&text)
@@ -420,32 +440,89 @@ impl App {
         {
             return;
         }
-        let id = editing().lock().unwrap().script.clone();
-        match id {
-            Some(id) => {
-                let path = self.script_path(&id);
-                if let Some(dir) = path.parent() {
-                    let _ = std::fs::create_dir_all(dir);
-                }
-                if let Err(e) = std::fs::write(&path, text) {
-                    return self.toast(e.to_string());
-                }
-                self.update_items({
-                    let id = id.clone();
-                    move |s| {
-                        if let Some(x) = s.scripts.iter_mut().find(|x| x.id == id) {
-                            x.updated = now_ms();
-                        }
-                    }
-                });
-                self.reapply_if_running(&id);
-                self.ui(|ui| ui.set_tools_page("scripts".into()));
-            }
-            None => {
+        self.script_editor_save(text, title);
+    }
+
+    /// `_handleEditorSave`: no name asks for one, a taken name says so.
+    fn script_editor_save(self: &Arc<Self>, text: String, title: String) {
+        let (id, opened) = {
+            let e = editing().lock().unwrap();
+            (e.script.clone(), e.opened.clone())
+        };
+        let scripts = self.store.lock().unwrap().state.settings.scripts.clone();
+        let opened = (opened.0.as_str(), opened.1.as_str());
+        match items::script_save(&scripts, id.as_deref(), opened, &title, &text) {
+            ScriptSave::Unchanged => {}
+            ScriptSave::AskName => {
                 editing().lock().unwrap().pending = text;
                 self.open_input("script-name", "保存", "请输入脚本名称", "");
             }
+            ScriptSave::Exists => self.alert("提示", "名称当前已存在"),
+            ScriptSave::Save(label) => self.put_script(id, &label, &text),
         }
+    }
+
+    /// `onPop`: a changed script asks 是否保存更改？ before the page goes.
+    pub(crate) fn tools_editor_back(self: &Arc<Self>, text: String, title: String) {
+        if self.mitm_editor_back(text.clone()) {
+            return;
+        }
+        let opened = editing().lock().unwrap().opened.clone();
+        if items::script_dirty((&opened.0, &opened.1), &title, &text) {
+            {
+                let mut e = editing().lock().unwrap();
+                e.pending = text;
+                e.pending_title = title;
+            }
+            self.confirm(
+                "提示",
+                "是否保存更改？".into(),
+                "script-save",
+                String::new(),
+            );
+        } else {
+            self.ui(|ui| ui.set_tools_page("scripts".into()));
+        }
+    }
+
+    pub(crate) fn script_save_answer(self: &Arc<Self>, yes: bool) {
+        if yes {
+            let (text, title) = {
+                let mut e = editing().lock().unwrap();
+                (
+                    std::mem::take(&mut e.pending),
+                    std::mem::take(&mut e.pending_title),
+                )
+            };
+            self.script_editor_save(text, title);
+        } else {
+            self.ui(|ui| ui.set_tools_page("scripts".into()));
+        }
+    }
+
+    fn put_script(self: &Arc<Self>, id: Option<String>, label: &str, text: &str) {
+        let Some(id) = id else {
+            self.add_script(label, None, text.as_bytes());
+            return self.ui(|ui| ui.set_tools_page("scripts".into()));
+        };
+        let path = self.script_path(&id);
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Err(e) = std::fs::write(&path, text) {
+            return self.toast(e.to_string());
+        }
+        self.update_items({
+            let (id, label) = (id.clone(), label.to_string());
+            move |s| {
+                if let Some(x) = s.scripts.iter_mut().find(|x| x.id == id) {
+                    x.label = label;
+                    x.updated = now_ms();
+                }
+            }
+        });
+        self.reapply_if_running(&id);
+        self.ui(|ui| ui.set_tools_page("scripts".into()));
     }
 
     fn add_script(self: &Arc<Self>, label: &str, url: Option<String>, content: &[u8]) {
