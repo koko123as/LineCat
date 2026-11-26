@@ -58,6 +58,12 @@ pub use theme_app::{apply as apply_theme, show_color_page};
 pub mod colors;
 pub mod custom_profile;
 mod custom_profile_app;
+pub mod profile_rules;
+mod profile_rules_app;
+pub use profile_rules_app::{
+    form_sections as rule_form_sections, preset_sections as rule_preset_sections, rule_rows,
+    Draft as RuleDraft,
+};
 pub mod proxy_groups;
 mod proxy_groups_app;
 pub use proxy_groups_app::{
@@ -633,12 +639,13 @@ impl App {
     /// The file and overlay `config.apply` and `profile.build` take for a profile. A custom
     /// profile's file is written first, from its groups' proxies.
     fn profile_params(&self, bridge: &Bridge, id: &str) -> Result<(PathBuf, Value), String> {
-        let (path, settings, own, base) = {
+        let (path, settings, mut own, base, rule_sets) = {
             let store = self.store.lock().unwrap();
             let Some(p) = store.state.profiles.iter().find(|p| p.id == id) else {
                 return Err("添加一个配置文件后即可开始使用".into());
             };
             let own = custom_profile::own(&store.state, p);
+            let rule_sets = custom_profile::rule_sets_used(&store.state, p);
             let base = p
                 .is_custom()
                 .then(|| custom_profile::base_file(&store.state.settings.custom_proxies, &own));
@@ -647,8 +654,10 @@ impl App {
                 store.state.settings.clone(),
                 own,
                 base,
+                rule_sets,
             )
         };
+        own.rule_providers = self.rule_providers(rule_sets);
         if let Some(base) = &base {
             std::fs::write(&path, serde_json::to_vec(base).unwrap_or_default())
                 .map_err(|e| e.to_string())?;
@@ -2064,6 +2073,8 @@ impl App {
             ("cp-delete", true) => self.delete_custom_proxy(&arg),
             ("pg-delete", true) => self.delete_groups(&arg),
             ("pg-save", _) => self.pg_save_answer(yes),
+            ("pr-delete", true) => self.delete_profile_rules(&arg),
+            ("pr-save", _) => self.pr_save_answer(yes),
             ("icon-record-delete", true) => self.delete_icon_record(&arg),
             (a, _) if a.starts_with("mitm-") => self.mitm_confirmed(a, &arg, yes),
             ("ua-delete", true) => self.delete_user_agent(&arg),
@@ -2483,7 +2494,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     ui.on_upload_file(move || a.upload_file());
     let a = app.clone();
     ui.on_editor_save(move |text| {
-        if !a.group_yaml_save(&text) {
+        if !a.group_yaml_save(&text) && !a.rules_yaml_save(&text) {
             a.save_editor(text.into());
         }
     });

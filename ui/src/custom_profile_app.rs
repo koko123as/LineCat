@@ -59,6 +59,7 @@ impl App {
         ui.on_pg_pick(move |action| a.pg_pick(&action));
         let a = self.clone();
         ui.on_icon_pick(move |action| a.icon_pick(&action));
+        self.bind_profile_rules(ui);
     }
 
     /// `_toAddCustom`: an unnamed custom profile, opened as new.
@@ -83,6 +84,7 @@ impl App {
         };
         *PAGE.lock().unwrap() = Some(page);
         self.reset_groups_section();
+        self.reset_rules_page();
         self.publish_custom();
         self.ui(|ui| {
             ui.set_custom_open(true);
@@ -94,7 +96,7 @@ impl App {
         let Some(id) = PAGE.lock().unwrap().as_ref().map(|p| p.id.clone()) else {
             return;
         };
-        let issues = self.publish_custom_groups(&id) as i32;
+        let issues = (self.publish_custom_groups(&id) + self.profile_rule_issues(&id)) as i32;
         let (title, rows, groups) = {
             let store = self.store.lock().unwrap();
             let Some(p) = store.state.profiles.iter().find(|p| p.id == id) else {
@@ -128,12 +130,16 @@ impl App {
             return;
         };
         self.reset_groups_section();
+        self.reset_rules_page();
         self.ui(|ui| {
             ui.set_custom_open(false);
             ui.set_custom_menu_open(false);
             let page = ui.get_profiles_page();
-            if matches!(page.as_str(), "custom" | "group" | "placeholder")
-                || (page == "editor" && ui.get_editor_parent() == "group")
+            if matches!(
+                page.as_str(),
+                "custom" | "group" | "placeholder" | "rules" | "rule" | "rule-presets"
+            ) || (page == "editor"
+                && matches!(ui.get_editor_parent().as_str(), "group" | "rules"))
             {
                 ui.set_profiles_page("".into());
             }

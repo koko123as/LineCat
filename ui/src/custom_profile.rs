@@ -209,6 +209,7 @@ pub struct Own {
     pub rules: Vec<String>,
     pub groups: Vec<Value>,
     pub overrides: Option<ProfileOverrides>,
+    pub rule_providers: Map<String, Value>,
 }
 
 pub fn own(state: &State, profile: &Profile) -> Own {
@@ -222,7 +223,26 @@ pub fn own(state: &State, profile: &Profile) -> Own {
             .map(|g| crate::proxy_groups::config_definition(&g.definition))
             .collect(),
         overrides: Some(profile.overrides.clone()),
+        rule_providers: Map::new(),
     }
+}
+
+/// The app's rule sets the profile's rules name, in the order they are first named.
+pub fn rule_sets_used(state: &State, profile: &Profile) -> Vec<crate::rule_sets::RuleSet> {
+    if !profile.is_custom() {
+        return Vec::new();
+    }
+    crate::profile_rules::referenced_rule_sets(state, &profile.id)
+        .into_iter()
+        .filter_map(|n| {
+            state
+                .settings
+                .rule_sets
+                .iter()
+                .find(|s| s.label == n)
+                .cloned()
+        })
+        .collect()
 }
 
 /// `appProxiesPayload`: the custom proxies the groups name, in the custom proxies' order.
@@ -312,6 +332,12 @@ pub fn apply_own(c: &mut Map<String, Value>, own: &Own, added: Vec<String>) {
     if !own.groups.is_empty() {
         c.insert("proxy-groups".into(), Value::Array(own.groups.clone()));
     }
+    if !own.rule_providers.is_empty() {
+        c.insert(
+            "rule-providers".into(),
+            Value::Object(own.rule_providers.clone()),
+        );
+    }
     let rules = if own.rules.is_empty() {
         added
     } else {
@@ -329,6 +355,44 @@ pub fn apply_dns(own: &Own, global: &OverrideState, dns: &mut Map<String, Value>
     }
 }
 
+/// `_CountText`: the count, or the issues over it in the error tone.
+fn count_row(
+    id: &'static str,
+    glyph: &'static str,
+    title: &'static str,
+    count: usize,
+    issues: usize,
+) -> (&'static str, &'static str, &'static str, String, i32) {
+    if issues == 0 {
+        (id, glyph, title, count.to_string(), 0)
+    } else {
+        (id, glyph, title, format!("{issues} / {count}"), 2)
+    }
+}
+
+/// `customReferencedProviders`: the providers the profile names, and how many the app lacks.
+pub fn referenced_providers(state: &State, profile_id: &str) -> (usize, usize) {
+    let data = crate::proxy_groups::data(state, profile_id);
+    let mut proxy: Vec<String> = Vec::new();
+    for (_, g) in &data.groups {
+        for n in crate::proxy_groups::names(g, "use") {
+            if !proxy.contains(&n) {
+                proxy.push(n);
+            }
+        }
+    }
+    let rule = crate::profile_rules::referenced_rule_sets(state, profile_id);
+    let missing = proxy
+        .iter()
+        .filter(|n| !data.proxy_providers.contains(*n))
+        .count()
+        + rule
+            .iter()
+            .filter(|n| !state.settings.rule_sets.iter().any(|s| &s.label == *n))
+            .count();
+    (proxy.len() + rule.len(), missing)
+}
+
 /// `_Overview`'s rows: (id, glyph, title, state, tone), tone 0 plain, 1 in effect, 2 invalid.
 pub fn overview(
     state: &State,
@@ -336,7 +400,8 @@ pub fn overview(
 ) -> Vec<(&'static str, &'static str, &'static str, String, i32)> {
     let o = &profile.overrides;
     let rule_count = rules(state, &profile.id).len();
-    let provider_count = o.proxy_providers.len();
+    let rule_issues = crate::profile_rules::profile_issues(state, &profile.id).len();
+    let (providers, missing) = referenced_providers(state, &profile.id);
     let dialers = state
         .proxy_dialers
         .iter()
@@ -348,14 +413,8 @@ pub fn overview(
         .count();
     let dns = dns_enabled(o);
     vec![
-        ("rules", "rules", "规则", rule_count.to_string(), 0),
-        (
-            "providers",
-            "resources",
-            "外部资源",
-            provider_count.to_string(),
-            0,
-        ),
+        count_row("rules", "rules", "规则", rule_count, rule_issues),
+        count_row("providers", "resources", "外部资源", providers, missing),
         (
             "dns",
             "dns",

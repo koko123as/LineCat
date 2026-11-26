@@ -20,7 +20,7 @@ pub const RESERVED: &[&str] = &[
 
 pub const DEFAULT_EMPTY_FALLBACK: &str = "COMPATIBLE";
 const IN_USER_HASH_KEY: &str = "in-user";
-const GLOBAL: &str = "GLOBAL";
+pub const GLOBAL: &str = "GLOBAL";
 
 /// `GroupType.selectableValues` (relay parses but the core refuses it): value and name.
 pub const TYPES: &[(&str, &str)] = &[
@@ -897,7 +897,13 @@ pub fn put(state: &mut State, profile_id: &str, id: u64, def: Value) -> bool {
         .iter_mut()
         .find(|g| g.id == id && g.profile_id == profile_id)
     {
-        Some(g) => g.definition = def,
+        Some(g) => {
+            let old = g.name().to_string();
+            g.definition = def;
+            if !old.is_empty() && old != n {
+                crate::profile_rules::rename_target(state, profile_id, &old, &n);
+            }
+        }
         None => {
             let mut order: Vec<u64> = cp::groups(state, profile_id).iter().map(|g| g.id).collect();
             state.proxy_groups.push(ProxyGroupRow {

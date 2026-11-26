@@ -1092,6 +1092,232 @@ fn snapshot_groups(ui: &AppWindow, overlay: &str, w: u32) {
     }
 }
 
+/// The custom profile's rules, the rule form, the presets and the rules' quick edit, by
+/// overlay.
+fn snapshot_rules(ui: &AppWindow, overlay: &str, w: u32) {
+    use seasoncat_ui::profile_rules::{self as pr, Targets};
+    if !overlay.starts_with("r-") {
+        return;
+    }
+    let data = proxy_groups::Data {
+        groups: vec![
+            (
+                1,
+                serde_json::json!({"name": "节点选择", "type": "select", "proxies": ["自动选择", "香港 01"]}),
+            ),
+            (
+                2,
+                serde_json::json!({"name": "自动选择", "type": "url-test", "proxies": ["香港 01"]}),
+            ),
+        ],
+        proxies: ["香港 01".to_string(), "日本 01".to_string()].into(),
+        proxy_types: [
+            ("香港 01".to_string(), "ss".to_string()),
+            ("日本 01".to_string(), "vmess".to_string()),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let t = Targets::of(&data, ["广告拦截".to_string(), "国内直连".to_string()]);
+    let lines = [
+        "DOMAIN-SUFFIX,google.com,节点选择",
+        "DOMAIN-KEYWORD,一个很长很长很长很长很长很长的关键字用来检查省略效果,自动选择",
+        "RULE-SET,广告拦截,REJECT",
+        "RULE-SET,失效规则集,REJECT",
+        "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT-DROP",
+        "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
+        "GEOIP,CN,一个名字很长很长很长很长的策略组名称",
+        "DST-PORT,80-x,DIRECT",
+        "PROCESS-NAME,com.tencent.mm,香港 01",
+        "DOMAIN,example.com,PASS",
+        "GEOSITE,cn,DIRECT",
+        "MATCH,节点选择",
+    ];
+    let rules: Vec<seasoncat_ui::custom_profile::ProfileRule> = lines
+        .iter()
+        .enumerate()
+        .map(|(i, l)| pr::parse(l, i as u64 + 1, "p"))
+        .collect();
+    let shown: Vec<&seasoncat_ui::custom_profile::ProfileRule> = if overlay == "r-search" {
+        rules
+            .iter()
+            .filter(|r| pr::matches(r, "rule_set"))
+            .collect()
+    } else if overlay == "r-empty" {
+        Vec::new()
+    } else {
+        rules.iter().collect()
+    };
+    let selected: std::collections::BTreeSet<u64> = if overlay == "r-select" {
+        [2, 3, 5].into()
+    } else {
+        Default::default()
+    };
+    ui.set_pr_rows(ModelRc::new(VecModel::from(rule_rows(
+        &shown, &t, &selected,
+    ))));
+    ui.set_pr_total(if overlay == "r-empty" {
+        0
+    } else {
+        rules.len() as i32
+    });
+    ui.set_pr_selecting(overlay == "r-select");
+    ui.set_pr_sorting(overlay == "r-sort");
+    ui.set_pr_searching(overlay == "r-search");
+    ui.set_pr_query(
+        if overlay == "r-search" {
+            "rule_set"
+        } else {
+            ""
+        }
+        .into(),
+    );
+    let titles: Vec<slint::SharedString> =
+        rules.iter().map(|r| pr::name(&r.action).into()).collect();
+    let subtitles: Vec<slint::SharedString> = rules
+        .iter()
+        .map(|r| {
+            r.raw()
+                .split_once(',')
+                .map_or("", |(_, b)| b)
+                .to_string()
+                .into()
+        })
+        .collect();
+    ui.set_pr_sort_titles(ModelRc::new(VecModel::from(titles)));
+    ui.set_pr_sort_subtitles(ModelRc::new(VecModel::from(subtitles)));
+    let menu = |items: Vec<(&str, &str, &str, bool)>| {
+        ModelRc::new(VecModel::from(
+            items
+                .into_iter()
+                .map(|(id, glyph, label, danger)| ActionItem {
+                    id: id.into(),
+                    glyph: glyph.into(),
+                    label: label.into(),
+                    danger,
+                    enabled: true,
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>(),
+        ))
+    };
+    if overlay == "r-menu" {
+        ui.set_ctx_names(ModelRc::default());
+        ui.set_ctx_items(menu(vec![
+            ("copy", "copy", "复制", false),
+            ("delete", "delete", "删除", true),
+        ]));
+        ui.set_ctx_x(16.0);
+        ui.set_ctx_y(64.0 + 56.0 * 2.0);
+        ui.set_ctx_w(w as f32 - 32.0);
+        ui.set_ctx_h(56.0);
+        ui.set_ctx_kind("pr".into());
+    }
+    if overlay == "r-add" {
+        ui.set_ctx_names(ModelRc::default());
+        ui.set_ctx_items(menu(vec![
+            ("add", "plus", "添加", false),
+            ("presets", "bolt", "快捷操作", false),
+            ("quick-edit", "compose", "快速编辑", false),
+        ]));
+        ui.set_ctx_x(w as f32 - 48.0);
+        ui.set_ctx_y(8.0);
+        ui.set_ctx_w(40.0);
+        ui.set_ctx_h(40.0);
+        ui.set_ctx_kind("pr-add".into());
+    }
+    let draft = match overlay {
+        "r-new" => RuleDraft::open(pr::new_rule(0, "p"), true),
+        "r-set" => RuleDraft::open(rules[3].clone(), false),
+        "r-match" => RuleDraft::open(rules[11].clone(), false),
+        _ => RuleDraft::open(rules[5].clone(), false),
+    };
+    let presets = overlay == "r-presets";
+    let (sections, issue) = if presets {
+        (rule_preset_sections(&[0, 3].into()), String::new())
+    } else {
+        rule_form_sections(&draft, &t)
+    };
+    ui.set_pr_form_title(
+        if presets {
+            "快捷操作"
+        } else if draft.is_new {
+            "添加规则"
+        } else {
+            "编辑规则"
+        }
+        .into(),
+    );
+    ui.set_pr_form_sections(ModelRc::new(VecModel::from(sections)));
+    ui.set_pr_form_issue(issue.into());
+    ui.set_pr_form_action("check".into());
+    if overlay == "r-type" || overlay == "r-target" {
+        let item = |id: &str, label: &str, sub: &str, checked: bool, heading: &str| ActionItem {
+            id: id.into(),
+            label: label.into(),
+            subtitle: sub.into(),
+            heading: heading.into(),
+            check: true,
+            checked,
+            enabled: true,
+            ..Default::default()
+        };
+        let items: Vec<ActionItem> = if overlay == "r-type" {
+            pr::ACTIONS
+                .iter()
+                .filter(|(a, _)| *a != "SUB-RULE")
+                .map(|(a, d)| item(a, &pr::name(a), d, *a == "IP-CIDR", ""))
+                .collect()
+        } else {
+            let mut v: Vec<ActionItem> = pr::TARGETS
+                .iter()
+                .enumerate()
+                .map(|(i, n)| {
+                    item(
+                        n,
+                        n,
+                        "",
+                        *n == "DIRECT",
+                        if i == 0 { "基础策略" } else { "" },
+                    )
+                })
+                .collect();
+            v.push(item("g1", "节点选择", "Selector", false, "规则目标"));
+            v.push(item("g2", "自动选择", "URLTest", false, ""));
+            v.push(item("p1", "香港 01", "ss", false, "本地代理"));
+            v
+        };
+        ui.set_choice_title(
+            if overlay == "r-type" {
+                "代理类型"
+            } else {
+                "分流策略"
+            }
+            .into(),
+        );
+        ui.set_choice_items(ModelRc::new(VecModel::from(items)));
+        ui.set_choice_open(true);
+    }
+    if overlay == "r-yaml" {
+        let refs: Vec<&seasoncat_ui::custom_profile::ProfileRule> = rules.iter().collect();
+        ui.set_editor_title("规则".into());
+        ui.set_editor_text(pr::encode_list(&refs).into());
+        ui.set_editor_readonly(false);
+        ui.set_editor_parent("rules".into());
+    }
+    if overlay == "r-save" || overlay == "r-delete" {
+        ui.set_confirm_title("提示".into());
+        if overlay == "r-save" {
+            ui.set_confirm_text("是否保存更改？".into());
+            ui.set_confirm_action("pr-save".into());
+        } else {
+            ui.set_confirm_text("确定删除选中的规则吗？".into());
+            ui.set_confirm_action("pr-delete".into());
+        }
+        ui.set_confirm_open(true);
+    }
+}
+
 fn main() {
     let out = std::env::args().nth(1).unwrap_or_else(|| ".".into());
     let (w, h) = (412u32, 892u32);
@@ -1716,6 +1942,40 @@ fn main() {
         ("group-icon-data", 2, "", "group-icon", 1, "gicondata"),
         ("group-yaml", 2, "", "editor", 1, "gyaml"),
         ("group-yaml-small", 2, "", "editor", 1, "gyaml"),
+        ("rules", 2, "", "rules", 1, "r-list"),
+        ("rules-small", 2, "", "rules", 1, "r-list"),
+        ("rules-wide", 2, "", "rules", 1, "r-list"),
+        ("rules-tablet", 2, "", "rules", 1, "r-list"),
+        ("rules-select", 2, "", "rules", 1, "r-select"),
+        ("rules-select-small", 2, "", "rules", 1, "r-select"),
+        ("rules-sort", 2, "", "rules", 1, "r-sort"),
+        ("rules-sort-small", 2, "", "rules", 1, "r-sort"),
+        ("rules-menu", 2, "", "rules", 1, "r-menu"),
+        ("rules-add", 2, "", "rules", 1, "r-add"),
+        ("rules-add-wide", 2, "", "rules", 1, "r-add"),
+        ("rules-search", 2, "", "rules", 1, "r-search"),
+        ("rules-empty", 2, "", "rules", 1, "r-empty"),
+        ("rules-delete", 2, "", "rules", 1, "r-delete"),
+        ("rule-form", 2, "", "rule", 1, "r-form"),
+        ("rule-form-small", 2, "", "rule", 1, "r-form"),
+        ("rule-form-wide", 2, "", "rule", 1, "r-form"),
+        ("rule-form-tablet", 2, "", "rule", 1, "r-form"),
+        ("rule-form-new", 2, "", "rule", 1, "r-new"),
+        ("rule-form-new-small", 2, "", "rule", 1, "r-new"),
+        ("rule-form-set", 2, "", "rule", 1, "r-set"),
+        ("rule-form-match", 2, "", "rule", 1, "r-match"),
+        ("rule-form-type", 2, "", "rule", 1, "r-type"),
+        ("rule-form-type-small", 2, "", "rule", 1, "r-type"),
+        ("rule-form-target", 2, "", "rule", 1, "r-target"),
+        ("rule-form-save", 2, "", "rule", 1, "r-save"),
+        ("rule-presets", 2, "", "rule-presets", 1, "r-presets"),
+        ("rule-presets-small", 2, "", "rule-presets", 1, "r-presets"),
+        ("rule-presets-wide", 2, "", "rule-presets", 1, "r-presets"),
+        ("rule-presets-tablet", 2, "", "rule-presets", 1, "r-presets"),
+        ("rules-yaml", 2, "", "editor", 1, "r-yaml"),
+        ("rules-yaml-small", 2, "", "editor", 1, "r-yaml"),
+        ("rules-yaml-wide", 2, "", "editor", 1, "r-yaml"),
+        ("rules-yaml-tablet", 2, "", "editor", 1, "r-yaml"),
         ("custom-issues", 2, "", "custom", 1, "issues"),
         ("custom-issues-small", 2, "", "custom", 1, "issues"),
         ("custom-menu", 2, "", "custom", 1, "cmenu"),
@@ -2374,6 +2634,7 @@ fn main() {
             ui.set_ctx_kind("".into());
         }
         snapshot_groups(&ui, overlay, w);
+        snapshot_rules(&ui, overlay, w);
         if matches!(*overlay, "groupmenu" | "tabs" | "tabs-list") {
             let mut many: Vec<ProxyGroup> = base_groups.iter().collect();
             for (i, name) in [

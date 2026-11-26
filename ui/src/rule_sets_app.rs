@@ -222,12 +222,22 @@ impl App {
                     false,
                 );
             }
-            "delete" => self.confirm(
-                "提示",
-                format!("确定删除当前{}吗？", s.label),
-                "rs-delete",
-                s.id,
-            ),
+            "delete" => {
+                let users = crate::profile_rules::profiles_using(
+                    &self.store.lock().unwrap().state,
+                    &s.label,
+                );
+                let text = if users.is_empty() {
+                    format!("确定删除当前{}吗？", s.label)
+                } else {
+                    format!(
+                        "{} 仍被 {} 使用，删除后这些配置会异常。确定删除吗？",
+                        s.label,
+                        users.join(", ")
+                    )
+                };
+                self.confirm("提示", text, "rs-delete", s.id)
+            }
             _ => {}
         }
     }
@@ -428,6 +438,16 @@ impl App {
         match self.compile_rule_set(s, previous.as_ref(), content, refresh) {
             Ok(next) => {
                 let dir = self.rule_sets_dir();
+                if let Some(p) = &previous {
+                    if p.label != next.label {
+                        let mut store = self.store.lock().unwrap();
+                        crate::profile_rules::rename_rule_set_everywhere(
+                            &mut store.state,
+                            &p.label,
+                            &next.label,
+                        );
+                    }
+                }
                 if let Some(p) = previous.filter(|p| p.file_name() != next.file_name()) {
                     clear_files(&dir, &p);
                 }
@@ -447,7 +467,7 @@ impl App {
     }
 
     fn compile_rule_set(
-        self: &Arc<Self>,
+        &self,
         s: RuleSet,
         previous: Option<&RuleSet>,
         content: Option<Vec<u8>>,
@@ -500,6 +520,56 @@ impl App {
             let _ = std::fs::remove_file(mrs(&file));
         }
         Ok(next)
+    }
+
+    /// `_resolveInjectedProviders`' rule sets: each one `prepare`d (fetched or compiled again
+    /// when its file is gone) and declared by the file the Core reads.
+    pub(crate) fn rule_providers(&self, sets: Vec<RuleSet>) -> serde_json::Map<String, Value> {
+        let dir = self.rule_sets_dir();
+        let mut out = serde_json::Map::new();
+        for s in sets {
+            let core_path = |s: &RuleSet| {
+                let file = s.file_name();
+                dir.join(if compiled(s) {
+                    format!("{file}.mrs")
+                } else {
+                    file
+                })
+            };
+            let s = if core_path(&s).exists() {
+                s
+            } else {
+                match self.compile_rule_set(s.clone(), None, None, true) {
+                    Ok(next) => {
+                        if next != s {
+                            let mut store = self.store.lock().unwrap();
+                            if let Some(x) = store
+                                .state
+                                .settings
+                                .rule_sets
+                                .iter_mut()
+                                .find(|x| x.id == next.id)
+                            {
+                                *x = next.clone();
+                            }
+                            store.save();
+                        }
+                        next
+                    }
+                    Err(_) => s,
+                }
+            };
+            out.insert(
+                s.label.clone(),
+                json!({
+                    "type": "file",
+                    "path": core_path(&s).to_string_lossy(),
+                    "behavior": s.behavior,
+                    "format": if compiled(&s) { "mrs" } else { s.format.as_str() },
+                }),
+            );
+        }
+        out
     }
 
     pub(crate) fn delete_rule_set(self: &Arc<Self>, id: &str) {

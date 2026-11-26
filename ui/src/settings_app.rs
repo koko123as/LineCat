@@ -366,6 +366,9 @@ impl App {
             if kind == "pg" {
                 return a.group_menu_picked(&arg, &id);
             }
+            if kind == "pr" || kind == "pr-add" {
+                return a.rules_menu_picked(&kind, &arg, &id);
+            }
             let Ok(i) = arg.parse::<usize>() else { return };
             match (kind.as_str(), id.as_str()) {
                 ("rs", id) => a.rule_set_menu_picked(i, id),
@@ -881,6 +884,7 @@ impl App {
             || self.icon_sets_picked(key, &value)
             || self.custom_proxies_picked(key, &value)
             || self.groups_picked(key, &value)
+            || self.profile_rules_picked(key, &value)
             || self.theme_picked(key, &value)
             || self.logs_picked(key, &value)
             || self.tsn_picked(key, &value)
@@ -938,6 +942,7 @@ impl App {
             || self.on_demand_input(key, v1)
             || self.custom_profile_input(key, v1)
             || self.groups_input(key, v1)
+            || self.profile_rules_input(key, v1)
         {
             return;
         }
