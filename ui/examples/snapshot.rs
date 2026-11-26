@@ -2548,6 +2548,37 @@ fn main() {
         ("profiles-dark", 2, "", "", 2, ""),
         ("dashboard-small", 0, "", "", 1, ""),
         ("proxies-small", 1, "节点选择", "", 1, ""),
+        ("proxies-long", 1, "节点选择", "", 1, "long"),
+        ("proxies-long-small", 1, "节点选择", "", 1, "long"),
+        ("proxies-long-wide", 1, "节点选择", "", 1, "long"),
+        ("proxies-long-tablet", 1, "节点选择", "", 1, "long"),
+        ("proxies-long-compact", 1, "节点选择", "", 1, "long-compact"),
+        ("proxies-long-loose", 1, "节点选择", "", 1, "long-loose"),
+        ("proxies-long-scrolled", 1, "节点选择", "", 1, "long-scroll"),
+        (
+            "proxies-long-scrolled-small",
+            1,
+            "节点选择",
+            "",
+            1,
+            "long-scroll",
+        ),
+        (
+            "proxies-long-scrolled-wide",
+            1,
+            "节点选择",
+            "",
+            1,
+            "long-scroll",
+        ),
+        (
+            "proxies-long-scrolled-tablet",
+            1,
+            "节点选择",
+            "",
+            1,
+            "long-scroll",
+        ),
         ("profiles-small", 2, "", "", 1, ""),
         ("tools-small", 3, "", "", 1, ""),
         ("dashboard-tiny", 0, "", "", 1, ""),
@@ -3295,7 +3326,11 @@ fn main() {
             },
             sort: 0,
             layout: 1,
-            card: if *overlay == "loose" { 2 } else { 1 },
+            card: match *overlay {
+                "loose" | "long-loose" => 2,
+                "long-compact" => 0,
+                _ => 1,
+            },
             icon: 0,
             hide_timeout: false,
         });
@@ -3438,6 +3473,22 @@ fn main() {
         snapshot_rules(&ui, overlay, w);
         snapshot_more(&ui, overlay);
         snapshot_extend(&ui, overlay);
+        // "long*": node names past two lines, as an IPv6 server in the name; "long-scroll"
+        // then scrolls into the group, under its pinned header.
+        if overlay.starts_with("long") {
+            let mut groups: Vec<ProxyGroup> = base_groups.iter().collect();
+            let mut nodes: Vec<NodeItem> = groups[0].nodes.iter().collect();
+            for (i, n) in nodes.iter_mut().enumerate() {
+                n.name = format!("官方 IPv6 | 2606:4700:102::{i} | 443 | MASQUE导航 {i}").into();
+                n.kind = "Masque".into();
+            }
+            let more: Vec<NodeItem> = nodes.clone();
+            nodes.extend(more.clone());
+            nodes.extend(more);
+            groups[0].nodes = ModelRc::new(VecModel::from(nodes));
+            groups[0].expanded = true;
+            ui.set_proxy_groups(ModelRc::new(VecModel::from(groups)));
+        }
         if matches!(*overlay, "groupmenu" | "tabs" | "tabs-list") {
             let mut many: Vec<ProxyGroup> = base_groups.iter().collect();
             for (i, name) in [
@@ -3532,6 +3583,20 @@ fn main() {
                 slint::platform::update_timers_and_animations();
             }
             std::thread::sleep(std::time::Duration::from_millis(250));
+            slint::platform::update_timers_and_animations();
+        }
+        if *overlay == "long-scroll" {
+            use slint::platform::WindowEvent;
+            let mut scratch = vec![Rgb8Pixel::default(); (w * h) as usize];
+            window.request_redraw();
+            window.draw_if_needed(|r| {
+                r.render(&mut scratch, w as usize);
+            });
+            window.dispatch_event(WindowEvent::PointerScrolled {
+                position: slint::LogicalPosition::new(w as f32 / 3.0, h as f32 / 2.0),
+                delta_x: 0.0,
+                delta_y: -360.0,
+            });
             slint::platform::update_timers_and_animations();
         }
         let mut buffer = vec![Rgb8Pixel::default(); (w * h) as usize];

@@ -2859,6 +2859,23 @@ component DelayBadge inherits Rectangle {
     }
 }
 
+// `getItemHeight`: two name lines of subheadline (one compact), a footnote row, 16 of
+// padding, 8 between and 4 spare; loose adds a caption row and 6. Lines are the font's
+// 1.45 em, so the card grows with the font scale instead of cutting its last row.
+export global ProxyCardMetrics {
+    out property <length> name-line: 14px * Type.scale * 1.45;
+    out property <length> foot-line: max(18px, 12px * Type.scale * 1.45);
+    out property <length> caption-line: max(18px, 11px * Type.scale * 1.45);
+    public pure function height(size: int) -> length {
+        return 16px + (size == 0 ? 1 : 2) * ProxyCardMetrics.name-line + 8px + ProxyCardMetrics.foot-line + 4px + (size == 2 ? ProxyCardMetrics.caption-line + 6px : 0px);
+    }
+    // The pinned header's offset in its group: none until the group's top leaves the
+    // viewport, then following it down, at most to the group's last row.
+    public pure function sticky(top-in-view: length, room: length) -> length {
+        return clamp(-top-in-view, 0px, max(room, 0px));
+    }
+}
+
 // FlClash's ProxyCard: the name (two lines, or one when compact), the type and the delay
 // below, and a badge for the proxy in use or the pin.
 component NodeCard inherits Card {
@@ -2893,12 +2910,11 @@ component NodeCard inherits Card {
     VerticalLayout {
         padding-left: 12px;
         padding-right: 10px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-        spacing: root.size == 2 ? 4px : 6px;
+        padding-top: 8px;
+        padding-bottom: 8px;
         HorizontalLayout {
             spacing: 4px;
-            vertical-stretch: 1;
+            height: (root.size == 0 ? 1 : 2) * ProxyCardMetrics.name-line;
             Text {
                 text: root.item.name;
                 font-size: 14px * Type.scale;
@@ -2907,27 +2923,35 @@ component NodeCard inherits Card {
                 overflow: elide;
                 vertical-alignment: top;
                 horizontal-stretch: 1;
+                height: parent.height;
             }
-            if root.item.pinned || root.item.selected: Rectangle {
-                width: 18px;
-                height: 18px;
-                border-radius: 9px;
-                background: root.item.selected ? Theme.s.primary : Theme.s.primary.with-alpha(0.15);
-                Icon {
-                    glyph: root.item.pinned ? Icons.pin : Icons.check;
-                    size: 13px;
-                    tint: root.item.selected ? Theme.s.on-primary : Theme.s.primary;
+            if root.item.pinned || root.item.selected: VerticalLayout {
+                alignment: start;
+                Rectangle {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 9px;
+                    background: root.item.selected ? Theme.s.primary : Theme.s.primary.with-alpha(0.15);
+                    Icon {
+                        glyph: root.item.pinned ? Icons.pin : Icons.check;
+                        size: 13px;
+                        tint: root.item.selected ? Theme.s.on-primary : Theme.s.primary;
+                    }
                 }
             }
         }
-        if root.size == 2: Text { text: root.item.kind; font-size: 12px * Type.scale; color: root.fg2; overflow: elide; }
+        // The spare height goes above the type and delay, which stay on the card's bottom.
+        Rectangle { vertical-stretch: 1; min-height: 8px; }
+        if root.size == 2: Text { height: ProxyCardMetrics.foot-line; text: root.item.kind; font-size: 12px * Type.scale; color: root.fg2; overflow: elide; vertical-alignment: center; }
+        if root.size == 2: Rectangle { height: 6px; }
         if root.size == 2: HorizontalLayout {
+            height: ProxyCardMetrics.caption-line;
             DelayBadge { delay: root.item.delay; idle: root.fg2; test => { root.test(); } }
             Rectangle { }
         }
         if root.size != 2: HorizontalLayout {
             spacing: 6px;
-            height: 18px;
+            height: ProxyCardMetrics.foot-line;
             Text {
                 horizontal-stretch: 1;
                 text: root.item.kind;
@@ -3052,7 +3076,7 @@ component Proxies inherits Rectangle {
     // `getProxiesColumns` (from the group's width less its insets in the list) and the card
     // heights of `getItemHeight`.
     out property <int> columns: max(ceil((root.style.kind == 1 ? root.group-width - 20px : self.width - 32px) / 250px), 2) + (style.layout == 0 ? 1 : style.layout == 2 ? -1 : 0);
-    out property <length> card-height: style.card == 0 ? 58px : style.card == 2 ? 94px : 76px;
+    out property <length> card-height: ProxyCardMetrics.height(style.card);
     callback open-group(string);
     callback select-node(string, string);
     callback test-group(string);
@@ -3205,17 +3229,14 @@ component Proxies inherits Rectangle {
                             alignment: start;
                             width: root.group-width;
                             for g[i] in root.groups: VerticalLayout {
-                                if mod(i, root.group-columns) == c: VerticalLayout {
-                                    spacing: 8px;
-                                    padding-bottom: 10px;
-                                    GroupHeader {
-                                        group: g;
-                                        icon: root.style.icon;
-                                        toggle => { root.toggle-group(g.name); }
-                                        test => { root.test-group(g.name); }
-                                        locate => { root.go-to(g.name); }
-                                    }
-                                    if g.expanded: NodeGrid {
+                                // `PinnedHeaderSliver`: scrolled into an unfolded group, its header
+                                // stays at the top until the group's last row pushes it off.
+                                if mod(i, root.group-columns) == c: Rectangle {
+                                    group-body := VerticalLayout {
+                                        spacing: 8px;
+                                        padding-bottom: 10px;
+                                        header-slot := Rectangle { height: 64px; }
+                                        if g.expanded: NodeGrid {
                                         nodes: g.nodes;
                                         columns: root.columns;
                                         card-height: root.card-height;
@@ -3224,6 +3245,16 @@ component Proxies inherits Rectangle {
                                         select(n) => { root.select-node(g.name, n); }
                                         test(n) => { root.test-node(g.name, n); }
                                         menu(n, x, y, w, h) => { root.node-menu(g.name, g.kind, n, x, y, w, h); }
+                                        }
+                                    }
+                                    GroupHeader {
+                                        y: ProxyCardMetrics.sticky(header-slot.absolute-position.y - flick.absolute-position.y, group-body.height - 10px - 64px);
+                                        width: parent.width;
+                                        group: g;
+                                        icon: root.style.icon;
+                                        toggle => { root.toggle-group(g.name); }
+                                        test => { root.test-group(g.name); }
+                                        locate => { root.go-to(g.name); }
                                     }
                                 }
                             }

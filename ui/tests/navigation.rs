@@ -85,4 +85,17 @@ fn navigation() {
     assert!(drag.invoke_closes(120.0, 500.0, 100));
     assert!(!drag.invoke_closes(10.0, 500.0, 5));
     assert!(!drag.invoke_closes(-80.0, 500.0, 50));
+
+    let card = ui.global::<ProxyCardMetrics>();
+    for scale in [1.0f32, 1.3] {
+        ui.global::<Type>().set_scale(scale);
+        let need = 16.0 + 2.0 * card.get_name_line() + 8.0 + card.get_foot_line();
+        assert!(card.invoke_height(1) >= need);
+        assert!(card.invoke_height(0) >= need - card.get_name_line());
+        assert!(card.invoke_height(2) >= need + card.get_caption_line() + 6.0);
+    }
+    assert_eq!(card.invoke_sticky(40.0, 300.0), 0.0);
+    assert_eq!(card.invoke_sticky(-120.0, 300.0), 120.0);
+    assert_eq!(card.invoke_sticky(-500.0, 300.0), 300.0);
+    assert_eq!(card.invoke_sticky(-10.0, -8.0), 0.0);
 }
