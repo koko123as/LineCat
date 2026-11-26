@@ -468,50 +468,6 @@ pub fn options(settings: &crate::store::Settings, mitm_capture: bool) -> Value {
     })
 }
 
-pub struct Release {
-    pub tag: String,
-    pub notes: String,
-    pub url: String,
-}
-
-/// `request.checkForUpdate` on the stable channel: `releases/latest`, None when there is none.
-pub fn latest_release(repository: &str) -> Result<Option<Release>, String> {
-    let url = format!("https://api.github.com/repos/{repository}/releases/latest");
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(20)))
-        .http_status_as_error(false)
-        .build()
-        .into();
-    let mut response = agent
-        .get(&url)
-        .header("User-Agent", USER_AGENT)
-        .header("Accept", "application/vnd.github+json")
-        .call()
-        .map_err(|e| format!("检查更新失败：{e}"))?;
-    match response.status().as_u16() {
-        404 => return Ok(None),
-        200 => {}
-        code => return Err(format!("检查更新失败：HTTP {code}")),
-    }
-    let body: Value = response
-        .body_mut()
-        .read_to_string()
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .ok_or_else(|| "检查更新失败".to_string())?;
-    let text = |k: &str| {
-        body.get(k)
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string()
-    };
-    Ok(Some(Release {
-        tag: text("tag_name"),
-        notes: text("body"),
-        url: text("html_url"),
-    }))
-}
-
 /// `authentication` as `user:pass` entries, from `NetworkProps.authentication`.
 pub fn authentication(general: &crate::store::General) -> Vec<String> {
     let a = &general.authentication;

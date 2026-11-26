@@ -38,14 +38,6 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 5] = [
-        Section::Authentication,
-        Section::Transport,
-        Section::Tls,
-        Section::Other,
-        Section::Connection,
-    ];
-
     pub fn label(self) -> &'static str {
         match self {
             Section::Authentication => "认证",

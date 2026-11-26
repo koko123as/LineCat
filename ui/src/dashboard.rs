@@ -223,9 +223,6 @@ pub fn count(n: usize) -> String {
     out
 }
 
-/// `_ipMask`.
-pub const IP_MASK: &str = "*****";
-
 /// `platformDefaultDashboardWidgets` on Android.
 pub fn default_widgets() -> Vec<String> {
     ["status", "speed", "mode", "profile", "groups"]

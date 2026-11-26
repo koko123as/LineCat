@@ -49,13 +49,14 @@ landed and what is left.
 | 5c resources scripts and modules | "resources page scripts and mitm modules" | 工具 → 资源 (`ResourcesView`) after Geo lists 脚本 (the scripts with a URL: name, last update or 未知, file size chip) and 模块 (the remote MITM modules: name, last update), each section only when it has rows (`remote_scripts` / `remote_modules` in `resources.rs`). A row's spinner shows while it syncs; tap does nothing (no `onEdit`, as `_ScriptItem` / `_ModuleItem`), long press or right click offers 同步 (hidden while syncing) and 复制链接. A script syncs from its URL (`updateScript`, also used by the scripts page's 同步); a module through `updateModule`, which offers it again when the update turned it off (`offerMitmModule`). The bar's sync (`updateAll`) now also syncs every remote script and module. Left out: the 图标集 and 规则集 sections of `ResourcesView` (added in 6a). |
 | 6a resources sets | "resources page icon sets and rule sets" | 工具 → 资源 now lists, between Geo and 脚本, 图标集 (the remote icon sets: name, last sync, icon count chip as `num.compact`) and 规则集 (the remote rule sets: label, the file's age, its size), as `_IconSetItem` / `_RuleProviderItem`; each section only when it has rows. 同步 (hidden while syncing) and 复制链接 on a long press, no tap action, the row spinner while syncing; a failed 同步 is listed as `showFailures`. The bar's sync (`updateAll`) takes them too. `ResourcesAction.autoUpdate` joins the module update at start and every 20 minutes: with 自动更新 on, each remote icon set, script and rule set past the interval (`is_due`; never synced counts as due; rule sets only while the Core answers) syncs, failures go to the log. Left out: the `pending` state of a row whose file is still being read (files are read in place). |
 | 6a certificate removal title | "title the certificate removal alert" | 进阶配置 → MITM → 证书 → 移除证书 on a system CA that su cannot take out: the alert is titled 「无法移除」 over the root module tip, as `mitm.dart`'s `MitmRemoveOutcome.needsRoot` (it had no title). |
+| 6b dead code | "drop unused code" | Removed what nothing calls: `profile::latest_release` and its `Release` (the stable-channel check, replaced by batch 4's `newestOfAllReleases`), `Store::temp_path`, `custom_proxies::Section::ALL`, `dashboard::IP_MASK` (the Slint views write the mask themselves). |
 
 ## Remaining
 
 Handoff items 2–7:
 
 - The 「语言」 row waits on the owner.
-- Wrap-up: final page-by-page diff against FlClash `lib/` and dead code removal.
+- Wrap-up: the rest of the page-by-page diff against FlClash `lib/` (6a covered the resources page and the certificate removal alert).
 
 ## Waiting on the owner
 

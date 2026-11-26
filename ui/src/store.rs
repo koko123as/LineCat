@@ -539,10 +539,6 @@ impl Store {
         self.dir.join("profiles").join(format!("{id}.yaml"))
     }
 
-    pub fn temp_path(&self) -> PathBuf {
-        self.dir.join("download.part.yaml")
-    }
-
     pub fn active(&self) -> Option<&Profile> {
         let id = self.state.active.as_ref()?;
         self.state.profiles.iter().find(|p| &p.id == id)
