@@ -220,11 +220,14 @@ pub fn editor_sections(d: &Draft) -> Vec<SetSection> {
             ..Default::default()
         });
     }
-    vec![
-        section("基础信息", basic),
-        section("认证", auth),
-        section("选项", options),
-    ]
+    let mut out = vec![section("基础信息", basic)];
+    if p.kind() == "easytier" {
+        let network = cp::EASYTIER.iter().map(|f| field_row(d, f, "")).collect();
+        out.push(section("网络", network));
+    }
+    out.push(section("认证", auth));
+    out.push(section("选项", options));
+    out
 }
 
 /// The issues the form's banner shows.
@@ -819,7 +822,7 @@ impl App {
             });
             return self.alert("无法保存", issues_message(&found));
         }
-        let mut saved = d.proxy.clone();
+        let mut saved = d.finished();
         if saved.id.is_empty() {
             saved.id = new_id();
         }
@@ -856,6 +859,7 @@ mod tests {
         CustomProxy {
             id: id.into(),
             definition: def,
+            ..Default::default()
         }
     }
 
@@ -922,6 +926,18 @@ mod tests {
         let pw = s[1].rows.row_data(0).unwrap();
         assert_eq!((pw.subtitle.as_str(), pw.glyph.as_str()), ("••••••", "eye"));
         assert_eq!(page_meta(&[], FORM).unwrap().action, "check");
+    }
+
+    #[test]
+    fn an_easytier_proxy_shows_the_network_section() {
+        let d = Draft::open(p("1", json!({"name": "e", "type": "easytier"})), false);
+        let s = editor_sections(&d);
+        let titles: Vec<String> = s.iter().map(|s| s.title.to_string()).collect();
+        assert_eq!(titles, ["基础信息", "网络", "认证", "选项"]);
+        let ids: Vec<String> = s[1].rows.iter().map(|r| r.id.to_string()).collect();
+        assert_eq!(ids[0], "cp-f:networkName");
+        assert_eq!(s[1].rows.row_data(2).unwrap().kind, "open");
+        assert!(!s[0].rows.iter().any(|r| r.id == "cp-f:server"));
     }
 
     #[test]

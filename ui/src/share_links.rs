@@ -181,7 +181,12 @@ impl ShareLinkEdit {
                 let proxy = match replaced {
                     Some(r) => {
                         let merged = with_unlinked_fields(&named, &r.map(), linked.get(&r.id));
-                        CustomProxy::new(r.id.clone(), merged)
+                        let mut p = CustomProxy::new(r.id.clone(), merged);
+                        let empty = r.empty_options.iter().filter(|n| {
+                            crate::custom_proxies::field(n).is_none_or(|f| p.value_of(f).is_none())
+                        });
+                        p.empty_options = empty.cloned().collect();
+                        p
                     }
                     None => CustomProxy::new(new_id(), named),
                 };

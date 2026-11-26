@@ -823,6 +823,7 @@ mod tests {
             .push(crate::custom_proxies::CustomProxy {
                 id: "9".into(),
                 definition: json!({"name": "A", "type": "ss"}),
+                ..Default::default()
             });
         s
     }

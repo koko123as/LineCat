@@ -742,10 +742,12 @@ mod tests {
             crate::custom_proxies::CustomProxy {
                 id: "1".into(),
                 definition: json!({"name": "a", "type": "ss", "dialer-proxy": "x"}),
+                ..Default::default()
             },
             crate::custom_proxies::CustomProxy {
                 id: "2".into(),
                 definition: json!({"name": "unused", "type": "ss"}),
+                ..Default::default()
             },
         ];
         let own = Own {
@@ -833,6 +835,7 @@ mod tests {
             .push(crate::custom_proxies::CustomProxy {
                 id: "7".into(),
                 definition: json!({"name": "a", "type": "ss"}),
+                ..Default::default()
             });
         s.proxy_groups.push(group(1, &p.id, "g", None));
         assert_eq!(overview(&s, &p)[3].3, "2 项生效");

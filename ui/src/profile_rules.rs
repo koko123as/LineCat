@@ -808,12 +808,14 @@ mod tests {
             .push(crate::custom_proxies::CustomProxy {
                 id: "c".into(),
                 definition: json!({"name": "香港", "type": "ss"}),
+                ..Default::default()
             });
         s.settings
             .custom_proxies
             .push(crate::custom_proxies::CustomProxy {
                 id: "d".into(),
                 definition: json!({"name": "未用", "type": "ss"}),
+                ..Default::default()
             });
         s.settings.rule_sets.push(crate::rule_sets::RuleSet {
             id: "r".into(),

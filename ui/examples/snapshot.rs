@@ -755,6 +755,7 @@ fn sample_custom_proxies() -> Vec<seasoncat_ui::custom_proxies::CustomProxy> {
     .map(|(i, d)| CustomProxy {
         id: i.to_string(),
         definition: d,
+        ..Default::default()
     })
     .collect()
 }
@@ -767,6 +768,7 @@ fn sample_draft(overlay: &str) -> seasoncat_ui::custom_proxies::Draft {
             CustomProxy {
                 id: String::new(),
                 definition: serde_json::json!({"name": "", "type": "ss", "password": "p@ssw0rd"}),
+                ..Default::default()
             },
             true,
         );
@@ -774,12 +776,25 @@ fn sample_draft(overlay: &str) -> seasoncat_ui::custom_proxies::Draft {
         d.core_error = Some("missing server".into());
         return d;
     }
+    if overlay == "easytier" {
+        return Draft::open(
+            CustomProxy {
+                id: "8".into(),
+                definition: serde_json::json!({"name": "家里", "type": "easytier",
+                    "network-name": "home-net", "network-secret": "s3cret-key",
+                    "peers": ["tcp://public.easytier.example:11010"], "exit-nodes": []}),
+                empty_options: vec!["interfaceName".into()],
+            },
+            false,
+        );
+    }
     let mut d = Draft::open(
         CustomProxy {
             id: "9".into(),
             definition: serde_json::json!({"name": "hk-03", "type": "vless",
                 "server": "hk.example.com", "port": 443, "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
                 "udp": true, "tls": true, "servername": "cdn.example.com", "alpn": ["h2", "http/1.1"]}),
+            ..Default::default()
         },
         false,
     );
@@ -2494,6 +2509,31 @@ fn main() {
             "custom-proxy",
             1,
             "cp-link",
+        ),
+        ("set-cproxy-easytier", 3, "", "custom-proxy", 1, "easytier"),
+        (
+            "set-cproxy-easytier-small",
+            3,
+            "",
+            "custom-proxy",
+            1,
+            "easytier",
+        ),
+        (
+            "set-cproxy-easytier-wide",
+            3,
+            "",
+            "custom-proxy",
+            1,
+            "easytier",
+        ),
+        (
+            "set-cproxy-easytier-tablet",
+            3,
+            "",
+            "custom-proxy",
+            1,
+            "easytier",
         ),
         ("set-cproxy", 3, "", "custom-proxy", 1, ""),
         ("set-cproxy-small", 3, "", "custom-proxy", 1, ""),

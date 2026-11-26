@@ -2,7 +2,7 @@
 //! proxy as links in the tools editor (`_handleQuickEdit`), and the form's 快速编辑 that fills the
 //! form from one link (`_ShareLinkDialog`, `_fillFromLink`).
 
-use crate::custom_proxies::{CustomProxy, Draft};
+use crate::custom_proxies::CustomProxy;
 use crate::custom_proxies_app::LIST;
 use crate::share_links::{self as sl, ShareLinkEdit};
 use crate::{ActionItem, Anchor, App, CALL};
@@ -262,7 +262,7 @@ impl App {
                         &app.custom_proxies(),
                         &app.group_names(),
                     );
-                    app.edit_draft(move |d| fill_from_link(d, named));
+                    app.edit_draft(move |d| d.fill(named));
                 }
                 Err(e) => {
                     with(|s| s.link = Some((link, Some((text.clone(), e)))));
@@ -271,36 +271,5 @@ impl App {
             }
         });
         true
-    }
-}
-
-/// `_fillFromLink`: the form takes the link's mapping and lists the options it sets.
-pub(crate) fn fill_from_link(d: &mut Draft, definition: Map<String, Value>) {
-    let next = Draft::open(CustomProxy::new(d.proxy.id.clone(), definition), d.is_new);
-    d.shown = next.shown;
-    d.proxy = next.proxy;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_filled_form_keeps_its_id_and_lists_the_link_options() {
-        let mut d = Draft::open(
-            CustomProxy::new(
-                "7".into(),
-                json!({"name": "a", "type": "ss"})
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-            ),
-            false,
-        );
-        let def = json!({"name": "b", "type": "vmess", "tls": true});
-        fill_from_link(&mut d, def.as_object().unwrap().clone());
-        assert_eq!(d.proxy.id, "7");
-        assert_eq!(d.proxy.name(), "b");
-        assert_eq!(d.shown, ["tls"]);
     }
 }

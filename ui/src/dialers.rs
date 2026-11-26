@@ -499,6 +499,7 @@ mod tests {
                 .push(crate::custom_proxies::CustomProxy {
                     id: id.into(),
                     definition: json!({"name": n, "type": "ss"}),
+                    ..Default::default()
                 });
         }
         s.proxy_groups.push(crate::custom_profile::ProxyGroupRow {

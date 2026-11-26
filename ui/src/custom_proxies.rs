@@ -11,6 +11,10 @@ use std::collections::{BTreeSet, HashSet};
 pub struct CustomProxy {
     pub id: String,
     pub definition: Value,
+    /// `emptyOptions`: options the form lists with no value yet, by field name, which the
+    /// definition cannot hold since the Core reads every key in it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub empty_options: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -286,8 +290,18 @@ pub static FIELDS: &[Field] = &[
     f("ipVersion", &["ip-version"], Choice, "IP 版本"),
 ];
 
+/// `_buildEasyTierSection`: the 网络 section an easytier proxy shows in place of 服务器 / 端口.
+pub const EASYTIER: &[Field] = &[
+    f("networkName", &["network-name"], Text, "网络名称"),
+    f("networkSecret", &["network-secret"], Secret, "网络密码"),
+    f("peers", &["peers"], List, "初始节点"),
+    f("virtualIpv4", &["ipv4"], Text, "虚拟 IPv4"),
+    f("hostname", &["hostname"], Text, "主机名"),
+    f("exitNodes", &["exit-nodes"], List, "出口节点"),
+];
+
 pub fn field(name: &str) -> Option<&'static Field> {
-    FIELDS.iter().find(|f| f.name == name)
+    FIELDS.iter().chain(EASYTIER).find(|f| f.name == name)
 }
 
 fn fields_named(names: &[&str]) -> Vec<&'static Field> {
@@ -447,6 +461,7 @@ impl CustomProxy {
         CustomProxy {
             id,
             definition: Value::Object(definition),
+            ..Default::default()
         }
     }
 
@@ -794,6 +809,7 @@ impl CustomProxy {
         CustomProxy {
             id: self.id.clone(),
             definition: Value::Object(with_path(&self.map(), path, value)),
+            empty_options: self.empty_options.clone(),
         }
     }
 
@@ -969,6 +985,8 @@ pub fn hint_of(field: &Field) -> Option<&'static str> {
         "up" | "down" => Some("100 Mbps"),
         "ports" => Some("443,8000-9000"),
         "httpMethod" => Some("GET"),
+        "networkName" => Some("网络名称"),
+        "virtualIpv4" => Some("DHCP"),
         _ => None,
     }
 }
@@ -1112,6 +1130,8 @@ pub struct Draft {
     pub proxy: CustomProxy,
     pub is_new: bool,
     pub shown: Vec<&'static str>,
+    /// `_untouched`: added without a value and not given one since; only these stay empty.
+    pub untouched: HashSet<&'static str>,
     pub revealed: HashSet<String>,
     pub submitted: bool,
     pub core_error: Option<String>,
@@ -1119,23 +1139,45 @@ pub struct Draft {
 
 impl Draft {
     pub fn open(proxy: CustomProxy, is_new: bool) -> Self {
-        let shown = proxy
+        let shown = shown_in(&proxy);
+        let untouched = proxy
             .options()
             .into_iter()
-            .filter(|f| proxy.value_of(f).is_some())
+            .filter(|f| {
+                proxy.empty_options.iter().any(|n| n == f.name) && proxy.value_of(f).is_none()
+            })
             .map(|f| f.name)
             .collect();
         Draft {
             proxy,
             is_new,
             shown,
+            untouched,
             ..Default::default()
         }
     }
 
+    fn with_shown(&self, mut proxy: CustomProxy, shown: &[&'static str]) -> CustomProxy {
+        proxy.empty_options = proxy
+            .options()
+            .into_iter()
+            .filter(|f| shown.contains(&f.name) && self.untouched.contains(f.name))
+            .filter(|f| proxy.value_of(f).is_none())
+            .map(|f| f.name.to_string())
+            .collect();
+        proxy
+    }
+
     /// `_syncShown`: an option stays listed while offered and shown, set, or just unlocked.
     fn sync(&mut self, next: CustomProxy, unlocked: &[&'static str]) {
-        self.shown = next
+        self.untouched
+            .retain(|n| field(n).is_some_and(|f| next.value_of(f).is_none()));
+        self.untouched.extend(
+            unlocked
+                .iter()
+                .filter(|n| field(n).is_some_and(|f| next.value_of(f).is_none())),
+        );
+        let shown: Vec<&'static str> = next
             .options()
             .into_iter()
             .filter(|f| {
@@ -1145,6 +1187,30 @@ impl Draft {
             })
             .map(|f| f.name)
             .collect();
+        self.proxy = self.with_shown(next, &shown);
+        self.shown = shown;
+    }
+
+    pub fn finished(&self) -> CustomProxy {
+        let mut d = self.clone();
+        let proxy = &self.proxy;
+        d.untouched
+            .retain(|n| field(n).is_some_and(|f| proxy.value_of(f).is_none()));
+        d.with_shown(proxy.clone(), &self.shown)
+    }
+
+    /// `_fillFromLink`: the form takes `definition`, keeping the shown options that stay empty.
+    pub fn fill(&mut self, definition: Map<String, Value>) {
+        let current = &self.proxy;
+        let kept: Vec<&'static str> = self
+            .shown
+            .iter()
+            .copied()
+            .filter(|n| field(n).is_some_and(|f| current.value_of(f).is_none()))
+            .collect();
+        let next = CustomProxy::new(current.id.clone(), definition);
+        let next = self.with_shown(next, &kept);
+        self.shown = shown_in(&next);
         self.proxy = next;
     }
 
@@ -1175,6 +1241,9 @@ impl Draft {
         let value = self.proxy.value_of(field).cloned().or(initial);
         if !self.shown.contains(&field.name) {
             self.shown.push(field.name);
+        }
+        if value.is_none() {
+            self.untouched.insert(field.name);
         }
         self.set_option(field, value);
     }
@@ -1218,6 +1287,15 @@ impl Draft {
     }
 }
 
+fn shown_in(proxy: &CustomProxy) -> Vec<&'static str> {
+    proxy
+        .options()
+        .into_iter()
+        .filter(|f| proxy.value_of(f).is_some() || proxy.empty_options.iter().any(|n| n == f.name))
+        .map(|f| f.name)
+        .collect()
+}
+
 /// What a row shows for a field: its value, masked when secret, or the hint.
 pub fn shown_value(proxy: &CustomProxy, field: &Field, revealed: bool) -> String {
     let required = || {
@@ -1251,11 +1329,68 @@ mod tests {
         CustomProxy {
             id: "1".into(),
             definition: v,
+            ..Default::default()
         }
     }
 
     fn names(fields: &[&Field]) -> Vec<&'static str> {
         fields.iter().map(|f| f.name).collect()
+    }
+
+    #[test]
+    fn added_options_without_a_value_are_kept_empty() {
+        let mut d = Draft::open(proxy(json!({"name": "a", "type": "vmess"})), true);
+        let sni = field("interfaceName").unwrap();
+        let tls = field("tls").unwrap();
+        d.add_option(sni);
+        d.add_option(tls);
+        let saved = d.finished();
+        assert_eq!(saved.empty_options, ["interfaceName"]);
+        assert!(saved.value_of(sni).is_none());
+        let reopened = Draft::open(saved.clone(), false);
+        assert!(reopened.shown.contains(&"interfaceName"));
+        assert!(reopened.untouched.contains("interfaceName"));
+        let mut d = reopened;
+        d.set_option(sni, Some("wlan0".into()));
+        assert!(d.finished().empty_options.is_empty());
+        d.set_option(sni, None);
+        assert!(
+            d.finished().empty_options.is_empty(),
+            "a touched option is not kept empty"
+        );
+        let stored = serde_json::to_value(&saved).unwrap();
+        assert_eq!(stored["empty_options"], json!(["interfaceName"]));
+        let plain = serde_json::to_value(proxy(json!({"name": "b"}))).unwrap();
+        assert!(plain.get("empty_options").is_none());
+    }
+
+    #[test]
+    fn a_filled_form_keeps_the_shown_options_that_stay_empty() {
+        let mut d = Draft::open(proxy(json!({"name": "a", "type": "vmess"})), false);
+        d.add_option(field("interfaceName").unwrap());
+        d.fill(
+            json!({"name": "b", "type": "vmess", "tls": true})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        assert_eq!(d.proxy.id, "1");
+        assert_eq!(d.proxy.empty_options, ["interfaceName"]);
+        assert!(d.shown.contains(&"tls") && d.shown.contains(&"interfaceName"));
+    }
+
+    #[test]
+    fn easytier_fields_read_their_own_keys() {
+        let p = proxy(
+            json!({"name": "e", "type": "easytier", "network-name": "home",
+            "peers": ["tcp://a:11010", "udp://b:11010"]}),
+        );
+        let shown = |n: &str| shown_value(&p, field(n).unwrap(), false);
+        assert_eq!(shown("networkName"), "home");
+        assert_eq!(shown("virtualIpv4"), "DHCP");
+        assert_eq!(shown("hostname"), "可选");
+        assert_eq!(p.strings_of(field("peers").unwrap().path).len(), 2);
+        assert!(p.options().iter().all(|f| !EASYTIER.contains(f)));
     }
 
     #[test]
