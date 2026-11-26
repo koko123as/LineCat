@@ -1380,6 +1380,7 @@ fn snapshot_extend(ui: &AppWindow, overlay: &str) {
                 "DOMAIN-KEYWORD,very-long-keyword-for-checking-elide-in-rows,REJECT",
                 12,
             ),
+            parse("DOMAIN,api.example.com,节点选择", 13),
         ],
     );
     s.profiles[0]
@@ -2435,6 +2436,10 @@ fn main() {
         ("extend-wide", 2, "", "extend", 1, "ext:main"),
         ("extend-tablet", 2, "", "extend", 1, "ext:main"),
         ("extend-select", 2, "", "extend", 1, "ext:select"),
+        ("extend-drag", 2, "", "extend", 1, "ext:drag:330:60"),
+        ("extend-drag-small", 2, "", "extend", 1, "ext:drag:330:60"),
+        ("extend-drag-wide", 2, "", "extend", 1, "ext:drag:330:60"),
+        ("extend-drag-tablet", 2, "", "extend", 1, "ext:drag:330:60"),
         ("extend-select-small", 2, "", "extend", 1, "ext:select"),
         ("extend-select-wide", 2, "", "extend", 1, "ext:select"),
         ("extend-select-tablet", 2, "", "extend", 1, "ext:select"),
@@ -3615,10 +3620,13 @@ fn main() {
         ui.set_theme_mode(*mode);
         slint::platform::update_timers_and_animations();
         // "drag:<y>:<dy>": hold a card at y past the long press, then move the finger by dy.
-        let drag = overlay.strip_prefix("drag:").and_then(|v| {
-            let (y, dy) = v.split_once(':')?;
-            Some((y.parse::<f32>().ok()?, dy.parse::<f32>().ok()?))
-        });
+        let drag = overlay
+            .strip_prefix("drag:")
+            .or_else(|| overlay.strip_prefix("ext:drag:"))
+            .and_then(|v| {
+                let (y, dy) = v.split_once(':')?;
+                Some((y.parse::<f32>().ok()?, dy.parse::<f32>().ok()?))
+            });
         if let Some((y, dy)) = drag {
             use slint::platform::{PointerEventButton, WindowEvent};
             let mut scratch = vec![Rgb8Pixel::default(); (w * h) as usize];

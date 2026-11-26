@@ -4875,81 +4875,6 @@ component SettingsPage inherits Rectangle {
     }
 }
 
-// `ExtendView`: 脚本, the profile's own 附加规则 under their header actions, then
-// 控制全局附加规则 and 出口; 立即应用 shows in the bar while the active profile has changes.
-component ExtendPage inherits Rectangle {
-    in property <[SetSection]> top;
-    in property <[SetSection]> rules;
-    in property <[SetSection]> bottom;
-    in property <bool> selecting;
-    in property <bool> apply;
-    in property <bool> applying;
-    callback back();
-    callback clicked(string);
-    callback toggled(string, bool);
-    background: Theme.s.page;
-    VerticalLayout {
-        AppBar {
-            title: "扩展";
-            can-back: true;
-            back => { root.back(); }
-            if root.applying: VerticalLayout {
-                alignment: center;
-                Spinner { width: 22px; height: 22px; indeterminate: true; }
-            }
-            if root.apply || root.applying: VerticalLayout {
-                alignment: center;
-                TextButton {
-                    text: "立即应用";
-                    filled: true;
-                    enabled: !root.applying;
-                    clicked => { root.clicked("apply"); }
-                }
-            }
-        }
-        Flickable {
-            content-height: ext-body.preferred-height + Dock.pad;
-            ext-body := VerticalLayout {
-                alignment: start;
-                padding-bottom: 24px;
-                Sections {
-                    sections: root.top;
-                    clicked(id) => { root.clicked(id); }
-                    toggled(id, on) => { root.toggled(id, on); }
-                }
-                HorizontalLayout {
-                    padding-left: 30px;
-                    padding-right: 16px;
-                    padding-top: 12px;
-                    spacing: 4px;
-                    VerticalLayout {
-                        alignment: center;
-                        horizontal-stretch: 1;
-                        spacing: 2px;
-                        Text { text: "附加规则"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
-                        Text { text: "在脚本之后插入，排在配置规则前面"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
-                    }
-                    if root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.delete; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-delete"); } } }
-                    if root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.select-all; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-select-all"); } } }
-                    if !root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.bolt; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-presets"); } } }
-                    if !root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.add-circle; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-add"); } } }
-                }
-                Sections {
-                    sections: root.rules;
-                    long-press: true;
-                    clicked(id) => { root.clicked(id); }
-                    toggled(id, on) => { root.toggled(id, on); }
-                }
-                Sections {
-                    sections: root.bottom;
-                    clicked(id) => { root.clicked(id); }
-                    toggled(id, on) => { root.toggled(id, on); }
-                }
-            }
-        }
-    }
-}
-
 // `_IconSetPreviewView`: the set's icons as `SliverIconGrid` (88 wide at most, 8 apart, a
 // 56px plate holding the 40px icon over its label), searchable by label. Only the rows near
 // the view ask for their pictures.
@@ -5532,25 +5457,55 @@ component IconPickerPage inherits Rectangle {
 
 // `RuleItem` in a grouped run: the type's name over the payload, the target in its tone
 // with the issue mark, and the circle checkbox. A tap edits, or selects while selecting;
-// a long press opens the menu.
+// a long press opens the menu, or with `hold-drags` lifts the row (`ReorderDragStartListener`)
+// and reports the finger's window y while it moves.
 component RuleRowView inherits Rectangle {
     in property <RuleRow> item;
     in property <bool> first;
     in property <bool> last;
     in property <bool> selecting;
+    in property <bool> hold-drags;
+    in property <bool> lifted;
+    in property <length> lift;
+    // The issue mark is a button that sends `info:<id>`.
+    in property <bool> info-button;
     callback clicked(string);
+    callback hold(length);
+    callback drag(length);
+    callback drop();
     property <bool> long-fired;
-    property <length> top-r: root.first ? 16px : 0px;
-    property <length> bottom-r: root.last ? 16px : 0px;
+    property <length> top-r: root.first || root.lifted ? 16px : 0px;
+    property <length> bottom-r: root.last || root.lifted ? 16px : 0px;
     height: 56px;
     Rectangle {
         x: 16px;
+        y: root.lift;
         width: parent.width - 32px;
         background: Theme.s.card;
         border-top-left-radius: root.top-r;
         border-top-right-radius: root.top-r;
         border-bottom-left-radius: root.bottom-r;
         border-bottom-right-radius: root.bottom-r;
+        drop-shadow-offset-y: root.lifted ? 6px : 0px;
+        drop-shadow-blur: root.lifted ? 16px : 0px;
+        drop-shadow-color: root.lifted ? #00000033 : transparent;
+        rr-ta := TouchArea {
+            x: 0;
+            width: parent.width - 50px;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) { root.long-fired = false; }
+            }
+            clicked => {
+                if (root.long-fired) { return; }
+                root.clicked((root.selecting ? "select:" : "open:") + root.item.id);
+            }
+            moved => {
+                if (root.lifted) { root.drag(self.absolute-position.y + self.mouse-y); }
+            }
+            changed pressed => {
+                if (!self.pressed && root.lifted) { root.drop(); }
+            }
+        }
         Rectangle {
             border-top-left-radius: root.top-r;
             border-top-right-radius: root.top-r;
@@ -5573,7 +5528,11 @@ component RuleRowView inherits Rectangle {
                 horizontal-stretch: 0;
                 max-width: root.width * 0.42;
                 spacing: 4px;
-                if root.item.invalid: VerticalLayout { alignment: center; Icon { glyph: Icons.error; size: 18px; tint: Theme.s.error; } }
+                if root.item.invalid && !root.info-button: VerticalLayout { alignment: center; Icon { glyph: Icons.error; size: 18px; tint: Theme.s.error; } }
+                if root.item.invalid && root.info-button: VerticalLayout {
+                    alignment: center;
+                    IconButton { glyph: Icons.info; tint: Theme.s.error; clicked => { root.clicked("info:" + root.item.id); } }
+                }
                 Text {
                     text: root.item.target;
                     font-family: "monospace";
@@ -5584,29 +5543,22 @@ component RuleRowView inherits Rectangle {
                 }
             }
         }
-        if !root.last: Rectangle {
+        if !root.last && !root.lifted: Rectangle {
             x: 16px;
             y: parent.height - 1px;
             width: parent.width - 16px;
             height: 1px;
             background: Theme.s.outline-variant.with-alpha(0.6);
         }
-        rr-ta := TouchArea {
-            x: 0;
-            width: parent.width - 50px;
-            pointer-event(e) => {
-                if (e.kind == PointerEventKind.down) { root.long-fired = false; }
-            }
-            clicked => {
-                if (root.long-fired) { return; }
-                root.clicked((root.selecting ? "select:" : "open:") + root.item.id);
-            }
-        }
         Timer {
             interval: 500ms;
-            running: !root.selecting && rr-ta.pressed && !root.long-fired;
+            running: (root.hold-drags || !root.selecting) && rr-ta.pressed && !root.long-fired;
             triggered => {
                 root.long-fired = true;
+                if (root.hold-drags) {
+                    root.hold(rr-ta.absolute-position.y + rr-ta.mouse-y);
+                    return;
+                }
                 Anchor.x = root.absolute-position.x + 16px;
                 Anchor.y = root.absolute-position.y;
                 Anchor.w = root.width - 32px;
@@ -5627,6 +5579,134 @@ component RuleRowView inherits Rectangle {
                 if root.item.selected: Icon { glyph: Icons.check; size: 16px; tint: Theme.s.on-primary; }
             }
             TouchArea { clicked => { root.clicked("select:" + root.item.id); } }
+        }
+    }
+}
+
+// `AddedRulesSection`'s `SliverPrismReorderableList`: the rows lift after a hold, the others
+// slide aside as the lifted one passes their middle, and the order lands on release as
+// `move:<from>:<to>`.
+component AddedRuleList inherits Rectangle {
+    in property <[RuleRow]> rows;
+    in property <bool> selecting;
+    out property <bool> dragging: root.drag-from >= 0;
+    callback clicked(string);
+    property <length> row-h: 56px;
+    property <int> drag-from: -1;
+    property <length> press-y;
+    property <length> shift;
+    property <int> drag-to: root.drag-from < 0 ? -1 : max(0, min(root.rows.length - 1, root.drag-from + round(root.shift / root.row-h)));
+    height: root.rows.length * root.row-h;
+    for r[i] in root.rows: RuleRowView {
+        y: root.drag-from < 0 || i == root.drag-from ? i * root.row-h
+            : i > root.drag-from && i <= root.drag-to ? (i - 1) * root.row-h
+            : i < root.drag-from && i >= root.drag-to ? (i + 1) * root.row-h
+            : i * root.row-h;
+        z: i == root.drag-from ? 1 : 0;
+        animate y { duration: 150ms; easing: ease-out; }
+        item: r;
+        first: i == 0;
+        last: i == root.rows.length - 1;
+        selecting: root.selecting;
+        hold-drags: true;
+        info-button: true;
+        lifted: i == root.drag-from;
+        lift: i == root.drag-from ? root.shift : 0px;
+        clicked(a) => { root.clicked(a); }
+        hold(y) => {
+            root.press-y = y;
+            root.shift = 0px;
+            root.drag-from = i;
+        }
+        drag(y) => {
+            if (root.drag-from == i) { root.shift = y - root.press-y; }
+        }
+        drop => {
+            if (root.drag-from != i) { return; }
+            let from = root.drag-from;
+            let to = root.drag-to;
+            root.drag-from = -1;
+            root.shift = 0px;
+            if (from != to) { root.clicked("move:" + from + ":" + to); }
+        }
+    }
+}
+
+// `ExtendView`: 脚本, the profile's own 附加规则 under their header actions, then
+// 控制全局附加规则 and 出口; 立即应用 shows in the bar while the active profile has changes.
+component ExtendPage inherits Rectangle {
+    in property <[SetSection]> top;
+    in property <[RuleRow]> rules;
+    in property <[SetSection]> bottom;
+    in property <bool> selecting;
+    in property <bool> apply;
+    in property <bool> applying;
+    callback back();
+    callback clicked(string);
+    callback toggled(string, bool);
+    background: Theme.s.page;
+    VerticalLayout {
+        AppBar {
+            title: "扩展";
+            can-back: true;
+            back => { root.back(); }
+            if root.applying: VerticalLayout {
+                alignment: center;
+                Spinner { width: 22px; height: 22px; indeterminate: true; }
+            }
+            if root.apply || root.applying: VerticalLayout {
+                alignment: center;
+                TextButton {
+                    text: "立即应用";
+                    filled: true;
+                    enabled: !root.applying;
+                    clicked => { root.clicked("apply"); }
+                }
+            }
+        }
+        Flickable {
+            interactive: !ext-rules.dragging;
+            content-height: ext-body.preferred-height + Dock.pad;
+            ext-body := VerticalLayout {
+                alignment: start;
+                padding-bottom: 24px;
+                Sections {
+                    sections: root.top;
+                    clicked(id) => { root.clicked(id); }
+                    toggled(id, on) => { root.toggled(id, on); }
+                }
+                HorizontalLayout {
+                    padding-left: 30px;
+                    padding-right: 16px;
+                    padding-top: 12px;
+                    spacing: 4px;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text { text: "附加规则"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+                        Text { text: "在脚本之后插入，排在配置规则前面"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                    }
+                    if root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.delete; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-delete"); } } }
+                    if root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.select-all; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-select-all"); } } }
+                    if !root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.bolt; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-presets"); } } }
+                    if !root.selecting: VerticalLayout { alignment: center; IconButton { glyph: Icons.add-circle; tint: Theme.s.on-surface; clicked => { root.clicked("hdr-add"); } } }
+                }
+                VerticalLayout {
+                    padding-top: root.rules.length > 0 ? 8px : 0px;
+                    padding-bottom: root.rules.length > 0 ? 8px : 0px;
+                    ext-rules := AddedRuleList {
+                        rows: root.rules;
+                        selecting: root.selecting;
+                        clicked(a) => { root.clicked("ar:" + a); }
+                    }
+                }
+                Sections {
+                    sections: root.bottom;
+                    clicked(id) => { root.clicked(id); }
+                    toggled(id, on) => { root.toggled(id, on); }
+                }
+            }
         }
     }
 }
@@ -9093,7 +9173,7 @@ export component AppWindow inherits Window {
     // 扩展 ("extend") and the pages it opens ("ext"): 编辑全局规则 and the added rules pages,
     // the one on top described by `ext-meta`.
     in property <[SetSection]> ext-top;
-    in property <[SetSection]> ext-rules;
+    in property <[RuleRow]> ext-rules;
     in property <[SetSection]> ext-bottom;
     in property <bool> ext-selecting;
     in property <bool> ext-apply;

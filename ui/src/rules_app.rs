@@ -301,7 +301,7 @@ impl App {
     }
 
     /// A profile's own rules wait for 立即应用 or leaving 扩展; the app's apply now.
-    fn update_rules(self: &Arc<Self>, f: impl FnOnce(&mut Vec<Rule>)) {
+    pub(crate) fn update_rules(self: &Arc<Self>, f: impl FnOnce(&mut Vec<Rule>)) {
         let scope = scope();
         {
             let mut store = self.store.lock().unwrap();

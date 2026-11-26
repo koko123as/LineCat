@@ -7,7 +7,7 @@ use crate::mitm::{MitmModule, ModuleRead};
 use crate::mitm_network::Network;
 use crate::rules_app::{self, PAGES};
 use crate::store::State;
-use crate::{ActionItem, App, PageMeta, SetRow, SetSection};
+use crate::{ActionItem, App, PageMeta, RuleRow, SetRow, SetSection};
 use serde_json::{json, Value};
 use slint::{ModelRc, VecModel};
 use std::collections::BTreeSet;
@@ -71,13 +71,6 @@ fn top() -> String {
         .last()
         .cloned()
         .unwrap_or_default()
-}
-
-fn rule_body(r: &crate::rules::Rule) -> String {
-    let line = r.line();
-    line.strip_prefix(&format!("{},", r.action))
-        .unwrap_or(&line)
-        .to_string()
 }
 
 /// `_buildExit` rows as `ExitsSection` shows them.
@@ -153,14 +146,49 @@ fn global_meta(searching: bool) -> PageMeta {
     }
 }
 
-/// `ExtendView`'s sections: 脚本 (`ScriptContent`), the profile's own added rules (checks
-/// while `selected` holds any), then 控制全局附加规则 and 出口.
+/// `AddedRulesSection`'s `RuleItem`: custom exits and built-in targets toned, the rest marked.
+pub fn added_rule_row(r: &crate::custom_profile::ProfileRule, selected: bool) -> RuleRow {
+    use crate::profile_rules as pr;
+    let tone = if r.custom_exit {
+        Some(3)
+    } else if r.action == "SUB-RULE" {
+        None
+    } else {
+        match r.target.to_uppercase().as_str() {
+            "DIRECT" | "COMPATIBLE" => Some(1),
+            "REJECT" | "REJECT-DROP" => Some(2),
+            "PASS" | "PASS-RULE" | "GLOBAL" => Some(3),
+            _ => None,
+        }
+    };
+    RuleRow {
+        id: r.id.to_string().into(),
+        name: pr::name(&r.action).into(),
+        content: pr::real_content(r).into(),
+        target: pr::real_target(r).into(),
+        tone: tone.unwrap_or(4),
+        invalid: tone.is_none(),
+        selected,
+    }
+}
+
+/// `targetErrorTip`: what the info button on a marked rule says.
+pub fn added_rule_issue(r: &crate::custom_profile::ProfileRule) -> String {
+    if r.action == "SUB-RULE" {
+        format!("{} 是一个无效的SUB_RULE", r.sub_rule)
+    } else {
+        format!("{} 是一个无效的策略", r.target)
+    }
+}
+
+/// `ExtendView`'s sections: 脚本 (`ScriptContent`), the profile's own added rules as
+/// `RuleItem`s (selected ones checked), then 控制全局附加规则 and 出口.
 pub fn main_view(
     state: &State,
     profile_id: &str,
     selected: &BTreeSet<u64>,
     exits: &[ExitRow],
-) -> (Vec<SetSection>, Vec<SetSection>, Vec<SetSection>) {
+) -> (Vec<SetSection>, Vec<RuleRow>, Vec<SetSection>) {
     let script = state
         .profiles
         .iter()
@@ -178,24 +206,10 @@ pub fn main_view(
             row("script-go", "open", "前往配置脚本", ""),
         ],
     )];
-    let selecting = !selected.is_empty();
-    let own: Vec<SetRow> = extend::own_rules(state, profile_id)
-        .iter()
-        .map(|r| SetRow {
-            on: selected.contains(&r.id),
-            ..row(
-                &format!("rule:{}", r.id),
-                if selecting { "check" } else { "action" },
-                &r.action,
-                &rule_body(r),
-            )
-        })
+    let rules = crate::custom_profile::rules(state, profile_id)
+        .into_iter()
+        .map(|r| added_rule_row(r, selected.contains(&r.id)))
         .collect();
-    let rules = if own.is_empty() {
-        Vec::new()
-    } else {
-        vec![section("", own)]
-    };
     let (kept, all) = extend::enabled_count(state, profile_id);
     let mut bottom = vec![section(
         "",
@@ -729,10 +743,8 @@ impl App {
                         };
                         self.rules_clicked(p, a);
                     }
-                    _ if id.starts_with("rule:") || id.starts_with("long:rule:") => {
-                        self.host_rules(own);
-                        let p = if selecting { "rules-select" } else { "rules" };
-                        self.rules_clicked(p, id);
+                    _ if id.starts_with("ar:") => {
+                        self.added_rule_act(&pid, own, selecting, &id[3..])
                     }
                     _ => {
                         if let Some(exit) = id.strip_prefix("exit:") {
@@ -750,6 +762,49 @@ impl App {
             }
             p if PAGES.contains(&p) => {
                 self.rules_clicked(p, id);
+            }
+            _ => {}
+        }
+    }
+
+    /// An `AddedRulesSection` row's tap, select, info button or drag (`move:<from>:<to>`).
+    fn added_rule_act(
+        self: &Arc<Self>,
+        pid: &str,
+        own: Option<String>,
+        selecting: bool,
+        act: &str,
+    ) {
+        let (kind, arg) = act.split_once(':').unwrap_or((act, ""));
+        match kind {
+            "open" | "select" => {
+                self.host_rules(own);
+                let p = if selecting { "rules-select" } else { "rules" };
+                let id = if kind == "open" {
+                    format!("rule:{arg}")
+                } else {
+                    format!("long:rule:{arg}")
+                };
+                self.rules_clicked(p, &id);
+            }
+            "info" => {
+                let found = {
+                    let store = self.store.lock().unwrap();
+                    crate::custom_profile::rules(&store.state, pid)
+                        .into_iter()
+                        .find(|r| r.id.to_string() == arg)
+                        .map(added_rule_issue)
+                };
+                if let Some(text) = found {
+                    self.alert("提示", text);
+                }
+            }
+            "move" => {
+                let (from, to) = arg.split_once(':').unwrap_or_default();
+                if let (Ok(from), Ok(to)) = (from.parse::<usize>(), to.parse::<usize>()) {
+                    self.host_rules(own);
+                    self.update_rules(|list| crate::rules::reorder(list, from, to));
+                }
             }
             _ => {}
         }
@@ -864,5 +919,44 @@ impl App {
             }
             app.publish_ext();
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::custom_profile::ProfileRule;
+
+    fn rule(action: &str, target: &str, custom_exit: bool) -> ProfileRule {
+        ProfileRule {
+            id: 7,
+            action: action.into(),
+            content: "example.com".into(),
+            target: target.into(),
+            custom_exit,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn added_rules_mark_what_is_not_a_built_in_target() {
+        let tones = |r: &ProfileRule| {
+            let row = added_rule_row(r, false);
+            (row.tone, row.invalid)
+        };
+        assert_eq!(tones(&rule("DOMAIN", "direct", false)), (1, false));
+        assert_eq!(tones(&rule("DOMAIN", "REJECT-DROP", false)), (2, false));
+        assert_eq!(tones(&rule("DOMAIN", "GLOBAL", false)), (3, false));
+        assert_eq!(tones(&rule("DOMAIN", "落地", true)), (3, false));
+        let group = rule("DOMAIN-SUFFIX", "节点选择", false);
+        assert_eq!(tones(&group), (4, true));
+        assert_eq!(added_rule_row(&group, true).name.as_str(), "DOMAIN_SUFFIX");
+        assert_eq!(added_rule_issue(&group), "节点选择 是一个无效的策略");
+        let sub = ProfileRule {
+            sub_rule: "sub".into(),
+            ..rule("SUB-RULE", "", false)
+        };
+        assert_eq!(tones(&sub), (4, true));
+        assert_eq!(added_rule_issue(&sub), "sub 是一个无效的SUB_RULE");
     }
 }
