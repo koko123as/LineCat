@@ -134,6 +134,7 @@ struct Tap {
 fn tap(page: &str, id: &str, kind: &str, title: &str, on: bool) -> Tap {
     let ui = on_page(page);
     let before = frame();
+    let listed = shown(&ui, page);
     if page.is_empty() {
         ui.invoke_tools_clicked(id.into());
     } else if kind == "toggle" || kind == "switch" {
@@ -155,9 +156,24 @@ fn tap(page: &str, id: &str, kind: &str, title: &str, on: bool) -> Tap {
         id: id.into(),
         kind: kind.into(),
         title: title.into(),
-        changed: before != after || turned || picked,
+        changed: before != after || turned || picked || listed != shown(&ui, page),
         lands: ui.get_tools_page().into(),
     }
+}
+
+/// What the page lists, text included: a runner without CJK fonts draws no Chinese glyphs.
+fn shown(ui: &AppWindow, page: &str) -> Vec<String> {
+    let sections = if page.is_empty() {
+        ui.get_tools_sections()
+    } else {
+        ui.get_page_sections()
+    };
+    let mut out = Vec::new();
+    for s in sections.iter() {
+        out.push(format!("{}|{}", s.title, s.footer));
+        out.extend(s.rows.iter().map(|r| format!("{r:?}")));
+    }
+    out
 }
 
 fn rows(ui: &AppWindow, page: &str) -> Vec<(String, String, String, bool)> {
