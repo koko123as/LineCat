@@ -9587,6 +9587,44 @@ export component AppWindow inherits Window {
     changed profiles-page => {
         if (self.profiles-page == "") { root.profiles-over = false; }
     }
+    changed profiles-over => {
+        root.po-tall = false;
+        root.po-drag = 0px;
+    }
+    // The custom profile's sheet over the dashboard: its pages sit in the sheet's frame.
+    property <bool> po-tall;
+    property <length> po-drag;
+    property <float> po-fling;
+    property <length> po-last-y;
+    property <duration> po-last-t;
+    pure function po-sheet-h(ph: length) -> length {
+        return clamp((root.po-tall ? min(root.height * 0.9, ph) : root.height * 9 / 16) - root.po-drag, 0px, ph);
+    }
+    pure function po-w(pw: length) -> length {
+        return !root.profiles-over ? pw : root.wide ? min(pw, SideSheet.width(root.width)) : min(pw, 640px);
+    }
+    pure function po-x(pw: length) -> length {
+        return !root.profiles-over ? 0px : root.wide ? pw - root.po-w(pw) : (pw - root.po-w(pw)) / 2;
+    }
+    pure function po-top(ph: length) -> length {
+        return !root.profiles-over || root.wide ? 0px : ph - root.po-sheet-h(ph);
+    }
+    pure function po-y(ph: length) -> length {
+        return root.po-top(ph) + (root.profiles-over && !root.wide ? 24px : 0px);
+    }
+    function po-settle() {
+        let short = root.height * 9 / 16;
+        let d = root.po-drag;
+        let v = animation-tick() - root.po-last-t > 100ms ? 0 : root.po-fling;
+        root.po-drag = 0px;
+        if (d > (root.po-tall ? root.height * 0.9 - short / 2 : short / 2) || (!root.po-tall && SheetDrag.closes(d, short, v))) {
+            root.custom-back();
+        } else if (root.po-tall && d > 48px) {
+            root.po-tall = false;
+        } else if (!root.po-tall && d < -48px) {
+            root.po-tall = true;
+        }
+    }
     public function open-tools(page: string) {
         root.tools-over = root.tab != 3;
         root.tools-over-root = page;
@@ -9610,7 +9648,9 @@ export component AppWindow inherits Window {
     }
 
     property <bool> wide: root.width > 600px;
-    property <length> dock-pad: !root.wide && root.keyboard == 0 && root.floating-bar ? 88px + root.bottom-inset : 0px;
+    // The custom profile's bottom sheet over the dashboard is modal: it covers the bar.
+    property <bool> po-modal: root.profiles-over && root.profiles-page != "" && !root.wide;
+    property <length> dock-pad: !root.wide && root.keyboard == 0 && root.floating-bar && !root.po-modal ? 88px + root.bottom-inset : 0px;
     changed dock-pad => { Dock.pad = self.dock-pad; }
     init => { Dock.pad = self.dock-pad; }
     // `navigationItemsState`: 代理 shows once the Core has groups, or before the first
@@ -9925,15 +9965,50 @@ export component AppWindow inherits Window {
                         root.menu-open = true;
                     }
                 }
+                // `showNestedSheet`: a side sheet past the mobile width, else a bottom sheet
+                // whose grabber drags it between 9/16 and 0.9 of the window or closes it.
                 if root.profiles-over && root.profiles-page != "": Rectangle {
                     width: parent.width;
                     height: parent.height;
-                    background: Theme.s.page;
-                    TouchArea { }
+                    background: #00000066;
+                    TouchArea { clicked => { root.custom-back(); } }
+                    Rectangle {
+                        x: root.po-x(parent.width);
+                        y: root.po-top(parent.height);
+                        width: root.po-w(parent.width);
+                        height: parent.height - self.y;
+                        background: Theme.s.page;
+                        border-top-left-radius: root.wide ? 0 : 24px;
+                        border-top-right-radius: root.wide ? 0 : 24px;
+                        TouchArea { }
+                        if !root.wide: Rectangle {
+                            y: 0;
+                            height: 24px;
+                            Rectangle { y: 10px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+                            TouchArea {
+                                moved => {
+                                    root.po-drag += self.mouse-y - self.pressed-y;
+                                    root.po-fling = SheetDrag.speed(self.absolute-position.y + self.mouse-y, animation-tick(), root.po-last-y, root.po-last-t, root.po-fling);
+                                    root.po-last-y = self.absolute-position.y + self.mouse-y;
+                                    root.po-last-t = animation-tick();
+                                }
+                                pointer-event(e) => {
+                                    if (e.kind == PointerEventKind.down) {
+                                        root.po-fling = 0;
+                                        root.po-last-y = self.absolute-position.y + self.mouse-y;
+                                        root.po-last-t = animation-tick();
+                                    }
+                                    if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { root.po-settle(); }
+                                }
+                            }
+                        }
+                    }
                 }
                 if root.profiles-shown && root.profiles-page == "edit": EditProfilePage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     is-url: root.edit-is-url;
                     name <=> root.edit-name;
                     url <=> root.edit-url;
@@ -9948,8 +10023,10 @@ export component AppWindow inherits Window {
                     upload-file => { root.upload-file(); }
                 }
                 if (root.profiles-shown && root.profiles-page == "editor") || ((root.tab == 2 || root.tab == 0) && root.profiles-page == "preview"): EditorPage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     title: root.editor-title;
                     text <=> root.editor-text;
                     readonly: root.editor-readonly;
@@ -9977,8 +10054,10 @@ export component AppWindow inherits Window {
                     }
                 }
                 if root.profiles-shown && root.profiles-page == "custom": CustomProfilePage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     title: root.custom-title;
                     rows: root.custom-rows;
                     issues: root.custom-issues;
@@ -10014,8 +10093,10 @@ export component AppWindow inherits Window {
                     }
                 }
                 if root.profiles-shown && root.profiles-page == "rules": ProfileRulesPage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     rows: root.pr-rows;
                     total: root.pr-total;
                     sort-titles: root.pr-sort-titles;
@@ -10027,8 +10108,10 @@ export component AppWindow inherits Window {
                     act(a) => { root.pr-act(a); }
                 }
                 if root.profiles-shown && (root.profiles-page == "rule" || root.profiles-page == "rule-presets"): ProfileFormPage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     title: root.pr-form-title;
                     issue: root.pr-form-issue;
                     sections: root.pr-form-sections;
@@ -10038,8 +10121,10 @@ export component AppWindow inherits Window {
                     toggled(id, on) => { root.pr-form-toggled(id, on); }
                 }
                 if root.profiles-shown && root.profiles-page == "placeholder": PlaceholderPage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     title: root.placeholder-title;
                     back => {
                         root.profiles-page = root.placeholder-parent != "" ? root.placeholder-parent : root.custom-open ? "custom" : "";
@@ -10047,8 +10132,10 @@ export component AppWindow inherits Window {
                     }
                 }
                 if root.profiles-shown && root.profiles-page == "group": EditProxyGroupPage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     title: root.pg-title;
                     issue: root.pg-issue;
                     head: root.pg-head;
@@ -10061,8 +10148,10 @@ export component AppWindow inherits Window {
                     member(a) => { root.pg-member(a); }
                 }
                 if root.profiles-shown && root.profiles-page == "pmore": SettingsPage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     title: root.pm-meta.title;
                     action-glyph: Glyphs.of(root.pm-meta.action);
                     action2-glyph: Glyphs.of(root.pm-meta.action2);
@@ -10092,8 +10181,10 @@ export component AppWindow inherits Window {
                     }
                 }
                 if root.profiles-shown && root.profiles-page == "extend": ExtendPage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     top: root.ext-top;
                     rules: root.ext-rules;
                     bottom: root.ext-bottom;
@@ -10105,8 +10196,10 @@ export component AppWindow inherits Window {
                     toggled(id, on) => { root.ext-toggled(id, on); }
                 }
                 if root.profiles-shown && root.profiles-page == "ext": SettingsPage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     title: root.ext-meta.title;
                     action-glyph: Glyphs.of(root.ext-meta.action);
                     action2-glyph: Glyphs.of(root.ext-meta.action2);
@@ -10126,8 +10219,10 @@ export component AppWindow inherits Window {
                     toggled(id, on) => { root.ext-toggled(id, on); }
                 }
                 if root.profiles-shown && root.profiles-page == "group-members": MemberPickerPage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     title: root.pg-provider ? "添加筛选" : "添加节点";
                     sections: root.pg-pick-sections;
                     searchable: root.pg-pick-searchable;
@@ -10138,8 +10233,10 @@ export component AppWindow inherits Window {
                     pick(a) => { root.pg-pick(a); }
                 }
                 if root.profiles-shown && root.profiles-page == "group-icon": IconPickerPage {
-                    width: parent.width;
-                    height: parent.height;
+                    x: root.po-x(parent.width);
+                    y: root.po-y(parent.height);
+                    width: root.po-w(parent.width);
+                    height: parent.height - root.po-y(parent.height);
                     value: root.gi-value;
                     value-title: root.gi-title;
                     value-subtitle: root.gi-subtitle;
@@ -10488,7 +10585,7 @@ export component AppWindow inherits Window {
             }
             // The floating dock (an approved departure from FlClash's bar): a rounded bar
             // clear of the screen's sides and bottom, with the pages scrolling under it.
-            if !root.wide && root.keyboard == 0 && root.floating-bar: Rectangle {
+            if !root.wide && root.keyboard == 0 && root.floating-bar && !root.po-modal: Rectangle {
                 height: 0px;
                 Rectangle {
                     x: 12px;
@@ -10513,7 +10610,7 @@ export component AppWindow inherits Window {
             }
             // prism_ui's `NavigationBar`, where the dock is turned off: a bar of the floating
             // level, 80 high above the bottom inset, its pages ending at its top.
-            if !root.wide && root.keyboard == 0 && !root.floating-bar: Rectangle {
+            if !root.wide && root.keyboard == 0 && !root.floating-bar && !root.po-modal: Rectangle {
                 height: 80px + root.bottom-inset;
                 background: Theme.is-dark ? Theme.s.block : Theme.s.card;
                 TouchArea { }

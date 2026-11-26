@@ -2287,6 +2287,11 @@ fn main() {
         ("dashboard-ipsheet", 0, "", "", 1, "ipsheet"),
         ("dashboard-ipsheet-small", 0, "", "", 1, "ipsheet"),
         ("dashboard-ipsheet-wide", 0, "", "", 1, "ipsheet"),
+        ("dashboard-ipsheet-tablet", 0, "", "", 1, "ipsheet"),
+        ("dash-custom", 0, "", "", 1, "dash-custom"),
+        ("dash-custom-small", 0, "", "", 1, "dash-custom"),
+        ("dash-custom-wide", 0, "", "", 1, "dash-custom"),
+        ("dash-custom-tablet", 0, "", "", 1, "dash-custom"),
         ("dashboard-failed-small", 0, "", "", 1, "failed"),
         ("dashboard-1280x700", 0, "", "", 1, ""),
         ("dashboard-1000x900", 0, "", "", 1, ""),
@@ -3260,6 +3265,11 @@ fn main() {
             ui.set_profiles_page("".into());
         }
         ui.set_tools_over(false);
+        // "dash-custom": a custom profile's page opened from the dashboard, in its sheet.
+        ui.set_profiles_over(*overlay == "dash-custom");
+        if *overlay == "dash-custom" {
+            ui.set_profiles_page("custom".into());
+        }
         ui.set_tools_editor_title_editable(false);
         if name.starts_with("extend-scripts") {
             ui.invoke_open_tools("scripts".into());
@@ -3444,7 +3454,7 @@ fn main() {
             ui.set_ctx_w(w as f32 - 32.0);
             ui.set_ctx_h(72.0);
         }
-        ui.set_custom_open(*page == "custom" || *overlay == "custom");
+        ui.set_custom_open(*page == "custom" || *overlay == "custom" || *overlay == "dash-custom");
         ui.set_custom_title(
             if *overlay == "long" {
                 "一个名字很长很长的自定义分流配置用来检查标题省略"
