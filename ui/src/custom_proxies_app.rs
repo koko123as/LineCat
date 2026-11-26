@@ -234,6 +234,16 @@ pub fn editor_sections(d: &Draft) -> Vec<SetSection> {
     }
     out.push(section("认证", auth));
     out.push(section("选项", options));
+    if !d.is_new {
+        let delete = SetRow {
+            id: "cp-delete".into(),
+            kind: "danger".into(),
+            title: "删除".into(),
+            enabled: true,
+            ..Default::default()
+        };
+        out.push(section("操作", vec![delete]));
+    }
     out
 }
 
@@ -607,7 +617,7 @@ impl App {
         }
         let text = self.delete_message(&ids, "确定删除选中的代理吗？");
         let arg = ids.into_iter().collect::<Vec<_>>().join(",");
-        self.confirm("提示", text, "cp-delete", arg);
+        self.confirm_labeled("提示", text, "cp-delete", arg, ("删除", "", true));
     }
 
     /// `_deleteMessage`: the plain question, or which custom profiles still use the proxies.
@@ -699,7 +709,7 @@ impl App {
             "edit" => self.open_custom_proxy(Some(&p.id)),
             "delete" => {
                 let text = self.delete_message(&[p.id.clone()].into(), "确定删除当前代理吗？");
-                self.confirm("提示", text, "cp-delete", p.id)
+                self.confirm_labeled("提示", text, "cp-delete", p.id, ("删除", "", true))
             }
             _ => {}
         }
@@ -708,11 +718,19 @@ impl App {
     /// The confirmed delete of the proxies `ids` names, comma separated.
     pub(crate) fn delete_custom_proxy(self: &Arc<Self>, ids: &str) {
         let ids: BTreeSet<String> = ids.split(',').map(String::from).collect();
-        {
+        let closing = {
             let mut st = state().lock().unwrap();
             st.selected.retain(|id| !ids.contains(id));
-        }
+            let closing = st.draft.as_ref().is_some_and(|d| ids.contains(&d.proxy.id));
+            if closing {
+                st.draft = None;
+            }
+            closing
+        };
         self.update_custom_proxies(move |s| s.retain(|p| !ids.contains(&p.id)));
+        if closing {
+            self.ui(|ui| ui.set_tools_page(LIST.into()));
+        }
     }
 
     pub(crate) fn draft(&self) -> Option<Draft> {
@@ -728,6 +746,11 @@ impl App {
             "action" => self.spawn(|app| app.save_custom_proxy()),
             "action2" => self.open_link_dialog(),
             "cp-add" => self.open_option_sheet(&d),
+            "cp-delete" => {
+                let id = p.id.clone();
+                let text = self.delete_message(&[id.clone()].into(), "确定删除当前代理吗？");
+                self.confirm_labeled("提示", text, "cp-delete", id, ("删除", "", true));
+            }
             "cp-f:name" => self.open_input("cp-in:name", "名称", "", &p.name()),
             "cp-f:server" => self.open_input(
                 "cp-in:server",
@@ -1081,11 +1104,25 @@ mod tests {
     }
 
     #[test]
+    fn only_a_saved_proxy_offers_delete() {
+        let saved = Draft::open(p("1", json!({"name": "a", "type": "ss"})), false);
+        let last = editor_sections(&saved).pop().unwrap();
+        assert_eq!(last.title, "操作");
+        let row = last.rows.row_data(0).unwrap();
+        assert_eq!(
+            (row.id.as_str(), row.kind.as_str()),
+            ("cp-delete", "danger")
+        );
+        let new = Draft::open(p("", json!({"name": "", "type": "ss"})), true);
+        assert!(editor_sections(&new).iter().all(|s| s.title != "操作"));
+    }
+
+    #[test]
     fn an_easytier_proxy_shows_the_network_section() {
         let d = Draft::open(p("1", json!({"name": "e", "type": "easytier"})), false);
         let s = editor_sections(&d);
         let titles: Vec<String> = s.iter().map(|s| s.title.to_string()).collect();
-        assert_eq!(titles, ["基础信息", "网络", "认证", "选项"]);
+        assert_eq!(titles, ["基础信息", "网络", "认证", "选项", "操作"]);
         let ids: Vec<String> = s[1].rows.iter().map(|r| r.id.to_string()).collect();
         assert_eq!(ids[0], "cp-f:networkName");
         assert_eq!(s[1].rows.row_data(2).unwrap().kind, "open");

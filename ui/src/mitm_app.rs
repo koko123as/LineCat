@@ -60,6 +60,12 @@ fn state() -> &'static Mutex<State> {
     S.get_or_init(Default::default)
 }
 
+/// The tools editor opens for something else, so its save is not a MITM text's even when
+/// the page went from one editor to the next without leaving it.
+pub(crate) fn release_editor() {
+    state().lock().unwrap().editor = None;
+}
+
 fn row(id: &str, kind: &str, title: &str, subtitle: &str) -> SetRow {
     SetRow {
         id: id.into(),
@@ -2062,5 +2068,12 @@ mod tests {
         assert_eq!(page_meta(&s, "mitm-modules").unwrap().action2, "");
         assert_eq!(page_meta(&s, "mitm-hosts").unwrap().empty, "暂无主机名");
         assert!(page_meta(&s, "rule-sets").is_none());
+    }
+
+    #[test]
+    fn another_editor_takes_the_save() {
+        state().lock().unwrap().editor = Some((Editor::Hosts, "mitm".into()));
+        crate::rule_sets_app::release_editor();
+        assert!(state().lock().unwrap().editor.is_none());
     }
 }

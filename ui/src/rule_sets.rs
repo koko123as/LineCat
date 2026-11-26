@@ -139,6 +139,23 @@ pub fn file_stem(name: &str) -> String {
     }
 }
 
+/// `showNamedUrlsForm` in batch: each new URL a set named uniquely from its file.
+pub fn batch_imports(sets: &[RuleSet], input: &str) -> Vec<(String, String)> {
+    let mut taken: Vec<String> = sets.iter().map(|s| s.label.clone()).collect();
+    let mut out = Vec::new();
+    for url in crate::mitm::module_urls(input) {
+        if sets.iter().any(|s| s.url == url) {
+            continue;
+        }
+        let label = unique_label(&url_stem(&url), "规则集", |l| {
+            taken.iter().any(|t| t == l)
+        });
+        taken.push(label.clone());
+        out.push((label, url));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,5 +223,23 @@ mod tests {
         s.url.clear();
         s.format = "mrs".into();
         assert!(!s.is_editable() && !s.is_text());
+    }
+
+    #[test]
+    fn several_urls_import_as_new_sets() {
+        let sets = [RuleSet {
+            label: "ads".into(),
+            url: "https://a.test/known.yaml".into(),
+            ..Default::default()
+        }];
+        let input = "https://a.test/ads.yaml, https://b.test/ads.yaml\nhttps://a.test/known.yaml https://a.test/ads.yaml";
+        let got = batch_imports(&sets, input);
+        assert_eq!(
+            got,
+            [
+                ("ads(1)".to_string(), "https://a.test/ads.yaml".to_string()),
+                ("ads(2)".to_string(), "https://b.test/ads.yaml".to_string()),
+            ]
+        );
     }
 }

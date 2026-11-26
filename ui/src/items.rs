@@ -82,6 +82,26 @@ pub fn import_name(scripts: &[Script], file: &str) -> String {
     name
 }
 
+/// `_applyIfInUse`: whether the current profile runs the script.
+pub fn script_in_use(state: &crate::store::State, id: &str) -> bool {
+    let active = state.active.as_deref();
+    state
+        .profiles
+        .iter()
+        .any(|p| Some(p.id.as_str()) == active && p.script_id.as_deref() == Some(id))
+}
+
+/// `deleteScript`: the profiles running it stop; true when the current one ran it.
+pub fn drop_script(state: &mut crate::store::State, id: &str) -> bool {
+    let in_use = script_in_use(state, id);
+    for p in &mut state.profiles {
+        if p.script_id.as_deref() == Some(id) {
+            p.script_id = None;
+        }
+    }
+    in_use
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,5 +128,26 @@ mod tests {
         assert!(script_name_issue(&s, Some("1"), "main").is_none());
         assert_eq!(import_name(&s, "https://x.com/a/main.js?v=1"), "main (2)");
         assert_eq!(import_name(&s, ""), "脚本");
+    }
+
+    #[test]
+    fn the_current_profile_reapplies_its_script() {
+        use crate::store::{Profile, State};
+        let profile = |id: &str, script: Option<&str>| Profile {
+            id: id.into(),
+            script_id: script.map(String::from),
+            ..Default::default()
+        };
+        let mut st = State {
+            profiles: vec![profile("a", Some("s1")), profile("b", Some("s2"))],
+            active: Some("a".into()),
+            ..Default::default()
+        };
+        assert!(script_in_use(&st, "s1"));
+        assert!(!script_in_use(&st, "s2"));
+        assert!(!drop_script(&mut st, "s2"));
+        assert_eq!(st.profiles[1].script_id, None);
+        assert!(drop_script(&mut st, "s1"));
+        assert_eq!(st.profiles[0].script_id, None);
     }
 }

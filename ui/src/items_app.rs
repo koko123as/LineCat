@@ -376,8 +376,24 @@ impl App {
     /// `script-delete` confirmed.
     pub(crate) fn delete_script(self: &Arc<Self>, id: &str) {
         let _ = std::fs::remove_file(self.script_path(id));
-        let id = id.to_string();
-        self.update_items(move |s| s.scripts.retain(|x| x.id != id));
+        let in_use = {
+            let mut store = self.store.lock().unwrap();
+            let in_use = items::drop_script(&mut store.state, id);
+            store.state.settings.scripts.retain(|x| x.id != id);
+            store.save();
+            in_use
+        };
+        self.publish_settings();
+        if in_use {
+            self.reapply();
+        }
+    }
+
+    /// `_applyIfInUse`: the current profile runs again with the script's new content.
+    fn reapply_if_running(self: &Arc<Self>, id: &str) {
+        if items::script_in_use(&self.store.lock().unwrap().state, id) {
+            self.reapply();
+        }
     }
 
     pub(crate) fn open_tools_editor(self: &Arc<Self>, title: &str, text: &str, parent: &str) {
@@ -414,11 +430,15 @@ impl App {
                 if let Err(e) = std::fs::write(&path, text) {
                     return self.toast(e.to_string());
                 }
-                self.update_items(move |s| {
-                    if let Some(x) = s.scripts.iter_mut().find(|x| x.id == id) {
-                        x.updated = now_ms();
+                self.update_items({
+                    let id = id.clone();
+                    move |s| {
+                        if let Some(x) = s.scripts.iter_mut().find(|x| x.id == id) {
+                            x.updated = now_ms();
+                        }
                     }
                 });
+                self.reapply_if_running(&id);
                 self.ui(|ui| ui.set_tools_page("scripts".into()));
             }
             None => {
@@ -476,12 +496,16 @@ impl App {
     fn write_script(self: &Arc<Self>, id: &str, url: &str, bytes: &[u8]) -> Result<(), String> {
         std::fs::write(self.script_path(id), bytes).map_err(|e| e.to_string())?;
         let (id, url) = (id.to_string(), url.to_string());
-        self.update_items(move |s| {
-            if let Some(x) = s.scripts.iter_mut().find(|x| x.id == id) {
-                x.url = Some(url);
-                x.updated = now_ms();
+        self.update_items({
+            let id = id.clone();
+            move |s| {
+                if let Some(x) = s.scripts.iter_mut().find(|x| x.id == id) {
+                    x.url = Some(url);
+                    x.updated = now_ms();
+                }
             }
         });
+        self.reapply_if_running(&id);
         Ok(())
     }
 

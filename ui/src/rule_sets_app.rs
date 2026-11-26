@@ -21,8 +21,10 @@ fn editing() -> &'static Mutex<Editing> {
     E.get_or_init(Default::default)
 }
 
+/// Another page takes the tools editor: neither a rule set nor a MITM text saves its text.
 pub(crate) fn release_editor() {
     editing().lock().unwrap().set = None;
+    crate::mitm_app::release_editor();
 }
 
 pub fn page_meta(sets: &[RuleSet], page: &str) -> Option<PageMeta> {
@@ -250,6 +252,7 @@ impl App {
                     .unwrap_or_default()
             })
             .unwrap_or_default();
+        crate::mitm_app::release_editor();
         *editing().lock().unwrap() = Editing {
             set: Some(s.map(|s| s.id.clone())),
             pending: String::new(),
@@ -331,6 +334,7 @@ impl App {
         let sets = self.rule_sets();
         let issue = match key {
             "rs-name" => rule_sets::label_issue(&sets, None, v1, false),
+            "rs-url" if crate::mitm::module_urls(v2).len() > 1 => None,
             "rs-url" => {
                 rule_sets::label_issue(&sets, None, v1, true).or_else(|| rule_sets::url_issue(v2))
             }
@@ -353,6 +357,17 @@ impl App {
                 self.spawn(move |app| {
                     if app.put_rule_set(s, None, Some(content), false) {
                         app.ui(|ui| ui.set_tools_page("rule-sets".into()));
+                    }
+                });
+            }
+            "rs-url" if crate::mitm::module_urls(v2).len() > 1 => {
+                let batch = rule_sets::batch_imports(&sets, v2);
+                if batch.is_empty() {
+                    self.toast("规则集当前已存在");
+                }
+                self.spawn(move |app| {
+                    for (label, url) in batch {
+                        app.put_rule_set(new_set(&label, &url), None, None, false);
                     }
                 });
             }

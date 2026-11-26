@@ -278,6 +278,17 @@ pub fn apply(current: &mut State, restored: State, option: RestoreOption, overri
     current.profile_rules.extend(restored.profile_rules);
     current.proxy_dialers.extend(restored.proxy_dialers);
     current.disabled_rules.extend(restored.disabled_rules);
+    // The icon records ride along as FlClash's database does; the later use of a URL wins.
+    for r in restored.icon_records {
+        let newer = current
+            .icon_records
+            .iter()
+            .find(|c| c.url == r.url)
+            .is_none_or(|c| c.last_accessed_ms < r.last_accessed_ms);
+        if newer {
+            crate::icon_picker::put_record(&mut current.icon_records, &r.url, r.last_accessed_ms);
+        }
+    }
     for p in restored.profiles {
         match profiles.iter_mut().find(|q| q.id == p.id) {
             Some(q) => *q = p,
@@ -537,6 +548,31 @@ mod tests {
         assert_eq!(here.settings.access_control.reject_list, ["com.a"]);
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(read(&zip(&[])).err().as_deref(), Some("无效备份文件"));
+    }
+
+    #[test]
+    fn icon_records_restore_with_the_later_use() {
+        use crate::icon_picker::IconRecord;
+        let rec = |url: &str, ms: u64| IconRecord {
+            url: url.into(),
+            last_accessed_ms: ms,
+        };
+        let mut here = State {
+            icon_records: vec![rec("a", 5), rec("b", 9)],
+            ..Default::default()
+        };
+        let backup = State {
+            icon_records: vec![rec("a", 7), rec("b", 1), rec("c", 3)],
+            ..Default::default()
+        };
+        apply(&mut here, backup, RestoreOption::OnlyProfiles, false);
+        let mut got: Vec<(String, u64)> = here
+            .icon_records
+            .into_iter()
+            .map(|r| (r.url, r.last_accessed_ms))
+            .collect();
+        got.sort();
+        assert_eq!(got, [("a".into(), 7), ("b".into(), 9), ("c".into(), 3)]);
     }
 
     #[test]
