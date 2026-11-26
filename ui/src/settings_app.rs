@@ -3,9 +3,7 @@
 //! developer.dart, about.dart, theme.dart).
 
 use crate::settings_view::{self, choices};
-use crate::{
-    overrides, profile, store, ActionItem, Anchor, App, AppWindow, PageMeta, SetSection, CALL,
-};
+use crate::{overrides, store, ActionItem, Anchor, App, AppWindow, PageMeta, SetSection, CALL};
 use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::sync::Arc;
@@ -411,7 +409,9 @@ impl App {
             let page = ui.get_tools_page();
             let sections = match page.as_str() {
                 "general" => settings_view::general(&settings),
-                "developer" => settings_view::developer(&settings),
+                "developer" => {
+                    settings_view::developer(&settings, crate::update::self_update_arch().is_some())
+                }
                 "about" => settings_view::about(&settings),
                 "backup" => app.backup_sections(&settings),
                 "advanced" => settings_view::advanced(&settings),
@@ -775,6 +775,7 @@ impl App {
             ("developer", "message-test") => self.message_test(),
             ("developer", "logs-test") => self.logs_test(),
             ("developer", "live-status-test") => self.live_preview(),
+            ("developer", "update-test") => self.test_update_download(),
             ("developer", "clear-data") => self.confirm(
                 "提示",
                 "确定要清除所有数据？".into(),
@@ -1252,27 +1253,6 @@ impl App {
         }
     }
 
-    /// `checkForUpdate` on the stable channel: the latest release of the repository.
-    pub(crate) fn check_update(self: &Arc<Self>, by_user: bool) {
-        self.ui(|ui| ui.set_update_checking(true));
-        self.spawn(move |app| {
-            let version = app.app_version.lock().unwrap().clone();
-            let latest = profile::latest_release("koko123as/LineCat");
-            app.ui(|ui| ui.set_update_checking(false));
-            match latest {
-                Ok(Some(release)) if settings_view::is_newer(&release.tag, &version) => {
-                    app.alert(
-                        "发现新版本",
-                        format!("{}\n\n{}\n\n{}", release.tag, release.notes, release.url),
-                    );
-                }
-                Ok(_) if by_user => app.toast("当前应用已经是最新版了"),
-                Err(e) if by_user => app.toast(e),
-                _ => {}
-            }
-        });
-    }
-
     /// What the shell's hello says about the app, and what runs once it is connected.
     pub(crate) fn on_connected(self: &Arc<Self>, hello: &Value) {
         if let Some(v) = hello.get("versionName").and_then(Value::as_str) {
@@ -1291,6 +1271,7 @@ impl App {
             .started_once
             .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
+            self.clear_update_downloads();
             if auto_check {
                 self.check_update(false);
             }

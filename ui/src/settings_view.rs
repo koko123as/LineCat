@@ -387,7 +387,20 @@ pub fn valid_cidr(value: &str) -> bool {
 }
 
 /// `DeveloperView`.
-pub fn developer(settings: &Settings) -> Vec<SetSection> {
+/// `can_update`: the build has a release file to install (`selfUpdateAsset`).
+pub fn developer(settings: &Settings, can_update: bool) -> Vec<SetSection> {
+    let mut options = vec![
+        row("message-test", "action", "", "消息测试", ""),
+        row("logs-test", "action", "", "日志测试", ""),
+    ];
+    if can_update {
+        options.push(row("update-test", "action", "", crate::update::TEST, ""));
+    }
+    options.extend([
+        row("live-status-test", "action", "", "实时状态卡片测试", ""),
+        row("clear-data", "action", "", "清除数据", ""),
+        row("prune-cache", "action", "", "修剪缓存", ""),
+    ]);
     vec![
         section(
             "",
@@ -398,17 +411,7 @@ pub fn developer(settings: &Settings) -> Vec<SetSection> {
                 settings.developer_mode,
             )],
         ),
-        section(
-            "选项",
-            "",
-            vec![
-                row("message-test", "action", "", "消息测试", ""),
-                row("logs-test", "action", "", "日志测试", ""),
-                row("live-status-test", "action", "", "实时状态卡片测试", ""),
-                row("clear-data", "action", "", "清除数据", ""),
-                row("prune-cache", "action", "", "修剪缓存", ""),
-            ],
-        ),
+        section("选项", "", options),
     ]
 }
 

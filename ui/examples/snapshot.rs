@@ -330,7 +330,7 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
     ui.set_tools_sections(m(settings_view::tools(&s, width <= 600, &[])));
     let sections = match page {
         "general" => settings_view::general(&s),
-        "developer" => settings_view::developer(&s),
+        "developer" => settings_view::developer(&s, true),
         "about" => settings_view::about(&s),
         "map" => settings_view::map(&s.general.hosts, ""),
         "dns" => {

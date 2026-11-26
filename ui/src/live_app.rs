@@ -80,13 +80,19 @@ impl App {
                 l.asking = false;
                 (l.preview, l.list().get(l.front).cloned())
             };
-            if !preview && front == Some(Status::Core(Core::Running)) {
-                a.restart_core();
+            match front {
+                Some(Status::Core(Core::Running)) if !preview => a.restart_core(),
+                Some(Status::Downloading { .. }) if !preview => a.cancel_update_download(),
+                _ => {}
             }
             a.publish_live();
         });
         let a = self.clone();
-        ui.on_live_discard(move || a.with_live(|_| {}));
+        ui.on_live_discard(move || {
+            if !a.live.lock().unwrap().preview {
+                a.discard_update();
+            }
+        });
     }
 
     fn with_live(self: &Arc<Self>, f: impl FnOnce(&mut Live)) {
@@ -107,6 +113,10 @@ impl App {
             }
             Some(Status::Core(Core::Stopped)) if !preview => self.restart_core(),
             Some(Status::Consent(_)) if !preview => self.review_modules(),
+            Some(Status::Ready { .. }) if !preview => {
+                self.with_live(|l| l.open = false);
+                self.install_update();
+            }
             _ => {}
         }
     }

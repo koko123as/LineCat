@@ -100,6 +100,8 @@ pub use custom_proxies_app::{
     list_sections as custom_proxies_sections,
 };
 pub mod hct;
+pub mod update;
+mod update_app;
 
 slint::include_modules!();
 
@@ -173,6 +175,7 @@ struct App {
     dash_heights: Mutex<Vec<f32>>,
     dash_table: Mutex<dash_app::DashTable>,
     live: Mutex<live_app::Live>,
+    update: Mutex<update_app::Download>,
     logs_scheduled: AtomicBool,
     toast_seq: AtomicU64,
     last_id: Mutex<u64>,
@@ -2166,6 +2169,7 @@ impl App {
             ("ci-replace", _) => self.custom_import_replace(yes),
             ("icon-record-delete", true) => self.delete_icon_record(&arg),
             (a, _) if a.starts_with("mitm-") => self.mitm_confirmed(a, &arg, yes),
+            (a, _) if a.starts_with("update-") => self.update_confirmed(a, &arg, yes),
             ("ua-delete", true) => self.delete_user_agent(&arg),
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings" | "location-settings", true) => self.open_app_settings(),
@@ -2516,6 +2520,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         dash_heights: Mutex::new(Vec::new()),
         dash_table: Mutex::new(dash_app::DashTable::default()),
         live: Mutex::new(live_app::Live::default()),
+        update: Mutex::new(update_app::Download::default()),
         logs_scheduled: AtomicBool::new(false),
         toast_seq: AtomicU64::new(0),
         last_id: Mutex::new(0),

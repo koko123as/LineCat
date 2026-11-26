@@ -1,13 +1,18 @@
 package com.follow.clash
 
+import android.app.PendingIntent
 import android.content.Context
+import android.content.pm.PackageInstaller
 import android.graphics.Bitmap
 import android.net.LocalServerSocket
 import android.net.LocalSocket
 import android.os.Build
 import android.os.Process
+import androidx.core.content.IntentCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.follow.clash.common.GlobalState
+import com.follow.clash.common.PendingCallback
+import com.follow.clash.common.registerReceiverCompat
 import com.follow.clash.core.Core
 import com.follow.clash.core.NativeCore
 import com.follow.clash.models.SharedState
@@ -64,6 +69,10 @@ object UiBridge {
         if (started) return
         started = true
         runCatching { Core.load() }.onFailure { GlobalState.log("Unable to load the Core: $it") }
+        context.applicationContext.registerReceiverCompat(
+            installStatusReceiver,
+            android.content.IntentFilter(installStatusAction()),
+        )
         NetworkObserver.start()
         context.getSystemService(android.net.ConnectivityManager::class.java)?.let { connectivity ->
             DefaultNetworkWatcher(connectivity) { state ->
@@ -472,7 +481,100 @@ object UiBridge {
             ok { addProperty("opened", opened) }
         }
 
+        // AppPlugin.installPackage: the PackageInstaller status, once the session ends.
+        "update.install" -> {
+            val apk = File(request.get("path")?.asString ?: error("path missing"))
+            ok { addProperty("status", installPackage(apk)) }
+        }
+
         else -> error("unknown op")
+    }
+
+    private val installCallback = PendingCallback<Int>()
+
+    private val installStatusReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: android.content.Intent?) {
+            if (intent == null) return
+            val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+            if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                confirmInstall(intent)
+                return
+            }
+            if (status != PackageInstaller.STATUS_SUCCESS) {
+                val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+                GlobalState.log("Package install ended with $status: $message")
+            }
+            installCallback.resolve(status)
+        }
+    }
+
+    private fun installStatusAction() = "${GlobalState.application.packageName}.action.UI_INSTALL_STATUS"
+
+    private suspend fun installPackage(apk: File): Int = suspendCancellableCoroutine { continuation ->
+        val callback: (Int) -> Unit = { status -> if (continuation.isActive) continuation.resume(status) }
+        installCallback.replace(callback, supersededValue = PackageInstaller.STATUS_FAILURE_ABORTED)
+        continuation.invokeOnCancellation { installCallback.cancel(callback) }
+        GlobalState.launch(Dispatchers.IO) {
+            try {
+                commitInstallSession(apk)
+            } catch (error: Exception) {
+                GlobalState.log("Package install failed: $error")
+                installCallback.resolve(PackageInstaller.STATUS_FAILURE)
+            }
+        }
+    }
+
+    private fun commitInstallSession(apk: File) {
+        val application = GlobalState.application
+        val installer = application.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            .apply { setAppPackageName(application.packageName) }
+        val sessionId = installer.createSession(params)
+        try {
+            installer.openSession(sessionId).use { session ->
+                apk.inputStream().use { input ->
+                    session.openWrite(apk.name, 0, apk.length()).use { output ->
+                        input.copyTo(output, 1 shl 16)
+                        session.fsync(output)
+                    }
+                }
+                session.commit(installStatusIntent(sessionId).intentSender)
+            }
+        } catch (error: Exception) {
+            runCatching { installer.abandonSession(sessionId) }
+            throw error
+        }
+    }
+
+    // The installer writes the status into the intent's extras.
+    private fun installStatusIntent(sessionId: Int): PendingIntent {
+        val application = GlobalState.application
+        val intent = android.content.Intent(installStatusAction()).setPackage(application.packageName)
+        val mutable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+        return PendingIntent.getBroadcast(
+            application,
+            sessionId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or mutable,
+        )
+    }
+
+    private fun confirmInstall(intent: android.content.Intent) = GlobalState.launch(Dispatchers.Main) {
+        val confirmation = IntentCompat.getParcelableExtra(
+            intent,
+            android.content.Intent.EXTRA_INTENT,
+            android.content.Intent::class.java,
+        )
+        if (confirmation == null) {
+            installCallback.resolve(PackageInstaller.STATUS_FAILURE)
+            return@launch
+        }
+        val host = activity
+        if (host != null) {
+            host.startActivity(confirmation)
+        } else {
+            GlobalState.application.startActivity(confirmation.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
     }
 
     private fun der(request: JsonObject): ByteArray =
