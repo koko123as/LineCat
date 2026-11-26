@@ -16,6 +16,7 @@
         android:required="false" />
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -100,6 +101,14 @@
             </intent-filter>
         </activity>
 
+        <!-- The Slint UI's QR scanner (CameraX and ML Kit, as mobile_scanner). -->
+        <activity
+            android:name=".QrScanActivity"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode|navigation"
+            android:exported="false"
+            android:screenOrientation="nosensor"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+
         <activity
             android:name=".QuickActionActivity"
             android:excludeFromRecents="true"
@@ -147,14 +156,5 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <provider
-            android:name=".UiCaptureProvider"
-            android:authorities="${applicationId}.ui.capture"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/ui_capture_paths" />
-        </provider>
     </application>
 </manifest>

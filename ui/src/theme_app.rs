@@ -65,6 +65,13 @@ fn scheme(p: &Palette) -> Scheme {
     }
 }
 
+/// The dark scheme as the theme sets it, for pages drawn outside the window.
+pub(crate) fn dark_palette(settings: &store::Settings) -> Palette {
+    let system = state().lock().unwrap().system;
+    let seeds = colors::seeds(settings.primary_color, system);
+    colors::schemes(seeds, settings.color_style, settings.pure_black).1
+}
+
 /// Sets the app's schemes and what the theme page shows from the settings.
 pub fn apply(ui: &AppWindow, settings: &store::Settings) {
     let (system, font_scale) = {

@@ -103,6 +103,9 @@ dependencies {
     implementation(project(":core"))
     implementation(libs.core.splashscreen)
     implementation(libs.gson)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.mlkit.barcode.scanning)
     implementation(libs.smali.dexlib2) {
         exclude(group = "com.google.guava", module = "guava")
     }

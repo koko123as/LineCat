@@ -437,18 +437,31 @@ object UiBridge {
             }
         }
 
-        // Written to `dest` as one luma byte per pixel for the Rust decoder.
-        "qr.capture" -> {
-            val dest = File(request.get("dest")?.asString ?: error("dest missing"))
-            val uri = if (request.get("source")?.asString != "image" && canCapture()) {
-                capturePhoto()
-            } else {
-                documentFor(
-                    android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT)
-                        .addCategory(android.content.Intent.CATEGORY_OPENABLE)
-                        .setType("image/*"),
-                )
+        // With a camera: QrScanActivity's codes (`invalid` reopens its hint), else a picked
+        // image written to `dest` as one luma byte per pixel for the Rust decoder.
+        "qr.capture" -> if (request.get("source")?.asString != "image" && hasCamera()) {
+            val host = activity ?: error("界面未就绪")
+            val invalid = request.get("invalid")?.takeIf { it.isJsonPrimitive }?.asString
+            val colors = scanColors(request.get("colors")?.takeIf { it.isJsonObject }?.asJsonObject)
+            val outcome = withContext(Dispatchers.Main) {
+                suspendCancellableCoroutine { continuation ->
+                    QrScanner.request(host, invalid, colors) { o -> if (continuation.isActive) continuation.resume(o) }
+                }
             }
+            when (outcome) {
+                is QrScanner.Outcome.Codes -> ok {
+                    add("codes", JsonArray().apply { outcome.values.forEach { add(it) } })
+                    addProperty("album", outcome.album)
+                }
+                QrScanner.Outcome.Closed -> ok { addProperty("cancelled", true) }
+            }
+        } else {
+            val dest = File(request.get("dest")?.asString ?: error("dest missing"))
+            val uri = documentFor(
+                android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT)
+                    .addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                    .setType("image/*"),
+            )
             if (uri == null) {
                 ok { addProperty("cancelled", true) }
             } else {
@@ -458,6 +471,11 @@ object UiBridge {
                     addProperty("height", size.second)
                 }
             }
+        }
+
+        "qr.close" -> {
+            withContext(Dispatchers.Main) { QrScanner.close() }
+            ok()
         }
 
         // AppPlugin.requestLocalNetworkPermission, before the TV serves its send page.
@@ -770,45 +788,22 @@ object UiBridge {
             packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
     }
 
-    private fun canCapture(): Boolean {
-        val app = GlobalState.application
-        return app.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY) &&
-            android.content.Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
-                .resolveActivity(app.packageManager) != null
-    }
+    private fun hasCamera(): Boolean =
+        GlobalState.application.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY)
 
-    // A declared CAMERA permission that is not granted makes ACTION_IMAGE_CAPTURE throw, and
-    // the Flutter scanner plugin declares it in the merged manifest.
-    private suspend fun capturePhoto(): android.net.Uri? {
-        val host = activity ?: error("界面未就绪")
-        val app = GlobalState.application
-        val camera = android.Manifest.permission.CAMERA
-        val declared = runCatching {
-            @Suppress("DEPRECATION")
-            app.packageManager.getPackageInfo(app.packageName, android.content.pm.PackageManager.GET_PERMISSIONS)
-                .requestedPermissions?.contains(camera) == true
-        }.getOrDefault(false)
-        if (declared && app.checkSelfPermission(camera) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
-            !requestPermission(camera)
-        ) {
-            return null
-        }
-        val file = withContext(Dispatchers.IO) {
-            File(app.cacheDir, "qr").apply { mkdirs() }.resolve("capture.jpg").apply { delete() }
-        }
-        val uri = androidx.core.content.FileProvider.getUriForFile(app, "${app.packageName}.ui.capture", file)
-        val intent = android.content.Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
-            .putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
-            .addFlags(
-                android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        val taken = withContext(Dispatchers.Main) {
-            suspendCancellableCoroutine { continuation ->
-                host.startCapture(intent) { done -> if (continuation.isActive) continuation.resume(done) }
-            }
-        }
-        return if (taken && file.length() > 0) android.net.Uri.fromFile(file) else null
+    private fun scanColors(colors: JsonObject?): QrScanner.Colors? {
+        colors ?: return null
+        fun color(key: String): Int? = runCatching {
+            android.graphics.Color.parseColor(colors.get(key).asString)
+        }.getOrNull()
+        return QrScanner.Colors(
+            primary = color("primary") ?: return null,
+            onPrimary = color("onPrimary") ?: return null,
+            surface = color("surface") ?: return null,
+            onSurface = color("onSurface") ?: return null,
+            muted = color("muted") ?: return null,
+            error = color("error") ?: return null,
+        )
     }
 
     private suspend fun requestPermission(permission: String): Boolean {

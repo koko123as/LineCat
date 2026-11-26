@@ -10,6 +10,21 @@ use std::time::Duration;
 
 static RECEIVER: Mutex<Option<LinkReceiver>> = Mutex::new(None);
 
+const CLOSE: Duration = Duration::from_secs(10);
+
+/// The dark scheme's colours the scan page draws with (`watchAppTheme(Brightness.dark)`).
+fn scan_colors(p: &crate::theme::Palette) -> Value {
+    let hex = |c: u32| format!("#{:06x}", c & 0xff_ffff);
+    json!({
+        "primary": hex(p.primary),
+        "onPrimary": hex(p.on_primary),
+        "surface": hex(p.page),
+        "onSurface": hex(p.on_surface),
+        "muted": hex(p.on_surface_variant),
+        "error": hex(p.error),
+    })
+}
+
 const SEND_TIP: &str = "用手机相机扫描二维码，在打开的页面里粘贴链接。两台设备需要连在同一个网络。";
 
 /// `data` as a black on white QR picture, 8 px a module with a two module quiet zone.
@@ -40,30 +55,59 @@ pub(crate) fn qr_picture(data: &str) -> Option<slint::SharedPixelBuffer<slint::R
 }
 
 impl App {
-    /// `_toScan`: a photo or picture of the code, read here, then `addProfileFromLink`.
+    /// `_toScan`: the scan page's codes (an invalid one keeps it open with its hint, as
+    /// ScanPage does), or with no camera a picked picture read here; then `addProfileFromLink`.
     pub(crate) fn add_from_qr(self: &Arc<Self>) {
         self.spawn(|app| {
             let tmp = app.temp_for("qr-luma");
-            let captured = app.bridge().and_then(|b| {
-                b.shell(
-                    "qr.capture",
-                    json!({"dest": tmp.to_string_lossy(), "source": "camera"}),
-                    Duration::from_secs(3600),
-                )
-            });
-            let (width, height) = match captured {
-                Ok(r) if r.get("cancelled").and_then(Value::as_bool) == Some(true) => return,
-                Ok(r) => (
-                    r.get("width").and_then(Value::as_u64).unwrap_or(0) as usize,
-                    r.get("height").and_then(Value::as_u64).unwrap_or(0) as usize,
-                ),
-                Err(e) => return app.toast(e),
+            let colors = {
+                let settings = app.store.lock().unwrap().state.settings.clone();
+                scan_colors(&crate::theme_app::dark_palette(&settings))
             };
-            let luma = std::fs::read(&tmp).unwrap_or_default();
-            let _ = std::fs::remove_file(&tmp);
-            let text = qr_decode::decode(&luma, width, height);
-            let Some(url) = profile_url_from_qr_codes(text.as_deref()) else {
-                return app.alert("二维码", "请上传有效的二维码");
+            let mut invalid = Value::Null;
+            let url = loop {
+                let captured = app.bridge().and_then(|b| {
+                    b.shell(
+                        "qr.capture",
+                        json!({
+                            "dest": tmp.to_string_lossy(),
+                            "source": "camera",
+                            "invalid": invalid,
+                            "colors": colors,
+                        }),
+                        Duration::from_secs(3600),
+                    )
+                });
+                let r = match captured {
+                    Ok(r) if r.get("cancelled").and_then(Value::as_bool) == Some(true) => return,
+                    Ok(r) => r,
+                    Err(e) => return app.toast(e),
+                };
+                if let Some(codes) = r.get("codes").and_then(Value::as_array) {
+                    let codes = codes.iter().filter_map(Value::as_str);
+                    match profile_url_from_qr_codes(codes) {
+                        Some(url) => {
+                            let _ = app
+                                .bridge()
+                                .and_then(|b| b.shell("qr.close", json!({}), CLOSE));
+                            break url;
+                        }
+                        None => {
+                            let album = r.get("album").and_then(Value::as_bool) == Some(true);
+                            invalid = json!(if album { "album" } else { "camera" });
+                            continue;
+                        }
+                    }
+                }
+                let width = r.get("width").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let height = r.get("height").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let luma = std::fs::read(&tmp).unwrap_or_default();
+                let _ = std::fs::remove_file(&tmp);
+                let text = qr_decode::decode(&luma, width, height);
+                match profile_url_from_qr_codes(text.as_deref()) {
+                    Some(url) => break url,
+                    None => return app.alert("二维码", "请上传有效的二维码"),
+                }
             };
             app.ui(|ui| ui.set_adding(true));
             if let Err(e) = app.add_from_link(String::new(), url, String::new()) {
@@ -148,5 +192,19 @@ impl App {
             }
             app.ui(|ui| ui.set_adding(false));
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_scan_page_takes_the_dark_scheme() {
+        let p = crate::colors::palette(0x007aff, crate::colors::VIVID, true);
+        let c = scan_colors(&p);
+        assert_eq!(c["primary"], "#2f83ff");
+        assert_eq!(c["error"], "#ffb4ab");
+        assert_eq!(c["surface"].as_str().map(str::len), Some(7));
     }
 }
