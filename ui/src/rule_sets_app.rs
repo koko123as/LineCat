@@ -521,10 +521,10 @@ impl App {
         content: Option<Vec<u8>>,
         refresh: bool,
     ) -> bool {
+        let reread = content.is_some() || refresh;
         match self.compile_rule_set(s, previous.as_ref(), content, refresh) {
             Ok(next) => {
                 let dir = self.rule_sets_dir();
-                let mut renamed = false;
                 if let Some(p) = &previous {
                     if p.label != next.label {
                         let mut store = self.store.lock().unwrap();
@@ -533,21 +533,25 @@ impl App {
                             &p.label,
                             &next.label,
                         );
-                        renamed = true;
                     }
                 }
-                let label = next.label.clone();
+                let unchanged = previous.as_ref() == Some(&next);
+                let mut labels = vec![next.label.clone()];
+                labels.extend(previous.as_ref().map(|p| p.label.clone()));
                 if let Some(p) = previous.filter(|p| p.file_name() != next.file_name()) {
                     clear_files(&dir, &p);
                 }
+                let label = next.label.clone();
                 self.update_rule_sets(move |sets| {
                     match sets.iter_mut().find(|x| x.id == next.id) {
                         Some(x) => *x = next,
                         None => sets.push(next),
                     }
                 });
-                if renamed {
-                    self.apply_if_rule_set_named(&label);
+                if reread && unchanged {
+                    self.reload_if_rule_set_named(&label);
+                } else {
+                    self.apply_if_rule_set_named(&labels);
                 }
                 true
             }
@@ -568,11 +572,17 @@ impl App {
             return Ok(());
         };
         let next = self.compile_rule_set(s.clone(), Some(&s), None, true)?;
+        if next == s {
+            self.reload_if_rule_set_named(&s.label);
+            return Ok(());
+        }
+        let label = next.label.clone();
         self.update_rule_sets(move |sets| {
             if let Some(x) = sets.iter_mut().find(|x| x.id == next.id) {
                 *x = next;
             }
         });
+        self.apply_if_rule_set_named(&[label]);
         Ok(())
     }
 
@@ -689,21 +699,38 @@ impl App {
         clear_files(&self.rule_sets_dir(), &s);
         let id = id.to_string();
         self.update_rule_sets(move |sets| sets.retain(|x| x.id != id));
-        self.apply_if_rule_set_named(&s.label);
     }
 
-    fn apply_if_rule_set_named(self: &Arc<Self>, label: &str) {
-        let uses = {
-            let store = self.store.lock().unwrap();
-            crate::custom_profile::active_uses(&store.state, |s, id| {
-                crate::profile_rules::referenced_rule_sets(s, id)
-                    .iter()
-                    .any(|n| n == label)
-            })
-        };
-        if uses {
+    /// `applyIfReferenced`: the active custom profile applied again when it names a set.
+    fn apply_if_rule_set_named(self: &Arc<Self>, labels: &[String]) {
+        if self.active_uses_rule_set(labels) {
             self.reapply();
         }
+    }
+
+    /// `_reloadIfReferenced`: the Core reads the set again, or the profile is applied.
+    fn reload_if_rule_set_named(self: &Arc<Self>, label: &str) {
+        if !self.active_uses_rule_set(&[label.to_string()]) {
+            return;
+        }
+        let label = label.to_string();
+        self.spawn(move |app| {
+            let reloaded = app
+                .bridge()
+                .and_then(|b| b.call("provider.update", json!({"name": label}), CALL));
+            if reloaded.is_err() {
+                app.reapply();
+            }
+        });
+    }
+
+    fn active_uses_rule_set(&self, labels: &[String]) -> bool {
+        let store = self.store.lock().unwrap();
+        crate::custom_profile::active_uses(&store.state, |s, id| {
+            crate::profile_rules::referenced_rule_sets(s, id)
+                .iter()
+                .any(|n| labels.contains(n))
+        })
     }
 
     /// An imported rule provider: kept under `label`, downloaded or compiled from `content`.
