@@ -444,7 +444,7 @@ pub fn save_error(r: &ProfileRule) -> Option<String> {
     None
 }
 
-/// `_RuleItemState._checkInvalid`'s colour: 0 plain, 1 success, 2 warning, 3 accent,
+/// `_RuleItemState._checkInvalid`'s colour: 0 plain, 1 success, 2 warning, 3 tertiary,
 /// 4 error, and whether the row carries the error mark.
 pub fn tone(r: &ProfileRule, found: &[Issue]) -> (i32, bool) {
     if r.custom_exit {

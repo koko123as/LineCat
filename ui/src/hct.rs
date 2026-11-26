@@ -526,15 +526,24 @@ pub struct DynamicScheme {
     pub variant: Variant,
     pub dark: bool,
     pub primary: TonalPalette,
+    pub tertiary: TonalPalette,
     pub neutral: TonalPalette,
     pub neutral_variant: TonalPalette,
     pub error: TonalPalette,
 }
 
 impl DynamicScheme {
-    /// The palettes the app's roles read; content's tertiary analogue never reaches them,
-    /// so it is not computed.
+    /// The palettes the app's roles read, as `SchemeContent`, `SchemeTonalSpot` and
+    /// `SchemeMonochrome` build them.
     pub fn new(source: Hct, variant: Variant, dark: bool) -> DynamicScheme {
+        let tertiary = match variant {
+            Variant::Content => {
+                let t = fix_if_disliked(analogous_tertiary(source));
+                TonalPalette::of(t.hue, t.chroma)
+            }
+            Variant::TonalSpot => TonalPalette::of(sanitize_degrees(source.hue + 60.0), 24.0),
+            Variant::Monochrome => TonalPalette::of(source.hue, 0.0),
+        };
         let (primary, neutral, neutral_variant) = match variant {
             Variant::Content => (
                 TonalPalette::of(source.hue, source.chroma),
@@ -557,6 +566,7 @@ impl DynamicScheme {
             variant,
             dark,
             primary,
+            tertiary,
             neutral,
             neutral_variant,
             error: TonalPalette::of(25.0, 84.0),
@@ -579,6 +589,8 @@ pub enum Role {
     Primary,
     PrimaryContainer,
     OnPrimary,
+    Tertiary,
+    TertiaryContainer,
     Error,
     ErrorContainer,
 }
@@ -600,6 +612,7 @@ impl Role {
             | OnSurface => s.neutral,
             OnSurfaceVariant | OutlineVariant => s.neutral_variant,
             Primary | PrimaryContainer | OnPrimary => s.primary,
+            Tertiary | TertiaryContainer => s.tertiary,
             Error | ErrorContainer => s.error,
         }
     }
@@ -626,6 +639,14 @@ impl Role {
             PrimaryContainer if s.variant == Variant::Content => s.source.tone,
             PrimaryContainer if mono => pick(85.0, 25.0),
             PrimaryContainer => pick(30.0, 90.0),
+            Tertiary if mono => pick(90.0, 25.0),
+            Tertiary => pick(80.0, 40.0),
+            TertiaryContainer if mono => pick(60.0, 49.0),
+            TertiaryContainer if s.variant == Variant::Content => {
+                let p = s.tertiary;
+                fix_if_disliked(Hct::from(p.hue, p.chroma, s.source.tone)).tone
+            }
+            TertiaryContainer => pick(30.0, 90.0),
             Error => pick(80.0, 40.0),
             ErrorContainer => pick(30.0, 90.0),
         }
@@ -658,7 +679,7 @@ impl Role {
         use Role::*;
         match self {
             OnSurface | OnPrimary => 7.0,
-            OnSurfaceVariant | Primary | Error => 4.5,
+            OnSurfaceVariant | Primary | Tertiary | Error => 4.5,
             _ => 1.0,
         }
     }
@@ -667,6 +688,7 @@ impl Role {
         use Role::*;
         match self {
             Primary | PrimaryContainer => Some(Pair(PrimaryContainer, Primary)),
+            Tertiary | TertiaryContainer => Some(Pair(TertiaryContainer, Tertiary)),
             Error | ErrorContainer => Some(Pair(ErrorContainer, Error)),
             _ => None,
         }
@@ -728,6 +750,86 @@ impl Role {
     pub fn argb(self, s: &DynamicScheme) -> u32 {
         self.palette(s).get(self.tone(s))
     }
+}
+
+/// `DislikeAnalyzer.fixIfDisliked`: dark yellow-greens are lifted to tone 70.
+fn fix_if_disliked(h: Hct) -> Hct {
+    let hue = h.hue.round();
+    if (90.0..=111.0).contains(&hue) && h.chroma.round() > 16.0 && h.tone.round() < 65.0 {
+        Hct::from(h.hue, h.chroma, 70.0)
+    } else {
+        h
+    }
+}
+
+fn lab_from_argb(argb: u32) -> [f64; 3] {
+    let xyz = xyz_from_argb(argb);
+    let [fx, fy, fz] = [0, 1, 2].map(|i| lab_f(xyz[i] / WHITE_POINT_D65[i]));
+    [116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)]
+}
+
+/// `TemperatureCache.rawTemperature`.
+fn raw_temperature(h: &Hct) -> f64 {
+    let [_, a, b] = lab_from_argb(h.argb());
+    let hue = sanitize_degrees(b.atan2(a).to_degrees());
+    let chroma = a.hypot(b);
+    -0.5 + 0.02 * chroma.powf(1.07) * (sanitize_degrees(hue - 50.0).to_radians()).cos()
+}
+
+/// `TemperatureCache(source).analogous(count: 3, divisions: 6).last`, the content
+/// scheme's tertiary source.
+fn analogous_tertiary(input: Hct) -> Hct {
+    const DIVISIONS: usize = 6;
+    let by_hue: Vec<Hct> = (0..=360)
+        .map(|hue| Hct::from(hue as f64, input.chroma, input.tone))
+        .collect();
+    let temps: Vec<f64> = by_hue.iter().map(raw_temperature).collect();
+    let input_temp = raw_temperature(&input);
+    let coldest = temps.iter().copied().fold(input_temp, f64::min);
+    let warmest = temps.iter().copied().fold(input_temp, f64::max);
+    let range = warmest - coldest;
+    let relative = |i: usize| {
+        if range == 0.0 {
+            0.5
+        } else {
+            (temps[i] - coldest) / range
+        }
+    };
+    let start = input.hue.round() as usize;
+    let at = |offset: usize| (start + offset) % 360;
+    let mut all = vec![start];
+    let mut total_delta = 0.0;
+    let mut last = relative(start);
+    for i in 0..360 {
+        let t = relative(at(i));
+        total_delta += (t - last).abs();
+        last = t;
+    }
+    let step = total_delta / DIVISIONS as f64;
+    let mut walked = 0.0;
+    last = relative(start);
+    let mut addend = 1;
+    while all.len() < DIVISIONS {
+        let hue = at(addend);
+        let t = relative(hue);
+        walked += (t - last).abs();
+        let mut satisfied = walked >= all.len() as f64 * step;
+        let mut index_addend = 1;
+        while satisfied && all.len() < DIVISIONS {
+            all.push(hue);
+            satisfied = walked >= (all.len() + index_addend) as f64 * step;
+            index_addend += 1;
+        }
+        last = t;
+        addend += 1;
+        if addend > 360 {
+            while all.len() < DIVISIONS {
+                all.push(hue);
+            }
+            break;
+        }
+    }
+    by_hue[all[1]]
 }
 
 fn ratio_of_ys(y1: f64, y2: f64) -> f64 {
@@ -824,6 +926,30 @@ mod tests {
         assert!((blue.hue - 282.788).abs() < 0.01, "{}", blue.hue);
         assert!((blue.chroma - 87.230).abs() < 0.01, "{}", blue.chroma);
         assert!((blue.tone - 32.302).abs() < 0.01, "{}", blue.tone);
+    }
+
+    #[test]
+    fn tertiary_matches_material_color_utilities() {
+        for (seed, dark, content, spot, mono) in [
+            (0xff007aff, false, 0x8e2cb1, 0x715573, 0x3b3b3b),
+            (0xff007aff, true, 0xeeb1ff, 0xdebcdf, 0xe2e2e2),
+            (0xffff8d28, false, 0x5c6300, 0x5e6135, 0x3b3b3b),
+            (0xffffcc00, true, 0xdcfc63, 0xadcfae, 0xe2e2e2),
+            (0xff34c759, false, 0x006495, 0x39656c, 0x3b3b3b),
+            (0xff8e8e93, true, 0xcec4c8, 0xdebcdf, 0xe2e2e2),
+            (0xffb0a020, false, 0x3a6a16, 0x416652, 0x3b3b3b),
+        ] {
+            let source = Hct::from_argb(seed);
+            for (variant, want) in [
+                (Variant::Content, content),
+                (Variant::TonalSpot, spot),
+                (Variant::Monochrome, mono),
+            ] {
+                let s = DynamicScheme::new(source, variant, dark);
+                let got = Role::Tertiary.argb(&s) & 0xff_ffff;
+                assert_eq!(got, want, "{seed:x} {dark} {variant:?}");
+            }
+        }
     }
 
     #[test]

@@ -87,6 +87,7 @@ pub fn palette(seed: u32, style: i32, dark: bool) -> Palette {
         on_primary,
         primary_container: container.get(if dark { 30.0 } else { 90.0 }) & 0xff_ffff,
         on_primary_container: container.get(if dark { 90.0 } else { 30.0 }) & 0xff_ffff,
+        tertiary: role(Role::Tertiary),
         page: if dark { surface } else { c },
         card: if dark { c } else { bright },
         block: if dark { high } else { c },

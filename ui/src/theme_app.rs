@@ -53,6 +53,7 @@ fn scheme(p: &Palette) -> Scheme {
         on_primary: rgb(p.on_primary),
         primary_container: rgb(p.primary_container),
         on_primary_container: rgb(p.on_primary_container),
+        tertiary: rgb(p.tertiary),
         page: rgb(p.page),
         card: rgb(p.card),
         block: rgb(p.block),

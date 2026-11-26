@@ -10,6 +10,7 @@ export struct Scheme {
     on-primary: color,
     primary-container: color,
     on-primary-container: color,
+    tertiary: color,
     page: color,
     card: color,
     block: color,
@@ -630,7 +631,7 @@ export struct IconSection {
 // A row of the group form's members (`_MemberRow`): `tone` picks the chip's colour, 0 a
 // proxy, provider or include-all, 1 a filter, 2 an exclude filter.
 // A row of a custom profile's rules (`RuleItem`): tone 0 plain, 1 success, 2 warning,
-// 3 accent, 4 error.
+// 3 tertiary, 4 error.
 export struct RuleRow {
     id: string,
     name: string,
@@ -4233,12 +4234,16 @@ component SetRowView inherits Rectangle {
     property <bool> pictured: root.item.image != "";
     property <bool> eye: root.item.kind == "value" && (root.item.glyph == "eye" || root.item.glyph == "eye-off");
     property <bool> leading: !root.pictured && root.item.glyph != "" && root.item.kind != "value" && root.item.kind != "check";
-    height: root.item.subtitle != "" ? 64px : 52px;
+    // `_buildExit`: the subtitle keeps every line, so the row grows with them.
+    property <bool> exit: root.item.kind == "exit";
+    height: root.exit ? max(64px, row-lay.preferred-height) : root.item.subtitle != "" ? 64px : 52px;
     background: ta.pressed && root.item.kind != "person" ? Theme.s.inset : transparent;
     opacity: root.item.enabled ? 1 : 0.45;
-    HorizontalLayout {
+    row-lay := HorizontalLayout {
         padding-left: root.item.lead != "" ? 52px : 16px;
         padding-right: 16px;
+        padding-top: root.exit ? 10px : 0px;
+        padding-bottom: root.exit ? 10px : 0px;
         spacing: 14px;
         if root.item.kind == "check": VerticalLayout {
             alignment: center;
@@ -4304,10 +4309,13 @@ component SetRowView inherits Rectangle {
                     }
                 }
             }
-            if root.item.subtitle != "": Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: root.item.invalid && root.item.kind == "line" ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
+            if root.item.subtitle != "" && !root.exit: Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: root.item.invalid && root.item.kind == "line" ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
+            if root.item.subtitle != "" && root.exit: Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
         }
-        if root.item.trailing != "": Text { text: root.item.trailing; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
-        if root.item.invalid: VerticalLayout {
+        if root.item.trailing != "" && !root.exit: Text { text: root.item.trailing; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        // The target in monospace, red once it names nothing the profile has.
+        if root.exit: Text { text: root.item.trailing; font-size: 15px * Type.scale; font-family: "monospace"; color: root.item.invalid ? Theme.s.error : Theme.s.tertiary; vertical-alignment: center; }
+        if root.item.invalid && !root.exit && root.item.kind != "issue": VerticalLayout {
             alignment: center;
             Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; }
         }
@@ -5548,7 +5556,7 @@ component RuleRowView inherits Rectangle {
                     text: root.item.target;
                     font-family: "monospace";
                     font-size: 14px * Type.scale;
-                    color: root.item.tone == 1 ? Theme.success : root.item.tone == 2 ? Theme.warning : root.item.tone == 3 ? Theme.s.primary : root.item.tone == 4 ? Theme.s.error : Theme.s.on-surface;
+                    color: root.item.tone == 1 ? Theme.success : root.item.tone == 2 ? Theme.warning : root.item.tone == 3 ? Theme.s.tertiary : root.item.tone == 4 ? Theme.s.error : Theme.s.on-surface;
                     vertical-alignment: center;
                     overflow: elide;
                 }

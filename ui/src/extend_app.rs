@@ -90,7 +90,7 @@ pub fn exit_section(rows: &[ExitRow]) -> Option<SetSection> {
         .map(|r| SetRow {
             trailing: r.target.as_deref().unwrap_or("默认").into(),
             invalid: r.invalid,
-            ..row(&format!("exit:{}", r.exit), "value", &r.exit, &r.subtitle)
+            ..row(&format!("exit:{}", r.exit), "exit", &r.exit, &r.subtitle)
         })
         .collect();
     Some(section("出口", rows))
