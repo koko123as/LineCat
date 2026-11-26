@@ -435,7 +435,7 @@ impl App {
         if self.override_yaml_save(&text, false)
             || self.share_links_editor_save(&text)
             || self.custom_proxy_editor_save(&text)
-            || self.rule_set_editor_save(&text)
+            || self.rule_set_editor_save(&text, &title)
             || self.mitm_editor_save(&text)
         {
             return;
@@ -464,7 +464,7 @@ impl App {
 
     /// `onPop`: a changed script asks 是否保存更改？ before the page goes.
     pub(crate) fn tools_editor_back(self: &Arc<Self>, text: String, title: String) {
-        if self.mitm_editor_back(text.clone()) {
+        if self.mitm_editor_back(text.clone()) || self.rule_set_editor_back(&text, &title) {
             return;
         }
         let opened = editing().lock().unwrap().opened.clone();

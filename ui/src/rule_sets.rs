@@ -74,6 +74,29 @@ pub fn label_issue(
     None
 }
 
+/// `_handleEditorSave` of the rule set editor, whose title is the set's name as the
+/// script editor's is.
+pub fn editor_save(
+    sets: &[RuleSet],
+    id: Option<&str>,
+    opened: (&str, &str),
+    title: &str,
+    text: &str,
+) -> crate::items::ScriptSave {
+    use crate::items::{script_dirty, ScriptSave};
+    if !script_dirty(opened, title, text) {
+        return ScriptSave::Unchanged;
+    }
+    let label = title.trim();
+    if label.is_empty() {
+        return ScriptSave::AskName;
+    }
+    match label_issue(sets, id, label, false) {
+        Some(_) => ScriptSave::Exists,
+        None => ScriptSave::Save(label.to_string()),
+    }
+}
+
 pub fn url_issue(url: &str) -> Option<String> {
     let url = url.trim();
     if url.is_empty() {
@@ -181,6 +204,31 @@ mod tests {
             Some("名称当前已存在")
         );
         assert_eq!(label_issue(&sets, Some("1"), "广告", false), None);
+    }
+
+    #[test]
+    fn the_editor_saves_by_its_title() {
+        use crate::items::ScriptSave;
+        let sets = [set("1", "广告"), set("2", "直连")];
+        let save = |id, title, text| editor_save(&sets, id, ("广告", "a"), title, text);
+        assert_eq!(save(Some("1"), "广告", "a"), ScriptSave::Unchanged);
+        assert_eq!(
+            save(Some("1"), "广告", "b"),
+            ScriptSave::Save("广告".into())
+        );
+        assert_eq!(
+            save(Some("1"), " 去广告 ", "a"),
+            ScriptSave::Save("去广告".into())
+        );
+        assert_eq!(save(Some("1"), "直连", "a"), ScriptSave::Exists);
+        assert_eq!(
+            editor_save(&sets, None, ("", ""), "", "x"),
+            ScriptSave::AskName
+        );
+        assert_eq!(
+            editor_save(&sets, None, ("", ""), "直连", "x"),
+            ScriptSave::Exists
+        );
     }
 
     #[test]

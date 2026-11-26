@@ -9341,7 +9341,7 @@ export component AppWindow inherits Window {
                 if (root.group-sheet-open && root.group-sheet-searching) { root.group-sheet-searching = false; root.search-proxies(""); return accept; }
                 if (root.group-sheet-open) { root.close-group-sheet(); return accept; }
                 if (root.tab == 1 && root.proxy-searching) { root.proxy-searching = false; root.search-proxies(""); return accept; }
-                if (root.confirm-open && (root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save" || root.confirm-action == "script-save")) { root.confirm-open = false; return accept; }
+                if (root.confirm-open && (root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save" || root.confirm-action == "script-save" || root.confirm-action == "rs-save")) { root.confirm-open = false; return accept; }
                 if (root.confirm-open) {
                     root.confirm-open = false;
                     root.confirm-answer(root.confirm-action, root.confirm-arg, false);

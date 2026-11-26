@@ -2607,6 +2607,11 @@ fn main() {
             1,
             "script-ask",
         ),
+        ("set-rs-editor", 3, "", "editor", 1, "rs-ed"),
+        ("set-rs-editor-small", 3, "", "editor", 1, "rs-ed"),
+        ("set-rs-editor-wide", 3, "", "editor", 1, "rs-ed"),
+        ("set-rs-editor-tablet", 3, "", "editor", 1, "rs-ed"),
+        ("set-rs-editor-ask", 3, "", "editor", 1, "rs-ask"),
         ("set-scripts-small", 3, "", "scripts", 1, ""),
         ("set-scripts-wide", 3, "", "scripts", 1, ""),
         ("set-scripts-tablet", 3, "", "scripts", 1, ""),
@@ -3229,6 +3234,23 @@ fn main() {
             ui.set_tools_editor_parent("scripts".into());
             ui.set_tools_editor_readonly(false);
         }
+        if overlay.starts_with("rs-") {
+            ui.set_tools_editor_title("".into());
+            ui.set_tools_editor_title_editable(true);
+            ui.set_tools_editor_guard(true);
+            ui.set_tools_editor_text(
+                "payload:\n  - DOMAIN-SUFFIX,ads.example.com\n  - DOMAIN-KEYWORD,tracker".into(),
+            );
+            ui.set_tools_editor_parent("rule-sets".into());
+            ui.set_tools_editor_readonly(false);
+        }
+        if *overlay == "rs-ask" {
+            ui.set_tools_editor_title("广告".into());
+            ui.set_confirm_title("提示".into());
+            ui.set_confirm_text("是否保存更改？".into());
+            ui.set_confirm_action("rs-save".into());
+            ui.set_confirm_open(true);
+        }
         if *overlay == "script-ask" {
             ui.set_tools_editor_title("签到".into());
             ui.set_confirm_title("提示".into());
@@ -3385,7 +3407,7 @@ fn main() {
             ui.set_ctx_h(36.0);
         }
         ui.set_custom_importing(*overlay == "cimporting");
-        if *overlay != "trust-remove" && *overlay != "script-ask" {
+        if !matches!(*overlay, "trust-remove" | "script-ask" | "rs-ask") {
             ui.set_confirm_title("提示".into());
             if *overlay == "creplace" {
                 ui.set_confirm_text("导入会替换此配置现有的策略组、规则和设置".into());

@@ -1,5 +1,6 @@
 //! 规则集 on `App`'s side (lib/views/config/providers.dart and `ClashProvidersAction`).
 
+use crate::items::ScriptSave;
 use crate::rule_sets::{self, RuleSet};
 use crate::{ActionItem, Anchor, App, PageMeta, SetRow, SetSection, CALL};
 use serde_json::{json, Value};
@@ -14,6 +15,9 @@ use std::time::Duration;
 struct Editing {
     set: Option<Option<String>>,
     pending: String,
+    /// The title and text the editor opened with, for `_isDirty`.
+    opened: (String, String),
+    pending_title: String,
 }
 
 fn editing() -> &'static Mutex<Editing> {
@@ -253,17 +257,19 @@ impl App {
             })
             .unwrap_or_default();
         crate::mitm_app::release_editor();
+        let label = s.map(|s| s.label.clone()).unwrap_or_default();
         *editing().lock().unwrap() = Editing {
             set: Some(s.map(|s| s.id.clone())),
-            pending: String::new(),
+            opened: (label.clone(), text.clone()),
+            ..Default::default()
         };
-        let title: SharedString = s.map(|s| s.label.as_str()).unwrap_or("规则集").into();
+        let title: SharedString = label.into();
         self.ui(move |ui| {
             ui.set_tools_editor_title(title);
             ui.set_tools_editor_text(text.into());
-            ui.set_tools_editor_guard(false);
+            ui.set_tools_editor_guard(true);
             ui.set_tools_editor_readonly(false);
-            ui.set_tools_editor_title_editable(false);
+            ui.set_tools_editor_title_editable(true);
             ui.set_tools_editor_parent("rule-sets".into());
             ui.set_tools_page("editor".into());
         });
@@ -311,31 +317,80 @@ impl App {
     }
 
     /// The tools editor's save while it holds a rule set; false when it does not.
-    pub(crate) fn rule_set_editor_save(self: &Arc<Self>, text: &str) -> bool {
-        let Some(target) = editing().lock().unwrap().set.clone() else {
+    pub(crate) fn rule_set_editor_save(self: &Arc<Self>, text: &str, title: &str) -> bool {
+        let (target, opened) = {
+            let e = editing().lock().unwrap();
+            (e.set.clone(), e.opened.clone())
+        };
+        let Some(target) = target else {
             return false;
         };
-        match target.and_then(|id| self.rule_sets().into_iter().find(|s| s.id == id)) {
-            Some(s) => {
+        let sets = self.rule_sets();
+        let opened = (opened.0.as_str(), opened.1.as_str());
+        match rule_sets::editor_save(&sets, target.as_deref(), opened, title, text) {
+            ScriptSave::Unchanged => {}
+            ScriptSave::AskName => {
+                editing().lock().unwrap().pending = text.to_string();
+                self.open_input("rs-name", "保存", "名称", "");
+            }
+            ScriptSave::Exists => self.alert("提示", "名称当前已存在"),
+            ScriptSave::Save(label) => {
+                let old = target.and_then(|id| sets.into_iter().find(|s| s.id == id));
+                let s = match &old {
+                    Some(o) => RuleSet { label, ..o.clone() },
+                    None => new_set(&label, ""),
+                };
                 let content = text.as_bytes().to_vec();
                 self.spawn(move |app| {
-                    if app.put_rule_set(s.clone(), Some(s), Some(content), false) {
+                    if app.put_rule_set(s, old, Some(content), false) {
                         app.ui(|ui| ui.set_tools_page("rule-sets".into()));
                     }
                 });
-            }
-            None => {
-                editing().lock().unwrap().pending = text.to_string();
-                self.open_input("rs-name", "保存", "名称", "");
             }
         }
         true
     }
 
+    /// `_handleEditorPop`: a changed set asks 是否保存更改？; false when the editor
+    /// does not hold a rule set.
+    pub(crate) fn rule_set_editor_back(self: &Arc<Self>, text: &str, title: &str) -> bool {
+        let mut e = editing().lock().unwrap();
+        if e.set.is_none() {
+            return false;
+        }
+        if crate::items::script_dirty((&e.opened.0, &e.opened.1), title, text) {
+            e.pending = text.to_string();
+            e.pending_title = title.to_string();
+            drop(e);
+            self.confirm("提示", "是否保存更改？".into(), "rs-save", String::new());
+        } else {
+            drop(e);
+            self.ui(|ui| ui.set_tools_page("rule-sets".into()));
+        }
+        true
+    }
+
+    pub(crate) fn rule_set_save_answer(self: &Arc<Self>, yes: bool) {
+        if !yes {
+            return self.ui(|ui| ui.set_tools_page("rule-sets".into()));
+        }
+        let (text, title) = {
+            let mut e = editing().lock().unwrap();
+            (
+                std::mem::take(&mut e.pending),
+                std::mem::take(&mut e.pending_title),
+            )
+        };
+        self.rule_set_editor_save(&text, &title);
+    }
+
     pub(crate) fn rule_sets_check(&self, key: &str, v1: &str, v2: &str) -> Option<String> {
         let sets = self.rule_sets();
         let issue = match key {
-            "rs-name" => rule_sets::label_issue(&sets, None, v1, false),
+            "rs-name" => {
+                let id = editing().lock().unwrap().set.clone().flatten();
+                rule_sets::label_issue(&sets, id.as_deref(), v1, false)
+            }
             "rs-url" if crate::mitm::module_urls(v2).len() > 1 => None,
             "rs-url" => {
                 rule_sets::label_issue(&sets, None, v1, true).or_else(|| rule_sets::url_issue(v2))
@@ -354,10 +409,21 @@ impl App {
         let sets = self.rule_sets();
         match key {
             "rs-name" => {
-                let content = std::mem::take(&mut editing().lock().unwrap().pending).into_bytes();
-                let s = new_set(v1.trim(), "");
+                let (id, content) = {
+                    let mut e = editing().lock().unwrap();
+                    (e.set.clone().flatten(), std::mem::take(&mut e.pending))
+                };
+                let old = id.and_then(|id| sets.iter().find(|s| s.id == id).cloned());
+                let s = match &old {
+                    Some(o) => RuleSet {
+                        label: v1.trim().to_string(),
+                        ..o.clone()
+                    },
+                    None => new_set(v1.trim(), ""),
+                };
+                let content = content.into_bytes();
                 self.spawn(move |app| {
-                    if app.put_rule_set(s, None, Some(content), false) {
+                    if app.put_rule_set(s, old, Some(content), false) {
                         app.ui(|ui| ui.set_tools_page("rule-sets".into()));
                     }
                 });

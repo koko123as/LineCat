@@ -2157,6 +2157,7 @@ impl App {
             ("rules-delete", true) => self.delete_selected_rules(),
             ("script-delete", true) => self.delete_script(&arg),
             ("script-save", yes) => self.script_save_answer(yes),
+            ("rs-save", yes) => self.rule_set_save_answer(yes),
             ("rs-delete", true) => self.delete_rule_set(&arg),
             ("is-delete", true) => self.delete_icon_set(&arg),
             ("cp-delete", true) => self.delete_custom_proxy(&arg),
