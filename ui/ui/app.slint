@@ -9513,6 +9513,12 @@ export component AppWindow inherits Window {
     in-out property <bool> tools-over;
     in-out property <string> tools-over-root;
     property <bool> tools-shown: root.tab == 3 || root.tools-over;
+    // A custom profile opened over the dashboard (`showCustomProfileSheet`, `_toAddCustom`).
+    in-out property <bool> profiles-over;
+    property <bool> profiles-shown: root.tab == 2 || root.profiles-over;
+    changed profiles-page => {
+        if (self.profiles-page == "") { root.profiles-over = false; }
+    }
     public function open-tools(page: string) {
         root.tools-over = root.tab != 3;
         root.tools-over-root = page;
@@ -9531,6 +9537,7 @@ export component AppWindow inherits Window {
         root.tools-over = false;
         root.tools-page = "";
         root.profiles-page = "";
+        root.profiles-over = false;
         root.tab-changed(t);
     }
 
@@ -9634,27 +9641,27 @@ export component AppWindow inherits Window {
                     root.tools-page = "";
                     return accept;
                 }
-                if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "group") { root.group-yaml-closed(); root.editor-parent = ""; root.profiles-page = "group"; return accept; }
-                if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "rules") { root.editor-parent = ""; root.pr-act("yaml-closed"); return accept; }
-                if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "pmore") { root.editor-parent = ""; root.pm-clicked("yaml-closed"); root.profiles-page = "pmore"; return accept; }
-                if (root.tab == 2 && root.profiles-page == "rules" && root.pr-searching && !root.pr-selecting && !root.pr-sorting) { root.pr-query = ""; root.pr-searching = false; return accept; }
-                if (root.tab == 2 && root.profiles-page == "rules") { root.pr-act("back"); return accept; }
-                if (root.tab == 2 && (root.profiles-page == "rule" || root.profiles-page == "rule-presets")) { root.pr-form("back"); return accept; }
-                if (root.tab == 2 && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
-                if (root.tab == 2 && root.profiles-page == "group") { root.pg-back(); return accept; }
-                if (root.tab == 2 && root.profiles-page == "pmore") { root.pm-back(); return accept; }
-                if (root.tab == 2 && root.profiles-page == "ext" && root.ext-searching) { root.ext-query = ""; root.ext-searching = false; return accept; }
-                if (root.tab == 2 && (root.profiles-page == "ext" || root.profiles-page == "extend")) { root.ext-back(); return accept; }
-                if (root.tab == 2 && root.profiles-page == "group-members" && root.pg-pick-searching) { root.pg-pick-query = ""; root.pg-pick-searching = false; return accept; }
-                if (root.tab == 2 && root.profiles-page == "group-members") { root.pg-pick("back"); return accept; }
-                if (root.tab == 2 && root.profiles-page == "group-icon" && root.gi-searching) { root.gi-query = ""; root.gi-searching = false; return accept; }
-                if (root.tab == 2 && root.profiles-page == "group-icon") { root.icon-pick("back"); return accept; }
-                if (root.tab == 2 && root.profiles-page == "placeholder" && root.placeholder-parent != "") { root.profiles-page = root.placeholder-parent; root.placeholder-parent = ""; return accept; }
-                if (root.tab == 2 && root.profiles-page == "custom" && (root.custom-group-selecting || root.custom-group-sorting)) { root.custom-group("clear"); return accept; }
-                if (root.tab == 0 && root.profiles-page == "preview") { root.profiles-page = ""; root.profile-sheet-open = true; return accept; }
-                if (root.tab == 2 && root.custom-open && (root.profiles-page == "preview" || root.profiles-page == "placeholder")) { root.profiles-page = "custom"; return accept; }
-                if (root.tab == 2 && root.profiles-page == "custom") { root.custom-back(); return accept; }
-                if (root.tab == 2 && root.profiles-page != "") { root.profiles-page = ""; return accept; }
+                if (root.profiles-shown && root.profiles-page == "editor" && root.editor-parent == "group") { root.group-yaml-closed(); root.editor-parent = ""; root.profiles-page = "group"; return accept; }
+                if (root.profiles-shown && root.profiles-page == "editor" && root.editor-parent == "rules") { root.editor-parent = ""; root.pr-act("yaml-closed"); return accept; }
+                if (root.profiles-shown && root.profiles-page == "editor" && root.editor-parent == "pmore") { root.editor-parent = ""; root.pm-clicked("yaml-closed"); root.profiles-page = "pmore"; return accept; }
+                if (root.profiles-shown && root.profiles-page == "rules" && root.pr-searching && !root.pr-selecting && !root.pr-sorting) { root.pr-query = ""; root.pr-searching = false; return accept; }
+                if (root.profiles-shown && root.profiles-page == "rules") { root.pr-act("back"); return accept; }
+                if (root.profiles-shown && (root.profiles-page == "rule" || root.profiles-page == "rule-presets")) { root.pr-form("back"); return accept; }
+                if (root.profiles-shown && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
+                if (root.profiles-shown && root.profiles-page == "group") { root.pg-back(); return accept; }
+                if (root.profiles-shown && root.profiles-page == "pmore") { root.pm-back(); return accept; }
+                if (root.profiles-shown && root.profiles-page == "ext" && root.ext-searching) { root.ext-query = ""; root.ext-searching = false; return accept; }
+                if (root.profiles-shown && (root.profiles-page == "ext" || root.profiles-page == "extend")) { root.ext-back(); return accept; }
+                if (root.profiles-shown && root.profiles-page == "group-members" && root.pg-pick-searching) { root.pg-pick-query = ""; root.pg-pick-searching = false; return accept; }
+                if (root.profiles-shown && root.profiles-page == "group-members") { root.pg-pick("back"); return accept; }
+                if (root.profiles-shown && root.profiles-page == "group-icon" && root.gi-searching) { root.gi-query = ""; root.gi-searching = false; return accept; }
+                if (root.profiles-shown && root.profiles-page == "group-icon") { root.icon-pick("back"); return accept; }
+                if (root.profiles-shown && root.profiles-page == "placeholder" && root.placeholder-parent != "") { root.profiles-page = root.placeholder-parent; root.placeholder-parent = ""; return accept; }
+                if (root.profiles-shown && root.profiles-page == "custom" && (root.custom-group-selecting || root.custom-group-sorting)) { root.custom-group("clear"); return accept; }
+                if (root.tab == 0 && !root.custom-open && root.profiles-page == "preview") { root.profiles-page = ""; root.profile-sheet-open = true; return accept; }
+                if (root.profiles-shown && root.custom-open && (root.profiles-page == "preview" || root.profiles-page == "placeholder")) { root.profiles-page = "custom"; return accept; }
+                if (root.profiles-shown && root.profiles-page == "custom") { root.custom-back(); return accept; }
+                if (root.profiles-shown && root.profiles-page != "") { root.profiles-page = ""; return accept; }
                 if (root.tab == 0 && root.dash-editing) { root.dash-editing = false; return accept; }
                 if (root.tab != 0) {
                     root.go(0);
@@ -9741,7 +9748,7 @@ export component AppWindow inherits Window {
                         root.alert-open = true;
                     }
                     open-memory => { root.mem-sheet-open = true; root.open-memory(); }
-                    open-profile => { root.profile-sheet-open = true; root.open-profile-detail(); }
+                    open-profile => { root.open-profile-detail(); }
                     switch-profile => { root.picker-open = true; }
                     set-lan(on) => { root.dash-set-lan(on); }
                     retry-services => { root.dash-probe-services(); }
@@ -9849,7 +9856,13 @@ export component AppWindow inherits Window {
                         root.menu-open = true;
                     }
                 }
-                if root.tab == 2 && root.profiles-page == "edit": EditProfilePage {
+                if root.profiles-over && root.profiles-page != "": Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    background: Theme.s.page;
+                    TouchArea { }
+                }
+                if root.profiles-shown && root.profiles-page == "edit": EditProfilePage {
                     width: parent.width;
                     height: parent.height;
                     is-url: root.edit-is-url;
@@ -9865,7 +9878,7 @@ export component AppWindow inherits Window {
                     edit-file => { root.edit-file(); }
                     upload-file => { root.upload-file(); }
                 }
-                if (root.tab == 2 && root.profiles-page == "editor") || ((root.tab == 2 || root.tab == 0) && root.profiles-page == "preview"): EditorPage {
+                if (root.profiles-shown && root.profiles-page == "editor") || ((root.tab == 2 || root.tab == 0) && root.profiles-page == "preview"): EditorPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.editor-title;
@@ -9873,7 +9886,7 @@ export component AppWindow inherits Window {
                     readonly: root.editor-readonly;
                     save(t) => { root.editor-save(t); }
                     back => {
-                        if (root.tab == 0) { root.profile-sheet-open = true; }
+                        if (root.tab == 0 && !root.custom-open) { root.profile-sheet-open = true; }
                         if (root.profiles-page == "editor" && root.editor-parent == "group") {
                             root.group-yaml-closed();
                             root.editor-parent = "";
@@ -9894,7 +9907,7 @@ export component AppWindow inherits Window {
                         root.profiles-page = root.profiles-page == "editor" ? "edit" : root.custom-open ? "custom" : "";
                     }
                 }
-                if root.tab == 2 && root.profiles-page == "custom": CustomProfilePage {
+                if root.profiles-shown && root.profiles-page == "custom": CustomProfilePage {
                     width: parent.width;
                     height: parent.height;
                     title: root.custom-title;
@@ -9931,7 +9944,7 @@ export component AppWindow inherits Window {
                         root.custom-row(r.id);
                     }
                 }
-                if root.tab == 2 && root.profiles-page == "rules": ProfileRulesPage {
+                if root.profiles-shown && root.profiles-page == "rules": ProfileRulesPage {
                     width: parent.width;
                     height: parent.height;
                     rows: root.pr-rows;
@@ -9944,7 +9957,7 @@ export component AppWindow inherits Window {
                     query <=> root.pr-query;
                     act(a) => { root.pr-act(a); }
                 }
-                if root.tab == 2 && (root.profiles-page == "rule" || root.profiles-page == "rule-presets"): ProfileFormPage {
+                if root.profiles-shown && (root.profiles-page == "rule" || root.profiles-page == "rule-presets"): ProfileFormPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.pr-form-title;
@@ -9955,7 +9968,7 @@ export component AppWindow inherits Window {
                     clicked(id) => { root.pr-form(id); }
                     toggled(id, on) => { root.pr-form-toggled(id, on); }
                 }
-                if root.tab == 2 && root.profiles-page == "placeholder": PlaceholderPage {
+                if root.profiles-shown && root.profiles-page == "placeholder": PlaceholderPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.placeholder-title;
@@ -9964,7 +9977,7 @@ export component AppWindow inherits Window {
                         root.placeholder-parent = "";
                     }
                 }
-                if root.tab == 2 && root.profiles-page == "group": EditProxyGroupPage {
+                if root.profiles-shown && root.profiles-page == "group": EditProxyGroupPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.pg-title;
@@ -9978,7 +9991,7 @@ export component AppWindow inherits Window {
                     toggled(id, on) => { root.pg-toggled(id, on); }
                     member(a) => { root.pg-member(a); }
                 }
-                if root.tab == 2 && root.profiles-page == "pmore": SettingsPage {
+                if root.profiles-shown && root.profiles-page == "pmore": SettingsPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.pm-meta.title;
@@ -10009,7 +10022,7 @@ export component AppWindow inherits Window {
                         }
                     }
                 }
-                if root.tab == 2 && root.profiles-page == "extend": ExtendPage {
+                if root.profiles-shown && root.profiles-page == "extend": ExtendPage {
                     width: parent.width;
                     height: parent.height;
                     top: root.ext-top;
@@ -10022,7 +10035,7 @@ export component AppWindow inherits Window {
                     clicked(id) => { root.ext-clicked(id); }
                     toggled(id, on) => { root.ext-toggled(id, on); }
                 }
-                if root.tab == 2 && root.profiles-page == "ext": SettingsPage {
+                if root.profiles-shown && root.profiles-page == "ext": SettingsPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.ext-meta.title;
@@ -10043,7 +10056,7 @@ export component AppWindow inherits Window {
                     clicked(id) => { root.ext-clicked(id); }
                     toggled(id, on) => { root.ext-toggled(id, on); }
                 }
-                if root.tab == 2 && root.profiles-page == "group-members": MemberPickerPage {
+                if root.profiles-shown && root.profiles-page == "group-members": MemberPickerPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.pg-provider ? "添加筛选" : "添加节点";
@@ -10055,7 +10068,7 @@ export component AppWindow inherits Window {
                     back => { root.pg-pick("back"); }
                     pick(a) => { root.pg-pick(a); }
                 }
-                if root.tab == 2 && root.profiles-page == "group-icon": IconPickerPage {
+                if root.profiles-shown && root.profiles-page == "group-icon": IconPickerPage {
                     width: parent.width;
                     height: parent.height;
                     value: root.gi-value;
@@ -10865,7 +10878,7 @@ export component AppWindow inherits Window {
 
         // `MemoryDetailSheet`: the total, what the app holds, and release memory.
         // ReorderableProfilesSheet: drag the profiles into order, then ✓ saves.
-        if root.tab == 2 && root.profiles-page == "sort": DashSheet {
+        if root.profiles-shown && root.profiles-page == "sort": DashSheet {
             title: "配置排序";
             top-inset: root.top-inset;
             bottom-inset: root.bottom-inset;

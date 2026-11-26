@@ -100,6 +100,8 @@ impl App {
         self.publish_custom();
         self.ui(|ui| {
             ui.set_custom_open(true);
+            ui.set_profiles_over(ui.get_tab() != 2);
+            ui.set_picker_open(false);
             ui.set_profiles_page("custom".into());
         });
     }

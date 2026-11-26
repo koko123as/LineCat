@@ -221,7 +221,22 @@ impl App {
         let a = self.clone();
         ui.on_open_memory(move || a.publish_memory());
         let a = self.clone();
-        ui.on_open_profile_detail(move || a.load_profile_detail());
+        ui.on_open_profile_detail(move || {
+            let custom = a
+                .store
+                .lock()
+                .unwrap()
+                .active()
+                .filter(|p| p.is_custom())
+                .map(|p| p.id.clone());
+            match custom {
+                Some(id) => a.open_custom(id, false),
+                None => {
+                    a.ui(|ui| ui.set_profile_sheet_open(true));
+                    a.load_profile_detail();
+                }
+            }
+        });
         self.publish_dash_flags();
         self.publish_services();
     }
