@@ -22,6 +22,9 @@ fn editing() -> &'static Mutex<Editing> {
     E.get_or_init(Default::default)
 }
 
+/// `scriptTemplate`: what a new script and a missing script file open on.
+const SCRIPT_TEMPLATE: &str = "const main = (config) => {\n  return config;\n}";
+
 fn row(id: &str, title: &str, subtitle: &str) -> SetRow {
     SetRow {
         id: id.into(),
@@ -85,7 +88,7 @@ pub fn sections(settings: &store::Settings, page: &str) -> Option<Vec<SetSection
 }
 
 impl App {
-    fn script_path(&self, id: &str) -> PathBuf {
+    pub(crate) fn script_path(&self, id: &str) -> PathBuf {
         self.store
             .lock()
             .unwrap()
@@ -164,7 +167,10 @@ impl App {
                 let Some(s) = settings.scripts.iter().find(|s| s.id == sid) else {
                     return true;
                 };
-                let mut items = vec![(format!("script-menu:edit:{sid}"), "edit", "编辑", false)];
+                let mut items = vec![
+                    (format!("script-menu:edit:{sid}"), "edit", "编辑", false),
+                    (format!("script-menu:rename:{sid}"), "edit", "重命名", false),
+                ];
                 if s.url.is_some() {
                     items.push((format!("script-menu:url:{sid}"), "copy", "URL", false));
                     items.push((format!("script-menu:sync:{sid}"), "sync", "同步", false));
@@ -186,6 +192,11 @@ impl App {
         }
         if key == "script-name" {
             return Some(items::script_name_issue(&settings.scripts, None, v1).unwrap_or_default());
+        }
+        if let Some(id) = key.strip_prefix("script-rename:") {
+            return Some(
+                items::script_name_issue(&settings.scripts, Some(id), v1).unwrap_or_default(),
+            );
         }
         if key == "script-url" || key.starts_with("script-url:") {
             let v = v1.trim();
@@ -243,6 +254,17 @@ impl App {
                 let url = v1.trim().to_string();
                 self.spawn(move |app| app.import_script_url(&url, None));
             }
+            k if k.starts_with("script-rename:") => {
+                let (id, label) = (
+                    k["script-rename:".len()..].to_string(),
+                    v1.trim().to_string(),
+                );
+                self.update_items(move |s| {
+                    if let Some(x) = s.scripts.iter_mut().find(|x| x.id == id) {
+                        x.label = label;
+                    }
+                });
+            }
             k if k.starts_with("script-url:") => {
                 let (id, url) = (k["script-url:".len()..].to_string(), v1.trim().to_string());
                 self.spawn(move |app| app.import_script_url(&url, Some(id)));
@@ -271,7 +293,7 @@ impl App {
         match (key, value) {
             ("script-add", "new") => {
                 *editing().lock().unwrap() = Editing::default();
-                self.open_tools_editor("脚本", "", "scripts");
+                self.open_tools_editor("脚本", SCRIPT_TEMPLATE, "scripts");
             }
             ("script-add", "url") => self.open_input("script-url", "通过URL导入", "URL", ""),
             ("script-add", "file") => self.spawn(|app| app.import_script_file()),
@@ -283,11 +305,17 @@ impl App {
                 };
                 match action {
                     "edit" => {
-                        let text =
-                            std::fs::read_to_string(self.script_path(id)).unwrap_or_default();
+                        let text = std::fs::read_to_string(self.script_path(id))
+                            .unwrap_or_else(|_| SCRIPT_TEMPLATE.into());
                         editing().lock().unwrap().script = Some(id.to_string());
                         self.open_tools_editor(&s.label, &text, "scripts");
                     }
+                    "rename" => self.open_input(
+                        &format!("script-rename:{id}"),
+                        "重命名",
+                        "请输入脚本名称",
+                        &s.label,
+                    ),
                     "url" => self.open_input(
                         &format!("script-url:{id}"),
                         "URL",

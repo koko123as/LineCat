@@ -46,6 +46,8 @@ pub mod reorder;
 pub mod requests;
 pub mod rules;
 mod rules_app;
+pub mod script;
+mod script_app;
 pub use rules_app::sections as rules_sections;
 mod requests_app;
 pub mod requests_view;
@@ -699,6 +701,11 @@ impl App {
             std::fs::write(&path, serde_json::to_vec(base).unwrap_or_default())
                 .map_err(|e| e.to_string())?;
         }
+        let scripted = match base {
+            Some(_) => None,
+            None => self.scripted_profile(bridge, id, &path)?,
+        };
+        let path = scripted.as_ref().map_or(path, |(p, _)| p.clone());
         let inspect = bridge.call(
             "profile.inspect",
             json!({"profile": profile_ref(&path)}),
@@ -719,8 +726,12 @@ impl App {
             BTreeSet::new()
         };
         let named = added.iter().any(|r| r.custom_exit) || !policies.is_empty();
-        let (names, fallback) = match &base {
-            Some(b) => {
+        let (names, fallback) = match (&base, &scripted) {
+            (None, Some((_, config))) => (
+                extend::config_outbounds(config).names(),
+                extend::match_target(&script::match_lines(config)),
+            ),
+            (Some(b), _) => {
                 let mut names = extend::config_outbounds(b).names();
                 names.extend(
                     own.groups
@@ -729,7 +740,7 @@ impl App {
                 );
                 (names, extend::match_target(&own.rules))
             }
-            None => (
+            (None, None) => (
                 if named {
                     self.profile_outbounds(bridge, id, &path)
                         .map(|o| o.names())

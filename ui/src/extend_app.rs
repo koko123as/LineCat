@@ -153,26 +153,29 @@ fn global_meta(searching: bool) -> PageMeta {
     }
 }
 
-/// `ExtendView`'s sections: 脚本 (no script engine yet, so 无 and nothing to open), the
-/// profile's own added rules (checks while `selected` holds any), then 控制全局附加规则 and 出口.
+/// `ExtendView`'s sections: 脚本 (`ScriptContent`), the profile's own added rules (checks
+/// while `selected` holds any), then 控制全局附加规则 and 出口.
 pub fn main_view(
     state: &State,
     profile_id: &str,
     selected: &BTreeSet<u64>,
     exits: &[ExitRow],
 ) -> (Vec<SetSection>, Vec<SetSection>, Vec<SetSection>) {
+    let script = state
+        .profiles
+        .iter()
+        .find(|p| p.id == profile_id)
+        .and_then(|p| p.script_id.as_deref())
+        .and_then(|id| state.settings.scripts.iter().find(|s| s.id == id))
+        .map_or("无", |s| s.label.as_str());
     let top = vec![section(
         "脚本",
         vec![
             SetRow {
-                trailing: "无".into(),
-                enabled: false,
+                trailing: script.into(),
                 ..row("script", "value", "扩展脚本", "")
             },
-            SetRow {
-                enabled: false,
-                ..row("script-go", "open", "前往配置脚本", "")
-            },
+            row("script-go", "open", "前往配置脚本", ""),
         ],
     )];
     let selecting = !selected.is_empty();
@@ -260,6 +263,28 @@ impl App {
     /// The profile's outbounds and where unmatched traffic goes, for the exits.
     fn load_extend(self: &Arc<Self>, id: &str, path: &Path) {
         if let Ok(bridge) = self.bridge() {
+            if self.profile_script(id).is_some() {
+                let (outbounds, fallback) = match self.scripted_profile(&bridge, id, path) {
+                    Ok(Some((_, config))) => (
+                        Some(extend::config_outbounds(&config)),
+                        extend::match_target(&crate::script::match_lines(&config)),
+                    ),
+                    Ok(None) => (None, None),
+                    Err(e) => {
+                        self.toast(e);
+                        (None, None)
+                    }
+                };
+                let mut ext = EXT.lock().unwrap();
+                if ext.profile == id {
+                    ext.outbounds = outbounds;
+                    ext.fallback = fallback;
+                }
+                drop(ext);
+                self.module_exits();
+                self.publish_ext();
+                return;
+            }
             let outbounds = self.profile_outbounds(&bridge, id, path);
             let fallback = bridge
                 .call(
@@ -477,6 +502,30 @@ impl App {
     }
 
     /// `ExitsSection._handleSelect`: 默认 (where it goes now), 基础策略, 规则目标 and 代理.
+    /// `ScriptContent`'s 扩展脚本: 无, then every script.
+    fn open_script_sheet(self: &Arc<Self>, profile_id: &str) {
+        let state = self.store.lock().unwrap().state.clone();
+        let Some(p) = state.profiles.iter().find(|p| p.id == profile_id) else {
+            return;
+        };
+        let current = p
+            .script_id
+            .as_deref()
+            .filter(|id| state.settings.scripts.iter().any(|s| s.id == *id))
+            .unwrap_or("");
+        let item = |id: &str, label: &str| ActionItem {
+            id: format!("ext-script:{profile_id}\t{id}").into(),
+            label: label.into(),
+            check: true,
+            checked: current == id,
+            enabled: true,
+            ..Default::default()
+        };
+        let mut items = vec![item("", "无")];
+        items.extend(state.settings.scripts.iter().map(|s| item(&s.id, &s.label)));
+        self.show_choice("扩展脚本", items);
+    }
+
     pub(crate) fn open_exit_sheet(self: &Arc<Self>, profile_id: &str, exit: &str) {
         let state = self.store.lock().unwrap().state.clone();
         let Some(p) = state.profiles.iter().find(|p| p.id == profile_id) else {
@@ -523,6 +572,23 @@ impl App {
 
     /// A pick from the exit sheet; false when it is not one.
     pub(crate) fn ext_picked(self: &Arc<Self>, key: &str, value: &str) -> bool {
+        if key == "ext-script" {
+            let (pid, script) = value.split_once('\t').unwrap_or((value, ""));
+            {
+                let mut store = self.store.lock().unwrap();
+                if let Some(p) = store.state.profiles.iter_mut().find(|p| p.id == pid) {
+                    p.script_id = (!script.is_empty()).then(|| script.to_string());
+                }
+                store.save();
+            }
+            let (id, path) = {
+                let store = self.store.lock().unwrap();
+                (pid.to_string(), store.profile_path(pid))
+            };
+            self.publish_ext();
+            self.spawn(move |app| app.load_extend(&id, &path));
+            return true;
+        }
         if key != "ext-exit" {
             return false;
         }
@@ -651,6 +717,8 @@ impl App {
                 match id {
                     "apply" => self.apply_extend(),
                     "global" => self.push_ext("global"),
+                    "script" => self.open_script_sheet(&pid),
+                    "script-go" => self.ui(|ui| ui.invoke_open_tools("scripts".into())),
                     "hdr-add" | "hdr-presets" | "hdr-delete" | "hdr-select-all" => {
                         self.host_rules(own);
                         let (p, a) = match id {

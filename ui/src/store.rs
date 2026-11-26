@@ -416,6 +416,9 @@ pub struct Profile {
     pub overrides: crate::custom_profile::ProfileOverrides,
     /// `exitTargets`: where each custom exit of the added rules and modules goes.
     pub exit_targets: BTreeMap<String, String>,
+    /// `scriptId`: the script run over the profile before it is applied; never on a custom one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub script_id: Option<String>,
 }
 
 impl Default for Profile {
@@ -433,6 +436,7 @@ impl Default for Profile {
             selection: BTreeMap::new(),
             overrides: Default::default(),
             exit_targets: BTreeMap::new(),
+            script_id: None,
         }
     }
 }

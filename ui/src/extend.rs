@@ -319,6 +319,7 @@ pub fn inputs(state: &State, profile_id: &str) -> Value {
         "targets": state.profiles.iter().find(|p| p.id == profile_id).map(|p| &p.exit_targets),
         "rules": own_rules(state, profile_id),
         "disabled": disabled_ids(state, profile_id),
+        "script": state.profiles.iter().find(|p| p.id == profile_id).map(|p| &p.script_id),
     })
 }
 

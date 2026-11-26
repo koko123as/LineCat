@@ -1417,6 +1417,12 @@ fn snapshot_extend(ui: &AppWindow, overlay: &str) {
         ui.set_ext_searching(false);
         return;
     }
+    s.settings.scripts.push(items::Script {
+        id: "s1".into(),
+        label: "去广告与地区分组".into(),
+        ..Default::default()
+    });
+    s.profiles[0].script_id = Some("s1".into());
     let p = s.profiles[0].clone();
     let mut all = extend::own_rules(&s, "p");
     all.extend(extend::enabled_global(&s, "p"));
@@ -2540,6 +2546,8 @@ fn main() {
         ("set-filters-tablet", 3, "", "filters", 1, ""),
         ("set-scripts", 3, "", "scripts", 1, ""),
         ("set-scripts-small", 3, "", "scripts", 1, ""),
+        ("set-scripts-wide", 3, "", "scripts", 1, ""),
+        ("set-scripts-tablet", 3, "", "scripts", 1, ""),
         ("set-scripts-empty", 3, "", "scripts", 1, "empty"),
         ("set-rulesets", 3, "", "rule-sets", 1, ""),
         ("set-rulesets-small", 3, "", "rule-sets", 1, ""),

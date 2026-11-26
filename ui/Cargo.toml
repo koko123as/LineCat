@@ -19,9 +19,13 @@ flate2 = "1"
 libc = "0.2"
 qrcode = { version = "0.14", default-features = false }
 png = "0.17"
+rquickjs = { version = "0.12", default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "=0.6.1", features = ["native-activity"] }
+# rquickjs ships pre-generated bindings for every target but Android, where the build
+# generates them.
+rquickjs = { version = "0.12", default-features = false, features = ["bindgen"] }
 
 [build-dependencies]
 slint-build = "=1.19.1"

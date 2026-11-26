@@ -9065,6 +9065,12 @@ export component AppWindow inherits Window {
         root.go(t);
     }
 
+    // A tools page opened from another tab, as 前往配置脚本 pushes ScriptsView.
+    public function open-tools(page: string) {
+        root.go(3);
+        root.tools-page = page;
+    }
+
     function go(t: int) {
         if (root.custom-open) { root.custom-back(); }
         root.tab = t;

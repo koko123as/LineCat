@@ -100,6 +100,10 @@ jobs:
           yes | "$sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
           export ANDROID_JAR="$ANDROID_HOME/platforms/android-36/android.jar"
           export ANDROID_BUILD_TOOLS_VERSION=36.0.0
+          # rquickjs generates its bindings with bindgen on Android, which loads the NDK's libclang.
+          llvm="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+          export LIBCLANG_PATH="$(dirname "$(ls "$llvm"/lib/libclang.so* "$llvm"/lib64/libclang.so* 2>/dev/null | head -1)")"
+          echo "LIBCLANG_PATH=$LIBCLANG_PATH"
           ls -l "$ANDROID_JAR" "$ANDROID_HOME/build-tools/36.0.0/lib/d8.jar"
           grep -H 'Pkg.Revision' "$ANDROID_NDK_HOME/source.properties"
           cargo ndk -t arm64-v8a --platform "$ANDROID_MIN_SDK" -o ../android/app/src/main/jniLibs build --release --locked
