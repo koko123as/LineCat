@@ -1280,6 +1280,19 @@ fn snapshot_more(ui: &AppWindow, overlay: &str) {
         label: "美国节点".into(),
         regex: "(?i)美|us".into(),
     });
+    if let Some(id) = page.strip_prefix("yaml-") {
+        use seasoncat_ui::tun_sniffer_ntp::{NTP, SNIFFER};
+        let o = &s.profiles[0].overrides;
+        let (spec, st) = match id {
+            "dns" => (&cp::PROFILE_DNS, &o.dns),
+            "ntp" => (&NTP, &o.ntp),
+            _ => (&SNIFFER, &o.sniffer),
+        };
+        ui.set_editor_title(spec.title.into());
+        ui.set_editor_text(seasoncat_ui::override_yaml::override_yaml(spec, st).into());
+        ui.set_editor_readonly(false);
+        return;
+    }
     if !page.is_empty() {
         let (meta, sections, issue) =
             seasoncat_ui::profile_more_view(&s, "c", page, std::path::Path::new("/nonexistent"));
@@ -2309,6 +2322,17 @@ fn main() {
         ("pm-sniffer-small", 2, "", "pmore", 1, "pm:sniffer"),
         ("pm-sniffer-wide", 2, "", "pmore", 1, "pm:sniffer"),
         ("pm-sniffer-tablet", 2, "", "pmore", 1, "pm:sniffer"),
+        ("pm-yaml-sniffer", 2, "", "editor", 1, "pm:yaml-sniffer"),
+        (
+            "pm-yaml-sniffer-small",
+            2,
+            "",
+            "editor",
+            1,
+            "pm:yaml-sniffer",
+        ),
+        ("pm-yaml-dns-wide", 2, "", "editor", 1, "pm:yaml-dns"),
+        ("pm-yaml-ntp-tablet", 2, "", "editor", 1, "pm:yaml-ntp"),
         ("pm-tun", 2, "", "pmore", 1, "pm:tun"),
         ("pm-tun-small", 2, "", "pmore", 1, "pm:tun"),
         ("pm-tun-wide", 2, "", "pmore", 1, "pm:tun"),

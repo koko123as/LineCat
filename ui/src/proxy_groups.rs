@@ -1479,7 +1479,7 @@ pub fn to_yaml(def: &Value) -> String {
     out
 }
 
-fn scalar(v: &Value) -> String {
+pub(crate) fn scalar(v: &Value) -> String {
     match v {
         Value::String(s) => quote(s),
         other => other.to_string(),
@@ -1487,7 +1487,7 @@ fn scalar(v: &Value) -> String {
 }
 
 /// A plain scalar when YAML reads it back as the same string, else double quoted.
-fn quote(s: &str) -> String {
+pub(crate) fn quote(s: &str) -> String {
     let plain = !s.is_empty()
         && s.trim() == s
         && !s.starts_with([

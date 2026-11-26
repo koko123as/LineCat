@@ -321,7 +321,7 @@ impl App {
         self.update_items(move |s| s.scripts.retain(|x| x.id != id));
     }
 
-    fn open_tools_editor(self: &Arc<Self>, title: &str, text: &str, parent: &str) {
+    pub(crate) fn open_tools_editor(self: &Arc<Self>, title: &str, text: &str, parent: &str) {
         crate::rule_sets_app::release_editor();
         let (title, text, parent): (SharedString, SharedString, SharedString) =
             (title.into(), text.into(), parent.into());
@@ -337,7 +337,8 @@ impl App {
 
     /// The tools editor's save: a script's new content, or a new script to name.
     pub(crate) fn tools_editor_save(self: &Arc<Self>, text: String) {
-        if self.share_links_editor_save(&text)
+        if self.override_yaml_save(&text, false)
+            || self.share_links_editor_save(&text)
             || self.custom_proxy_editor_save(&text)
             || self.rule_set_editor_save(&text)
             || self.mitm_editor_save(&text)

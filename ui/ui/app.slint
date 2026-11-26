@@ -9145,6 +9145,7 @@ export component AppWindow inherits Window {
                 if (root.link-open) { root.link-open = false; return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "group") { root.group-yaml-closed(); root.editor-parent = ""; root.profiles-page = "group"; return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "rules") { root.editor-parent = ""; root.pr-act("yaml-closed"); return accept; }
+                if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "pmore") { root.editor-parent = ""; root.pm-clicked("yaml-closed"); root.profiles-page = "pmore"; return accept; }
                 if (root.tab == 2 && root.profiles-page == "rules" && root.pr-searching && !root.pr-selecting && !root.pr-sorting) { root.pr-query = ""; root.pr-searching = false; return accept; }
                 if (root.tab == 2 && root.profiles-page == "rules") { root.pr-act("back"); return accept; }
                 if (root.tab == 2 && (root.profiles-page == "rule" || root.profiles-page == "rule-presets")) { root.pr-form("back"); return accept; }
@@ -9413,6 +9414,12 @@ export component AppWindow inherits Window {
                             root.pr-act("yaml-closed");
                             return;
                         }
+                        if (root.profiles-page == "editor" && root.editor-parent == "pmore") {
+                            root.editor-parent = "";
+                            root.pm-clicked("yaml-closed");
+                            root.profiles-page = "pmore";
+                            return;
+                        }
                         root.profiles-page = root.profiles-page == "editor" ? "edit" : root.custom-open ? "custom" : "";
                     }
                 }
@@ -9505,6 +9512,8 @@ export component AppWindow inherits Window {
                     height: parent.height;
                     title: root.pm-meta.title;
                     action-glyph: Glyphs.of(root.pm-meta.action);
+                    action2-glyph: Glyphs.of(root.pm-meta.action2);
+                    action2 => { root.pm-clicked("action2"); }
                     sections: root.pm-sections;
                     empty: root.pm-meta.empty;
                     empty-desc: root.pm-meta.empty-desc;

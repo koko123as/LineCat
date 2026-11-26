@@ -37,6 +37,8 @@ pub use items_app::sections as items_sections;
 pub use logs_app::log_item;
 pub mod on_demand;
 mod on_demand_app;
+pub mod override_yaml;
+mod override_yaml_app;
 pub mod overrides;
 pub mod profile;
 pub mod proxies;
@@ -2583,7 +2585,10 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     ui.on_upload_file(move || a.upload_file());
     let a = app.clone();
     ui.on_editor_save(move |text| {
-        if !a.group_yaml_save(&text) && !a.rules_yaml_save(&text) {
+        if !a.group_yaml_save(&text)
+            && !a.rules_yaml_save(&text)
+            && !a.override_yaml_save(&text, true)
+        {
             a.save_editor(text.into());
         }
     });

@@ -27,7 +27,7 @@ pub fn spec(id: &str) -> Option<&'static Spec> {
     }
 }
 
-fn state_of<'a>(o: &'a ProfileOverrides, id: &str) -> &'a OverrideState {
+pub(crate) fn state_of<'a>(o: &'a ProfileOverrides, id: &str) -> &'a OverrideState {
     match id {
         "dns" => &o.dns,
         "ntp" => &o.ntp,
@@ -257,6 +257,11 @@ pub fn view(
                     } else {
                         "".into()
                     },
+                    action2: if crate::override_yaml::section_of(spec).is_some() {
+                        "compose".into()
+                    } else {
+                        "".into()
+                    },
                     empty: format!("暂无{}", spec.entries).into(),
                     empty_desc: spec.description.into(),
                     empty_action: spec.add.into(),
@@ -394,7 +399,7 @@ impl App {
         self.publish_custom();
     }
 
-    fn edit_spec(self: &Arc<Self>, id: &str, f: impl FnOnce(&Spec, &mut OverrideState)) {
+    pub(crate) fn edit_spec(self: &Arc<Self>, id: &str, f: impl FnOnce(&Spec, &mut OverrideState)) {
         let Some(spec) = spec(id) else {
             return;
         };
@@ -406,7 +411,7 @@ impl App {
         });
     }
 
-    fn overrides_now(&self) -> ProfileOverrides {
+    pub(crate) fn overrides_now(&self) -> ProfileOverrides {
         let pid = crate::custom_profile_app::page_id().unwrap_or_default();
         self.store
             .lock()
@@ -420,6 +425,9 @@ impl App {
     }
 
     pub(crate) fn pm_clicked(self: &Arc<Self>, id: &str) {
+        if id == "yaml-closed" {
+            return self.override_yaml_left(false);
+        }
         let Some(page) = top() else {
             return;
         };
@@ -506,6 +514,10 @@ impl App {
         let Some(spec) = spec(page) else {
             return;
         };
+        if id == "action2" {
+            self.open_override_yaml(page, true);
+            return;
+        }
         let o = self.overrides_now();
         let state = state_of(&o, page);
         if id == "action" {

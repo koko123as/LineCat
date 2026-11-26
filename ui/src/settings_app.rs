@@ -99,7 +99,10 @@ fn map_put(s: &mut store::Settings, key: &str, map: std::collections::BTreeMap<S
 }
 
 /// The override state a spec id keeps in the settings.
-fn override_state<'a>(s: &'a store::Settings, spec: &str) -> Option<&'a overrides::OverrideState> {
+pub(crate) fn override_state<'a>(
+    s: &'a store::Settings,
+    spec: &str,
+) -> Option<&'a overrides::OverrideState> {
     match spec {
         "dns" => Some(&s.dns_override),
         "general" => Some(&s.general_override),
@@ -212,6 +215,11 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
         id => match overrides::spec(id) {
             Some(spec) => PageMeta {
                 action: "add-circle".into(),
+                action2: if crate::override_yaml::section_of(spec).is_some() {
+                    "compose".into()
+                } else {
+                    "".into()
+                },
                 empty: format!("暂无{}", spec.entries).into(),
                 empty_desc: spec.description.into(),
                 empty_action: spec.add.into(),
@@ -246,6 +254,9 @@ impl App {
                 a.rules_page_shown(&page);
                 a.custom_proxies_page_shown(&page);
                 a.mitm_page_shown(&page);
+                if page != "editor" {
+                    a.override_yaml_left(true);
+                }
             }
             a.publish_settings();
         });
@@ -1073,6 +1084,10 @@ impl App {
         let Some(state) = override_state(&settings, page) else {
             return;
         };
+        if id == "action2" {
+            self.open_override_yaml(page, false);
+            return;
+        }
         if id == "action" {
             if !spec.can_add(state) {
                 return;

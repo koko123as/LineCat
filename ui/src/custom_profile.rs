@@ -607,6 +607,31 @@ mod tests {
     }
 
     #[test]
+    fn the_ntp_dialer_must_be_a_rule_target() {
+        let (mut state, mut p) = custom_state();
+        state.proxy_groups.push(group(1, &p.id, "Work", None));
+        let ntp = &mut p.overrides.ntp;
+        ntp.keys = vec!["enable".into(), "dialer-proxy".into()];
+        ntp.model.insert("enable".into(), json!(true));
+        ntp.model.insert("dialer-proxy".into(), json!("Gone"));
+        assert_eq!(
+            ntp_issues(&state, &p),
+            [crate::proxy_groups::Issue::MissingDialer("Gone".into())]
+        );
+        p.overrides
+            .ntp
+            .model
+            .insert("dialer-proxy".into(), json!("Work"));
+        assert!(ntp_issues(&state, &p).is_empty());
+        p.overrides
+            .ntp
+            .model
+            .insert("dialer-proxy".into(), json!("Gone"));
+        p.overrides.ntp.model.insert("enable".into(), json!(false));
+        assert!(ntp_issues(&state, &p).is_empty());
+    }
+
+    #[test]
     fn a_new_custom_profile_takes_no_updates() {
         let p = new_profile("1".into(), "未命名", 42);
         assert!(p.is_custom() && !p.is_url() && !p.auto_update);
