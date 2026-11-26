@@ -5855,6 +5855,103 @@ component LogRow inherits Rectangle {
     }
 }
 
+// `FloatingScrollbar` over a list: a thumb that fades 1.2s after the last scroll and drags
+// the list, slowed by moving the finger sideways, with the hint at that point beside it.
+component FeedBar inherits Rectangle {
+    in property <length> content-height;
+    in property <string> hint;
+    in property <length> bottom-gap;
+    in-out property <length> content-y;
+    out property <length> range: max(0px, root.content-height - root.height);
+    out property <float> fraction: root.range > 0 ? clamp(-root.content-y / root.range, 0, 1) : 0;
+    out property <bool> scrubbing: bar-ta.pressed && root.range > 0;
+    callback dragged();
+    property <length> track: root.height - 4px;
+    property <length> thumb: clamp(root.range > 0 ? root.track * root.height / root.content-height : root.track, min(48px, root.track), root.track);
+    property <length> thumb-y: 2px + root.fraction * (root.track - root.thumb);
+    property <bool> shown;
+    property <int> idle;
+    property <float> rate: 1;
+    property <length> last-y;
+    property <length> origin-x;
+    public function poke() {
+        root.shown = true;
+        root.idle = 0;
+    }
+    changed scrubbing => {
+        if (!self.scrubbing) { hint-hold.running = true; }
+    }
+    Timer {
+        interval: 200ms;
+        running: root.shown && !root.scrubbing;
+        triggered => {
+            root.idle += 1;
+            if (root.idle >= 6) { root.shown = false; }
+        }
+    }
+    hint-hold := Timer {
+        interval: 500ms;
+        running: false;
+        triggered => { self.running = false; }
+    }
+    if root.range > 0: Rectangle {
+        property <float> t: root.scrubbing ? 1 : 0;
+        x: parent.width - self.width - 2px;
+        y: root.thumb-y;
+        width: 6px + 4px * self.t;
+        height: root.thumb;
+        border-radius: self.width / 2;
+        opacity: root.shown || root.scrubbing ? 1 : 0;
+        background: Theme.s.on-surface.with-alpha(Theme.is-dark ? 0.35 + 0.3 * self.t : 0.25 + 0.25 * self.t);
+        animate width, background { duration: 120ms; easing: ease-out; }
+        animate opacity { duration: 250ms; }
+    }
+    bar-ta := TouchArea {
+        x: parent.width - 24px;
+        y: root.thumb-y - 8px;
+        width: 24px;
+        height: root.thumb + 16px;
+        enabled: root.range > 0 && (root.shown || self.pressed);
+        changed pressed => {
+            if (self.pressed) {
+                root.last-y = self.mouse-y;
+                root.origin-x = self.mouse-x;
+                root.rate = 1;
+                root.poke();
+            } else {
+                root.dragged();
+            }
+        }
+        moved => {
+            // `_scrubRateFor`: each 48px sideways halves the speed, down to 1/8.
+            root.rate = abs(self.mouse-x - root.origin-x) >= 144px ? 0.125 : abs(self.mouse-x - root.origin-x) >= 96px ? 0.25 : abs(self.mouse-x - root.origin-x) >= 48px ? 0.5 : 1;
+            if (root.track > root.thumb) {
+                root.content-y = clamp(root.content-y - (self.mouse-y - root.last-y) * root.rate * root.range / (root.track - root.thumb), -root.range, 0px);
+            }
+            root.last-y = self.mouse-y;
+            root.dragged();
+        }
+    }
+    if root.range > 0 && (root.scrubbing || hint-hold.running) && root.hint != "": Rectangle {
+        x: parent.width - 40px - self.width;
+        y: clamp(root.thumb-y + root.thumb / 2 - self.height / 2, 0px, max(0px, parent.height - root.bottom-gap - 8px - self.height));
+        width: pill.preferred-width + 24px;
+        height: pill.preferred-height + 12px;
+        border-radius: self.height / 2;
+        background: Theme.s.card;
+        drop-shadow-offset-y: 4px;
+        drop-shadow-blur: 16px;
+        drop-shadow-color: #0000001f;
+        pill := HorizontalLayout {
+            x: 12px;
+            y: 6px;
+            spacing: 6px;
+            Text { text: root.hint; font-size: 13px * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
+            if root.scrubbing && root.rate < 1: Text { text: root.rate + "×"; font-size: 13px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; }
+        }
+    }
+}
+
 // lib/views/logs.dart: search, the level filters (from the bar and a row's label) as a
 // strip of chips, export and the log level in the menu, newest first; a tap opens the
 // record's details.
@@ -5872,6 +5969,9 @@ component Logs inherits Rectangle {
     callback filter(string);
     callback unfilter(string);
     callback open(int);
+    // `ScrollToEndBox`: off the newest, new lines wait until the list is back at it.
+    callback set-following(bool);
+    init => { root.set-following(true); }
     changed query => { root.search(root.query); }
     VerticalLayout {
         if !root.searching: AppBar {
@@ -5956,16 +6056,29 @@ component Logs inherits Rectangle {
             vertical-stretch: 1;
             label: "暂无日志";
         }
-        if root.logs.length > 0: ListView {
+        if root.logs.length > 0: Rectangle {
             vertical-stretch: 1;
-            for l in root.logs: HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                LogRow {
-                    log: l;
-                    open(id) => { root.open(id); }
-                    filter(level) => { root.filter(level); }
+            log-lv := ListView {
+                vertical-scrollbar-policy: always-off;
+                scrolled => {
+                    root.set-following(self.content-y >= -0.5px);
+                    log-bar.poke();
                 }
+                for l in root.logs: HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    LogRow {
+                        log: l;
+                        open(id) => { root.open(id); }
+                        filter(level) => { root.filter(level); }
+                    }
+                }
+            }
+            log-bar := FeedBar {
+                content-height: log-lv.content-height;
+                content-y <=> log-lv.content-y;
+                hint: root.logs[clamp(round(self.fraction * (root.logs.length - 1)), 0, root.logs.length - 1)].time;
+                dragged => { root.set-following(log-lv.content-y >= -0.5px); }
             }
         }
         Rectangle { height: Dock.pad; }
@@ -7805,9 +7918,8 @@ component ReqHeader inherits VerticalLayout {
 }
 
 // `RecordFeedView`: the list follows the newest until scrolled away from it and again once
-// back at it (`ScrollToEndBox`), rows that come in meanwhile leave the rows read in place
-// (`FollowEndScrollPhysics`), and dragging the thumb shows the time at that point
-// (`FloatingScrollbar`), slowed by moving the finger sideways.
+// back at it (`ScrollToEndBox`), and rows that come in meanwhile leave the rows read in
+// place (`FollowEndScrollPhysics`).
 component ReqList inherits Rectangle {
     in property <[RecordRow]> rows;
     in property <bool> marks;
@@ -7820,19 +7932,6 @@ component ReqList inherits Rectangle {
     callback select(int);
     callback menu(int);
     property <bool> following: true;
-    property <length> track: lv.height - 4px;
-    property <length> range: max(0px, lv.content-height - lv.height);
-    property <float> fraction: root.range > 0 ? clamp(-lv.content-y / root.range, 0, 1) : 0;
-    property <length> thumb: clamp(root.range > 0 ? root.track * lv.height / lv.content-height : root.track, min(48px, root.track), root.track);
-    property <length> thumb-y: 2px + root.fraction * (root.track - root.thumb);
-    property <bool> scrubbing: bar-ta.pressed && root.range > 0;
-    property <bool> bar-shown;
-    property <int> idle;
-    property <float> rate: 1;
-    property <length> last-y;
-    property <length> origin-x;
-    property <bool> hint-shown: root.scrubbing || hint-hold.running;
-    property <int> at: root.rows.length > 0 ? clamp(round(root.fraction * (root.rows.length - 1)), 0, root.rows.length - 1) : 0;
 
     changed segment => {
         root.following = true;
@@ -7845,9 +7944,6 @@ component ReqList inherits Rectangle {
             lv.content-y = max(lv.content-y - root.shift, min(0px, lv.height - lv.content-height));
         }
     }
-    changed scrubbing => {
-        if (!self.scrubbing) { hint-hold.running = true; }
-    }
 
     if root.rows.length == 0: NullStatus { label: root.empty; description: root.empty-desc; }
     lv := ListView {
@@ -7855,8 +7951,7 @@ component ReqList inherits Rectangle {
         vertical-scrollbar-policy: always-off;
         scrolled => {
             root.following = self.content-y >= -0.5px;
-            root.bar-shown = true;
-            root.idle = 0;
+            bar.poke();
         }
         for r in root.rows: RecordRowView {
             rec: r;
@@ -7865,75 +7960,13 @@ component ReqList inherits Rectangle {
             menu(id) => { root.menu(id); }
         }
     }
-    fade := Timer {
-        interval: 200ms;
-        running: root.bar-shown && !root.scrubbing;
-        triggered => {
-            root.idle += 1;
-            if (root.idle >= 6) { root.bar-shown = false; }
-        }
-    }
-    hint-hold := Timer {
-        interval: 500ms;
-        running: false;
-        triggered => { self.running = false; }
-    }
-    if root.rows.length > 0 && root.range > 0: Rectangle {
-        property <float> t: root.scrubbing ? 1 : 0;
-        x: parent.width - self.width - 2px;
-        y: root.thumb-y;
-        width: 6px + 4px * self.t;
-        height: root.thumb;
-        border-radius: self.width / 2;
-        opacity: root.bar-shown || root.scrubbing ? 1 : 0;
-        background: Theme.s.on-surface.with-alpha(Theme.is-dark ? 0.35 + 0.3 * self.t : 0.25 + 0.25 * self.t);
-        animate width, background { duration: 120ms; easing: ease-out; }
-        animate opacity { duration: 250ms; }
-    }
-    bar-ta := TouchArea {
-        x: parent.width - 24px;
-        y: root.thumb-y - 8px;
-        width: 24px;
-        height: root.thumb + 16px;
-        enabled: root.rows.length > 0 && root.range > 0 && (root.bar-shown || self.pressed);
-        changed pressed => {
-            if (self.pressed) {
-                root.last-y = self.mouse-y;
-                root.origin-x = self.mouse-x;
-                root.rate = 1;
-                root.bar-shown = true;
-                root.idle = 0;
-            } else {
-                root.following = lv.content-y >= -0.5px;
-            }
-        }
-        moved => {
-            // `_scrubRateFor`: each 48px sideways halves the speed, down to 1/8.
-            root.rate = abs(self.mouse-x - root.origin-x) >= 144px ? 0.125 : abs(self.mouse-x - root.origin-x) >= 96px ? 0.25 : abs(self.mouse-x - root.origin-x) >= 48px ? 0.5 : 1;
-            if (root.track > root.thumb) {
-                lv.content-y = clamp(lv.content-y - (self.mouse-y - root.last-y) * root.rate * root.range / (root.track - root.thumb), -root.range, 0px);
-            }
-            root.last-y = self.mouse-y;
-            root.following = lv.content-y >= -0.5px;
-        }
-    }
-    if root.rows.length > 0 && root.range > 0 && root.hint-shown: Rectangle {
-        x: parent.width - 40px - self.width;
-        y: clamp(root.thumb-y + root.thumb / 2 - self.height / 2, 0px, max(0px, parent.height - root.bottom-gap - 8px - self.height));
-        width: pill.preferred-width + 24px;
-        height: pill.preferred-height + 12px;
-        border-radius: self.height / 2;
-        background: Theme.s.card;
-        drop-shadow-offset-y: 4px;
-        drop-shadow-blur: 16px;
-        drop-shadow-color: #0000001f;
-        pill := HorizontalLayout {
-            x: 12px;
-            y: 6px;
-            spacing: 6px;
-            Text { text: root.rows[root.at].time; font-size: 13px * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
-            if root.scrubbing && root.rate < 1: Text { text: root.rate + "×"; font-size: 13px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; }
-        }
+    bar := FeedBar {
+        visible: root.rows.length > 0;
+        content-height: lv.content-height;
+        content-y <=> lv.content-y;
+        bottom-gap: root.bottom-gap;
+        hint: root.rows.length > 0 ? root.rows[clamp(round(self.fraction * (root.rows.length - 1)), 0, root.rows.length - 1)].time : "";
+        dragged => { root.following = lv.content-y >= -0.5px; }
     }
 }
 
@@ -9141,6 +9174,7 @@ export component AppWindow inherits Window {
     callback logs-open-menu();
     callback logs-filter(string);
     callback logs-unfilter(string);
+    callback logs-following(bool);
     callback logs-open(int);
     callback logs-copy(int);
     // Settings
@@ -10274,6 +10308,7 @@ export component AppWindow inherits Window {
                     open-menu => { root.logs-open-menu(); }
                     filter(l) => { root.logs-filter(l); }
                     unfilter(l) => { root.logs-unfilter(l); }
+                    set-following(on) => { root.logs-following(on); }
                     open(id) => { root.logs-open(id); }
                 }
                 if root.tools-shown && root.tools-page == "font": FontPage {

@@ -10,11 +10,14 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
+const PAUSED_MAX_LOGS: usize = 2 * logs::MAX_LOGS;
+
 #[derive(Default)]
 pub(crate) struct LogsState {
     pub records: Vec<Record>,
     pub query: String,
     pub levels: Vec<String>,
+    pub paused: bool,
 }
 
 /// A record as the list draws it; `id` is its index in the records.
@@ -70,6 +73,18 @@ impl App {
                 .levels
                 .retain(|l| *l != level.as_str());
             a.publish_logs();
+        });
+        let a = self.clone();
+        ui.on_logs_following(move |on| {
+            let resumed = {
+                let mut s = a.logs.lock().unwrap();
+                let resumed = s.paused && on;
+                s.paused = !on;
+                resumed
+            };
+            if resumed {
+                a.publish_logs();
+            }
         });
         let a = self.clone();
         ui.on_logs_open_filters(move || a.open_log_filters());
@@ -142,12 +157,17 @@ impl App {
             std::thread::sleep(Duration::from_millis(250));
             app.logs_scheduled.store(false, Ordering::SeqCst);
             let batch: Vec<Record> = std::mem::take(&mut *app.pending_logs.lock().unwrap());
-            {
+            let paused = {
                 let mut s = app.logs.lock().unwrap();
                 s.records.extend(batch);
-                logs::trim(&mut s.records);
+                if !s.paused || s.records.len() > PAUSED_MAX_LOGS {
+                    logs::trim(&mut s.records);
+                }
+                s.paused
+            };
+            if !paused {
+                app.publish_logs();
             }
-            app.publish_logs();
         });
     }
 
