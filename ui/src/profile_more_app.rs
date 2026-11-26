@@ -181,7 +181,7 @@ fn dialers_sections(state: &State, profile_id: &str) -> Vec<SetSection> {
             invalid: issues.contains_key(&id),
             ..row(
                 &format!("dl:{id}"),
-                "action",
+                "issue",
                 &name,
                 &target.unwrap_or_default(),
             )
@@ -191,6 +191,14 @@ fn dialers_sections(state: &State, profile_id: &str) -> Vec<SetSection> {
         return Vec::new();
     }
     vec![section("", "", rows)]
+}
+
+/// The message of a dialer row's issues, none when it has none.
+pub fn dialer_issue_text(state: &State, profile_id: &str, proxy_id: &str) -> Option<String> {
+    crate::dialers::profile_issues(state, profile_id)
+        .get(proxy_id)
+        .filter(|found| !found.is_empty())
+        .map(|found| crate::proxy_groups::issues_message(found))
 }
 
 fn more_sections(state: &State, p: &crate::store::Profile) -> Vec<SetSection> {
@@ -442,7 +450,9 @@ impl App {
             },
             "providers" => self.provider_clicked(id),
             "dialers" => {
-                if let Some(proxy) = id.strip_prefix("dl:") {
+                if let Some(proxy) = id.strip_prefix("issue:dl:") {
+                    self.show_dialer_issues(proxy);
+                } else if let Some(proxy) = id.strip_prefix("dl:") {
                     self.open_dialer_sheet(proxy);
                 }
             }
@@ -470,6 +480,16 @@ impl App {
             self.alert("提示", format!("{n} 是一个无效的代理集"));
         } else if let Some(n) = id.strip_prefix("rp-missing:") {
             self.alert("提示", format!("{n} 不是有效的规则集"));
+        }
+    }
+
+    fn show_dialer_issues(self: &Arc<Self>, proxy_id: &str) {
+        let Some(pid) = crate::custom_profile_app::page_id() else {
+            return;
+        };
+        let text = dialer_issue_text(&self.store.lock().unwrap().state, &pid, proxy_id);
+        if let Some(text) = text {
+            self.alert("提示", text);
         }
     }
 
@@ -876,6 +896,14 @@ mod tests {
             ("A", "Gone", true)
         );
         assert_eq!(issue, "拨号代理 Gone 不存在");
+        assert_eq!(r.kind.as_str(), "issue");
+        assert_eq!(
+            dialer_issue_text(&s, "p", "9").as_deref(),
+            Some("拨号代理 Gone 不存在")
+        );
+        crate::dialers::set(&mut s, "p", "9", None);
+        assert_eq!(dialer_issue_text(&s, "p", "9"), None);
+        crate::dialers::set(&mut s, "p", "9", Some("Gone".into()));
         let (_, secs, _) = view(&s, "p", "more", Path::new(""));
         let r = secs[0].rows.row_data(0).unwrap();
         assert_eq!((r.trailing.as_str(), r.invalid), ("1 个代理", true));

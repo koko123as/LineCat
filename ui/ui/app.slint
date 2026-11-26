@@ -4319,6 +4319,11 @@ component SetRowView inherits Rectangle {
             alignment: center;
             Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; }
         }
+        // `CustomIssueButton`: the row's issues in an alert, sent as `issue:<id>`.
+        if root.item.invalid && root.item.kind == "issue": VerticalLayout {
+            alignment: center;
+            IconButton { glyph: Icons.info; tint: Theme.s.error; clicked => { root.clicked("issue:" + root.item.id); } }
+        }
         if root.item.kind == "toggle": VerticalLayout {
             alignment: center;
             Switch { checked: root.item.on; toggled(on) => { root.toggled(root.item.id, on); } }
@@ -4377,7 +4382,7 @@ component SetRowView inherits Rectangle {
         clicked => { root.clicked("edit:" + root.item.id); }
     }
     ta := TouchArea {
-        width: (root.item.kind == "check" && root.item.glyph == "edit") || root.eye ? parent.width - 56px : root.item.kind == "switch" ? parent.width - 84px : root.item.kind == "select" ? parent.width - 52px : parent.width - self.x;
+        width: (root.item.kind == "check" && root.item.glyph == "edit") || root.eye || (root.item.kind == "issue" && root.item.invalid) ? parent.width - 56px : root.item.kind == "switch" ? parent.width - 84px : root.item.kind == "select" ? parent.width - 52px : parent.width - self.x;
         x: root.item.lead == "remove" ? 48px : 0;
         enabled: root.item.enabled && root.item.kind != "person";
         pointer-event(e) => {
