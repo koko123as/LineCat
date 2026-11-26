@@ -543,6 +543,10 @@ global Icons {
     out property <string> filter: "M4 5h16l-6 7.5V19l-4-2v-4.5z";
     out property <string> eye-off: "M3 3l18 18 M10.6 6.1A9.7 9.7 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-3 3.6 M6.6 7.6C4 9.4 2.5 12 2.5 12S6 18 12 18c1.6 0 3-.4 4.2-1 M9.9 10a3 3 0 0 0 4.2 4.2";
     out property <string> block: "M12 3a9 9 0 1 0 0.01 0z M5.6 5.6l12.8 12.8";
+    out property <string> toggle: "M7 7h10a5 5 0 0 1 0 10H7A5 5 0 0 1 7 7z M7 9.5a2.5 2.5 0 1 0 0.01 0z";
+    out property <string> toggle-on: "M7 7h10a5 5 0 0 1 0 10H7A5 5 0 0 1 7 7z M17 9.5a2.5 2.5 0 1 0 0.01 0z";
+    out property <string> sparkle: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z";
+    out property <string> paste: "M9 4h6v3H9z M7 5.5H5V21h14V5.5h-2";
     out property <string> error: "M12 3a9 9 0 1 0 0.01 0z M12 7.5v5.5 M12 16.5v.01";
     out property <string> warning: "M12 3.5l9.5 16.5h-19z M12 9.5v4.5 M12 17v.01";
     out property <string> customize: "M12 3.5l1.8 4.7 4.7 1.8-4.7 1.8L12 16.5l-1.8-4.7L5.5 10l4.7-1.8z M18.5 15.5l.8 2 2 .7-2 .8-.8 2-.7-2-2-.8 2-.7z";
@@ -587,7 +591,9 @@ global Glyphs {
             : k == "qr" ? Icons.qr : k == "devices" ? Icons.devices : k == "sort" ? Icons.sort : k == "file" ? Icons.file
             : k == "import-file" ? Icons.import-file : k == "cloud" ? Icons.cloud : k == "more-circle" ? Icons.more-circle
             : k == "lock-open" ? Icons.lock-open : k == "clock" ? Icons.clock : k == "link" ? Icons.link : k == "play" ? Icons.play : k == "puzzle" ? Icons.puzzle
-            : k == "customize" ? Icons.customize : k == "text-short" ? Icons.text-short : k == "compose" ? Icons.compose : "";
+            : k == "customize" ? Icons.customize : k == "text-short" ? Icons.text-short : k == "compose" ? Icons.compose
+            : k == "block" ? Icons.block : k == "eye-off" ? Icons.eye-off : k == "toggle" ? Icons.toggle : k == "toggle-on" ? Icons.toggle-on
+            : k == "sparkle" ? Icons.sparkle : k == "paste" ? Icons.paste : "";
     }
 }
 
@@ -7509,6 +7515,7 @@ component RecordRowView inherits Rectangle {
         ta := TouchArea {
             pointer-event(e) => {
                 if (e.kind == PointerEventKind.down) {
+                    MenuAnchor.at(root.absolute-position.x + self.mouse-x, root.absolute-position.y + self.mouse-y, 0px, 0px);
                     if (e.button == PointerEventButton.right) {
                         root.fired = true;
                         root.menu(root.rec.id);
@@ -7850,7 +7857,7 @@ component AccessPage inherits Rectangle {
                 IconButton { glyph: root.all-selected ? Icons.deselect : Icons.select-all; enabled: root.can-select-all; tint: Theme.s.on-surface; clicked => { root.select-all(); } }
             }
             if root.changed: VerticalLayout { alignment: center; IconButton { glyph: Icons.check; tint: Theme.s.primary; clicked => { root.save(); } } }
-            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.menu(); } } }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { MenuAnchor.at(self.absolute-position.x, self.absolute-position.y, self.width, self.height); root.menu(); } } }
         }
         if root.searching: HorizontalLayout {
             height: 56px;
@@ -8049,7 +8056,7 @@ component RequestsPage inherits Rectangle {
             can-back: root.can-back;
             back => { root.back(); }
             VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
-            if root.has-menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-menu(); } } }
+            if root.has-menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { MenuAnchor.at(self.absolute-position.x, self.absolute-position.y, self.width, self.height); root.open-menu(); } } }
         }
         if root.searching: HorizontalLayout {
             height: 56px;
@@ -8089,7 +8096,7 @@ component RequestsPage inherits Rectangle {
                     }
                 }
             }
-            if root.has-menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-menu(); } } }
+            if root.has-menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { MenuAnchor.at(self.absolute-position.x, self.absolute-position.y, self.width, self.height); root.open-menu(); } } }
         }
         if !root.split: ReqHeader {
             segment: root.segment;
@@ -8443,6 +8450,21 @@ component ActionSheet inherits Rectangle {
     }
 }
 
+// Where the next popup menu anchors (`ContextMenuRegion`'s press point, or the ⋯ that
+// opened it), in window coordinates.
+export global MenuAnchor {
+    in-out property <length> x;
+    in-out property <length> y;
+    in-out property <length> w;
+    in-out property <length> h;
+    public function at(x: length, y: length, w: length, h: length) {
+        MenuAnchor.x = x;
+        MenuAnchor.y = y;
+        MenuAnchor.w = w;
+        MenuAnchor.h = h;
+    }
+}
+
 // A popup menu anchored at a rectangle of the window (`PopupAnchor` with `PopupMenu`):
 // under the anchor, or over it when the window has no room below, kept inside the window.
 // It lists `items`, or `names` with `current` checked; `max-rows` scrolls past that many.
@@ -8460,7 +8482,7 @@ component AnchorMenu inherits Rectangle {
     callback dismiss();
     property <length> row-h: 44px;
     property <int> count: root.names.length > 0 ? root.names.length : root.items.length;
-    property <length> menu-height: min(root.count, root.max-rows) * root.row-h + 12px;
+    property <length> menu-height: min(col.preferred-height, root.max-rows * root.row-h + 12px, root.height - 16px);
     TouchArea { clicked => { root.dismiss(); } }
     Rectangle {
         width: min(root.menu-width, root.width - 16px);
@@ -8487,15 +8509,33 @@ component AnchorMenu inherits Rectangle {
                     checked: n == root.current;
                     clicked => { root.picked(n); }
                 }
-                for a in root.items: PopupRow {
-                    height: root.row-h;
-                    glyph: Glyphs.of(a.glyph);
-                    label: a.label;
-                    checked: a.check && a.checked;
-                    danger: a.danger;
-                    indent: a.sub;
-                    more: a.heading == "more";
-                    clicked => { root.picked(a.id); }
+                // `PopupMenuSection`: a divider before a section, then its title if it has one.
+                for a[i] in root.items: VerticalLayout {
+                    if i > 0 && (a.section || (a.heading != "" && a.heading != "more")): Rectangle {
+                        height: 9px;
+                        Rectangle { y: 4px; height: 1px; background: Theme.s.outline-variant; }
+                    }
+                    if a.heading != "" && a.heading != "more": HorizontalLayout {
+                        height: 30px;
+                        padding-left: 14px;
+                        Text {
+                            text: a.heading;
+                            font-size: 13px * Type.scale;
+                            color: Theme.s.primary;
+                            vertical-alignment: center;
+                        }
+                    }
+                    PopupRow {
+                        height: root.row-h;
+                        glyph: Glyphs.of(a.glyph);
+                        label: a.label;
+                        value: a.subtitle;
+                        checked: a.check && a.checked;
+                        danger: a.danger;
+                        indent: a.sub;
+                        more: a.heading == "more";
+                        clicked => { root.picked(a.id); }
+                    }
                 }
             }
         }
@@ -11118,10 +11158,14 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.req-actions-open: ActionSheet {
-            title: root.req-actions-title;
+        // `ContextMenuRegion` and the ⋯ menus: a popup at the press or the button.
+        if root.req-actions-open: AnchorMenu {
             items: root.req-actions;
-            bottom-inset: root.bottom-inset;
+            ax: MenuAnchor.x;
+            ay: MenuAnchor.y;
+            aw: MenuAnchor.w;
+            ah: MenuAnchor.h;
+            max-rows: 10;
             picked(id) => {
                 if (id != "capture-limit") { root.req-actions-open = false; }
                 root.req-action(id);
@@ -11251,6 +11295,8 @@ export component AppWindow inherits Window {
             items: root.ctx-items;
             names: root.ctx-names;
             current: root.ctx-kind == "group" ? root.current-group : "";
+            // The access sub menus show whole, as Flutter's popup only scrolls past the screen.
+            max-rows: root.ctx-kind == "acc" ? 12 : 7;
             ax: root.ctx-x;
             ay: root.ctx-y;
             aw: root.ctx-w;

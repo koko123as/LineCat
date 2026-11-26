@@ -2178,6 +2178,16 @@ fn main() {
         ),
         ("requests-menu", 3, "", "requests", 1, "req:0:0:0:menu"),
         ("requests-row-menu", 3, "", "requests", 1, "req:0:0:0:row"),
+        (
+            "requests-row-menu-small",
+            3,
+            "",
+            "requests",
+            1,
+            "req:0:0:0:row",
+        ),
+        ("requests-row-menu-wide", 4, "", "", 1, "req:0:3:2:row"),
+        ("requests-row-menu-tablet", 4, "", "", 1, "req:0:3:2:row"),
         ("requests-cond", 3, "", "requests", 1, "req:0:0:0:cond"),
         ("requests-small", 3, "", "requests", 1, "req:0:0:0"),
         ("requests-wide", 4, "", "", 1, "req:0:3:2"),
@@ -2967,6 +2977,26 @@ fn main() {
         ("set-access-tablet", 3, "", "access", 1, ""),
         ("set-access-off-small", 3, "", "access", 1, "off"),
         ("set-access-perm", 3, "", "access", 1, "perm"),
+        ("set-access-menu", 3, "", "access", 1, "accmenu"),
+        ("set-access-menu-small", 3, "", "access", 1, "accmenu"),
+        ("set-access-menu-wide", 3, "", "access", 1, "accmenu"),
+        ("set-access-menu-tablet", 3, "", "access", 1, "accmenu"),
+        (
+            "set-access-menu-settings",
+            3,
+            "",
+            "access",
+            1,
+            "accmenu-settings",
+        ),
+        (
+            "set-access-menu-action",
+            3,
+            "",
+            "access",
+            1,
+            "accmenu-action",
+        ),
         ("set-backup", 3, "", "backup", 1, ""),
         ("set-backup-small", 3, "", "backup", 1, ""),
         ("set-backup-wide", 3, "", "backup", 1, ""),
@@ -3265,6 +3295,25 @@ fn main() {
             ui.set_tools_editor_parent("scripts".into());
             ui.set_tools_editor_readonly(false);
         }
+        // A popup menu at a long press on a row, or at the ⋯ of the bar.
+        if overlay.ends_with(":row") {
+            ui.global::<MenuAnchor>()
+                .invoke_at(w as f32 * 0.55, 300.0, 0.0, 0.0);
+        } else if overlay.ends_with(":menu") || overlay.starts_with("accmenu") {
+            ui.global::<MenuAnchor>()
+                .invoke_at(w as f32 - 48.0, 8.0, 40.0, 40.0);
+        }
+        if let Some(sub) = overlay.strip_prefix("accmenu") {
+            let items = access_menu_items(&Default::default(), sub.trim_start_matches('-'));
+            let at = ui.global::<MenuAnchor>();
+            ui.set_ctx_x(at.get_x());
+            ui.set_ctx_y(at.get_y());
+            ui.set_ctx_w(at.get_w());
+            ui.set_ctx_h(at.get_h());
+            ui.set_ctx_items(ModelRc::new(VecModel::from(items)));
+            ui.set_ctx_names(ModelRc::default());
+            ui.set_ctx_kind("acc".into());
+        }
         if overlay.starts_with("rs-") {
             ui.set_tools_editor_title("".into());
             ui.set_tools_editor_title_editable(true);
@@ -3466,7 +3515,7 @@ fn main() {
         ui.set_dash_traffic(traffic);
         // "nodemenu" / "groupmenu": the anchored menus of a node's long press and the tab
         // bar's ▾, over many groups so the tabs overflow.
-        if !matches!(*overlay, "ua-menu" | "cp-add") {
+        if !matches!(*overlay, "ua-menu" | "cp-add") && !overlay.starts_with("accmenu") {
             ui.set_ctx_kind("".into());
         }
         snapshot_groups(&ui, overlay, w);

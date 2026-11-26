@@ -367,6 +367,9 @@ impl App {
             if kind == "pg" {
                 return a.group_menu_picked(&arg, &id);
             }
+            if kind == "acc" {
+                return a.access_menu_picked(&id);
+            }
             if kind == "pr" || kind == "pr-add" {
                 return a.rules_menu_picked(&kind, &arg, &id);
             }

@@ -4,6 +4,7 @@
 
 pub mod access;
 mod access_app;
+pub use access_app::menu_items as access_menu_items;
 pub mod app_icons;
 pub mod backup;
 mod backup_app;

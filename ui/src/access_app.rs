@@ -4,7 +4,7 @@
 use crate::access::{self, AccessControl, Mode, Package, Sort};
 use crate::{AccessRow, ActionItem, App, AppWindow, CALL};
 use serde_json::{json, Value};
-use slint::{ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -250,49 +250,29 @@ impl App {
 
     fn access_menu(self: &Arc<Self>) {
         let d = page().lock().unwrap().draft.clone();
-        let item = |id: &str, label: &str, checked: Option<bool>| ActionItem {
-            id: format!("acc:{id}").into(),
-            label: label.into(),
-            check: checked.is_some(),
-            checked: checked.unwrap_or(false),
-            enabled: true,
-            ..Default::default()
-        };
-        let head = |mut a: ActionItem, h: &str| {
-            a.heading = h.into();
-            a
-        };
-        let items = vec![
-            head(item("on", "开启", Some(d.enable)), "访问控制"),
-            item("off", "关闭", Some(!d.enable)),
-            head(
-                item("accept", "白名单模式", Some(d.mode == Mode::Accept)),
-                "模式",
-            ),
-            item("reject", "黑名单模式", Some(d.mode == Mode::Reject)),
-            head(
-                item("sort-none", "默认", Some(d.sort == Sort::None)),
-                "排序",
-            ),
-            item("sort-name", "名称", Some(d.sort == Sort::Name)),
-            item("sort-time", "时间", Some(d.sort == Sort::Time)),
-            head(
-                item("system", "系统应用", Some(!d.is_filter_system_app)),
-                "来源",
-            ),
-            item("no-net", "无网络应用", Some(!d.is_filter_non_internet_app)),
-            head(item("smart", "智能选择", None), "操作"),
-            item("export", "导出剪贴板", None),
-            item("import", "剪贴板导入", None),
-        ];
+        self.show_access_menu(menu_items(&d, ""));
+    }
+
+    /// `_buildMenuItems` in a popup at the ⋯, a sub menu replacing it in place.
+    fn show_access_menu(self: &Arc<Self>, items: Vec<ActionItem>) {
         self.ui(move |ui| {
-            ui.set_choice_title("".into());
-            ui.set_choice_items(ModelRc::new(VecModel::from(items)));
-            ui.set_choice_open(true);
+            let at = ui.global::<crate::MenuAnchor>();
+            ui.set_ctx_x(at.get_x());
+            ui.set_ctx_y(at.get_y());
+            ui.set_ctx_w(at.get_w());
+            ui.set_ctx_h(at.get_h());
+            ui.set_ctx_a("".into());
+            ui.set_ctx_items(ModelRc::new(VecModel::from(items)));
+            ui.set_ctx_names(ModelRc::default());
+            ui.set_ctx_kind("acc".into());
         });
     }
 
     pub(crate) fn access_menu_picked(self: &Arc<Self>, id: &str) {
+        if matches!(id, "settings" | "action") {
+            let d = page().lock().unwrap().draft.clone();
+            return self.show_access_menu(menu_items(&d, id));
+        }
         match id {
             "on" => self.access_update(|d| d.enable = true),
             "off" => self.access_update(|d| d.enable = false),
@@ -301,9 +281,14 @@ impl App {
             "sort-none" => self.access_update(|d| d.sort = Sort::None),
             "sort-name" => self.access_update(|d| d.sort = Sort::Name),
             "sort-time" => self.access_update(|d| d.sort = Sort::Time),
-            "system" => self.access_update(|d| d.is_filter_system_app = !d.is_filter_system_app),
-            "no-net" => {
-                self.access_update(|d| d.is_filter_non_internet_app = !d.is_filter_non_internet_app)
+            // `keepsOpen`: the sources toggle with the menu still showing them.
+            "system" | "no-net" => {
+                self.access_update(|d| match id {
+                    "system" => d.is_filter_system_app = !d.is_filter_system_app,
+                    _ => d.is_filter_non_internet_app = !d.is_filter_non_internet_app,
+                });
+                let d = page().lock().unwrap().draft.clone();
+                self.show_access_menu(menu_items(&d, "settings"));
             }
             "smart" => self.spawn(|app| {
                 if page().lock().unwrap().packages.is_empty() {
@@ -399,6 +384,69 @@ impl App {
     }
 }
 
+/// FlClash's access ⋯ menu (`_buildMenuItems`): 开启 / 关闭, then 设置 (模式, 排序 and 来源)
+/// and 操作 as sub menus; `sub` names the sub menu open, "" for the top level.
+pub fn menu_items(d: &AccessControl, sub: &str) -> Vec<ActionItem> {
+    let item = |id: &str, glyph: &str, label: &str, checked: Option<bool>| ActionItem {
+        id: id.into(),
+        glyph: glyph.into(),
+        label: label.into(),
+        check: checked.is_some(),
+        checked: checked.unwrap_or(false),
+        enabled: true,
+        ..Default::default()
+    };
+    let head = |mut a: ActionItem, h: &str| {
+        a.heading = h.into();
+        a
+    };
+    match sub {
+        "settings" => vec![
+            head(
+                item("accept", "", "白名单模式", Some(d.mode == Mode::Accept)),
+                "模式",
+            ),
+            item("reject", "", "黑名单模式", Some(d.mode == Mode::Reject)),
+            head(
+                item("sort-none", "", "默认", Some(d.sort == Sort::None)),
+                "排序",
+            ),
+            item("sort-name", "", "名称", Some(d.sort == Sort::Name)),
+            item("sort-time", "", "时间", Some(d.sort == Sort::Time)),
+            head(
+                item("system", "", "系统应用", Some(!d.is_filter_system_app)),
+                "来源",
+            ),
+            item(
+                "no-net",
+                "",
+                "无网络应用",
+                Some(!d.is_filter_non_internet_app),
+            ),
+        ],
+        "action" => vec![
+            item("smart", "sparkle", "智能选择", None),
+            item("export", "copy", "导出剪贴板", None),
+            item("import", "paste", "剪贴板导入", None),
+        ],
+        _ => {
+            let mut settings = head(item("settings", "sliders", "设置", None), "more");
+            settings.subtitle = match d.mode {
+                Mode::Accept => "白名单模式",
+                Mode::Reject => "黑名单模式",
+            }
+            .into();
+            settings.section = true;
+            vec![
+                head(item("on", "toggle-on", "开启", Some(d.enable)), "访问控制"),
+                item("off", "toggle", "关闭", Some(!d.enable)),
+                settings,
+                head(item("action", "more-circle", "操作", None), "more"),
+            ]
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -406,5 +454,34 @@ mod tests {
         assert_eq!(super::monogram(" wechat"), "W");
         assert_eq!(super::monogram("微信"), "微");
         assert_eq!(super::monogram(""), "");
+    }
+
+    #[test]
+    fn the_menu_follows_flclash() {
+        let d = super::AccessControl::default();
+        let labels = |sub| -> Vec<String> {
+            super::menu_items(&d, sub)
+                .iter()
+                .map(|a| a.label.to_string())
+                .collect()
+        };
+        assert_eq!(labels(""), ["开启", "关闭", "设置", "操作"]);
+        let top = super::menu_items(&d, "");
+        assert_eq!(top[0].heading, "访问控制");
+        assert!(top[2].section && top[2].heading == "more" && top[3].heading == "more");
+        assert_eq!(
+            labels("settings"),
+            [
+                "白名单模式",
+                "黑名单模式",
+                "默认",
+                "名称",
+                "时间",
+                "系统应用",
+                "无网络应用"
+            ]
+        );
+        assert!(super::menu_items(&d, "settings").iter().all(|a| a.check));
+        assert_eq!(labels("action"), ["智能选择", "导出剪贴板", "剪贴板导入"]);
     }
 }
