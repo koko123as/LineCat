@@ -439,7 +439,108 @@ object UiBridge {
             ok { addProperty("ignored", ignored) }
         }
 
+        // AppPlugin's CA methods for the MITM page; `der` is the certificate in base64.
+        "ca.locate" -> {
+            val found = withContext(Dispatchers.IO) { SystemCaStore.locate(der(request)) }
+            ok { found.forEach { (key, value) -> addProperty(key, value) } }
+        }
+
+        "ca.installRoot" -> {
+            val outcome = withContext(Dispatchers.IO) { SystemCaStore.install(GlobalState.application, der(request)) }
+            ok { addProperty("outcome", outcome) }
+        }
+
+        "ca.removeRoot" -> {
+            val removed = withContext(Dispatchers.IO) { SystemCaStore.remove(GlobalState.application, der(request)) }
+            ok { addProperty("removed", removed) }
+        }
+
+        "ca.rootAccess" -> ok { addProperty("granted", SystemCaStore.hasRootAccess(GlobalState.application)) }
+
+        "ca.install" -> {
+            val outcome = installCaCertificate(
+                der(request),
+                request.get("name")?.asString ?: error("name missing"),
+                request.get("fileName")?.asString ?: error("fileName missing"),
+            )
+            ok { addProperty("outcome", outcome) }
+        }
+
+        "ca.settings" -> {
+            val user = request.get("userCredentials")?.asBoolean ?: false
+            val opened = withContext(Dispatchers.Main) { openCertificateSettings(user) }
+            ok { addProperty("opened", opened) }
+        }
+
         else -> error("unknown op")
+    }
+
+    private fun der(request: JsonObject): ByteArray =
+        android.util.Base64.decode(request.get("der")?.asString ?: error("der missing"), android.util.Base64.DEFAULT)
+
+    // From Android 11 an app can no longer hand a CA certificate to the
+    // installer; the user picks the saved file under Settings instead.
+    private suspend fun installCaCertificate(der: ByteArray, name: String, fileName: String): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            val intent = android.security.KeyChain.createInstallIntent().apply {
+                putExtra(android.security.KeyChain.EXTRA_CERTIFICATE, der)
+                putExtra(android.security.KeyChain.EXTRA_NAME, name)
+            }
+            return if (withContext(Dispatchers.Main) { startSettings(intent) }) "prompted" else "unavailable"
+        }
+        withContext(Dispatchers.IO) { saveToDownloads(der, fileName) }
+        return "saved"
+    }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    private fun saveToDownloads(data: ByteArray, fileName: String) {
+        val resolver = GlobalState.application.contentResolver
+        val collection = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        val existing = resolver.query(
+            collection,
+            arrayOf(android.provider.MediaStore.MediaColumns._ID),
+            "${android.provider.MediaStore.MediaColumns.DISPLAY_NAME} = ?",
+            arrayOf(fileName),
+            null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) android.content.ContentUris.withAppendedId(collection, cursor.getLong(0)) else null
+        }
+        val uri = existing ?: resolver.insert(
+            collection,
+            android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/x-x509-ca-cert")
+            },
+        ) ?: throw IOException("Unable to create $fileName in Downloads")
+        resolver.openOutputStream(uri, "wt")?.use { it.write(data) }
+            ?: throw IOException("Unable to write $fileName in Downloads")
+    }
+
+    // The list of user certificates is a Settings screen without a public
+    // action on every ROM, so the security screen stands in for it.
+    private fun openCertificateSettings(userCredentials: Boolean): Boolean {
+        val intents = buildList {
+            if (userCredentials) {
+                add(android.content.Intent("com.android.settings.TRUSTED_CREDENTIALS_USER"))
+            }
+            add(android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS))
+            add(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
+        }
+        return intents.any(::startSettings)
+    }
+
+    private fun startSettings(intent: android.content.Intent): Boolean {
+        val context: Context = activity ?: GlobalState.application.also {
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (_: android.content.ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
     }
 
     // DynamicColorPlugin's getCorePalette: the system palette's tones 40 and 80 seed the light

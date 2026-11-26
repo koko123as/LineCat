@@ -230,6 +230,10 @@ fn requests_shot(
 /// The tools list, a settings page's sections and the picker or input over them.
 fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
     ui.set_mitm_loading("".into());
+    ui.set_confirm_open(false);
+    ui.set_confirm_yes("".into());
+    ui.set_confirm_no("".into());
+    ui.set_confirm_danger(false);
     let mut s = store::Settings {
         developer_mode: true,
         ..Default::default()
@@ -444,7 +448,29 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
                 }
                 .into(),
             );
-            seasoncat_ui::mitm_sections(&s, &cert, 1)
+            let trust = match overlay {
+                "trust-user" => Some(Some(Ok(seasoncat_ui::ca_trust::TrustCheck {
+                    user: true,
+                    root: true,
+                    ..Default::default()
+                }))),
+                "trust-none" => Some(Some(Ok(Default::default()))),
+                "trust-remove" => {
+                    ui.set_confirm_title("SeasonCat MITM CA 2026-11-26".into());
+                    ui.set_confirm_text("有效期至 2036-11-26\n\nSHA-256\nAB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89".into());
+                    ui.set_confirm_action("mitm-ca-remove".into());
+                    ui.set_confirm_yes(ca_trust::REMOVE.into());
+                    ui.set_confirm_no("关闭".into());
+                    ui.set_confirm_danger(true);
+                    ui.set_confirm_open(true);
+                    Some(Some(Ok(ca_trust::TrustCheck {
+                        user: true,
+                        ..Default::default()
+                    })))
+                }
+                _ => None,
+            };
+            seasoncat_ui::mitm_sections(&s, &cert, trust.as_ref(), 1)
         }
         "mitm-capture" => {
             s.mitm.enable = true;
@@ -2497,6 +2523,19 @@ fn main() {
         ("set-mitm-tablet", 3, "", "mitm", 1, ""),
         ("set-mitm-nocert", 3, "", "mitm", 1, "nocert"),
         ("set-mitm-loading", 3, "", "mitm", 1, "loading"),
+        ("set-mitm-trust", 3, "", "mitm", 1, "trust-user"),
+        ("set-mitm-trust-small", 3, "", "mitm", 1, "trust-user"),
+        ("set-mitm-trust-wide", 3, "", "mitm", 1, "trust-user"),
+        ("set-mitm-trust-tablet", 3, "", "mitm", 1, "trust-none"),
+        ("set-mitm-trust-remove", 3, "", "mitm", 1, "trust-remove"),
+        (
+            "set-mitm-trust-remove-small",
+            3,
+            "",
+            "mitm",
+            1,
+            "trust-remove",
+        ),
         ("set-mitm-capture", 3, "", "mitm-capture", 1, ""),
         ("set-mitm-hosts", 3, "", "mitm-hosts", 1, ""),
         ("set-mitm-hosts-small", 3, "", "mitm-hosts", 1, ""),
@@ -3169,15 +3208,17 @@ fn main() {
             ui.set_ctx_h(36.0);
         }
         ui.set_custom_importing(*overlay == "cimporting");
-        ui.set_confirm_title("提示".into());
-        if *overlay == "creplace" {
-            ui.set_confirm_text("导入会替换此配置现有的策略组、规则和设置".into());
-            ui.set_confirm_action("ci-replace".into());
-        } else {
-            ui.set_confirm_text("确定删除当前配置吗？".into());
-            ui.set_confirm_action("delete".into());
+        if *overlay != "trust-remove" {
+            ui.set_confirm_title("提示".into());
+            if *overlay == "creplace" {
+                ui.set_confirm_text("导入会替换此配置现有的策略组、规则和设置".into());
+                ui.set_confirm_action("ci-replace".into());
+            } else {
+                ui.set_confirm_text("确定删除当前配置吗？".into());
+                ui.set_confirm_action("delete".into());
+            }
+            ui.set_confirm_open(matches!(*overlay, "confirm" | "creplace"));
         }
-        ui.set_confirm_open(matches!(*overlay, "confirm" | "creplace"));
         // "speed:<up>:<down>": the speed tiles with changing values, rendered in order
         // to catch a value width that stays at an older, shorter text.
         let mut traffic = base_traffic.clone();

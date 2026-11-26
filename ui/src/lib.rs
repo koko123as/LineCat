@@ -9,6 +9,8 @@ pub mod backup;
 mod backup_app;
 pub use backup_app::sections as backup_app_sections;
 pub mod bridge;
+pub mod ca_trust;
+mod ca_trust_app;
 mod dash_app;
 pub mod dash_table;
 pub mod dashboard;
@@ -553,6 +555,7 @@ impl App {
                         app.set_system_font_scale(scale as f32);
                     }
                     app.on_resume();
+                    app.trust_resumed();
                 }
                 _ => {}
             }
@@ -1120,10 +1123,26 @@ impl App {
     }
 
     fn confirm(self: &Arc<Self>, title: &str, text: String, action: &str, arg: String) {
+        self.confirm_labeled(title, text, action, arg, ("", "", false));
+    }
+
+    /// Empty button texts keep the action's own.
+    fn confirm_labeled(
+        self: &Arc<Self>,
+        title: &str,
+        text: String,
+        action: &str,
+        arg: String,
+        (yes, no, danger): (&str, &str, bool),
+    ) {
         let (title, text, action): (SharedString, SharedString, SharedString) =
             (title.into(), text.into(), action.into());
         let arg: SharedString = arg.into();
+        let (yes, no): (SharedString, SharedString) = (yes.into(), no.into());
         self.ui(move |ui| {
+            ui.set_confirm_yes(yes);
+            ui.set_confirm_no(no);
+            ui.set_confirm_danger(danger);
             ui.set_confirm_title(title);
             ui.set_confirm_text(text);
             ui.set_confirm_action(action);

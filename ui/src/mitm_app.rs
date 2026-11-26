@@ -1,6 +1,7 @@
 //! MITM on `App`'s side: the page, 抓包, 主机名, 模块 and a module's page
 //! (lib/views/config/mitm.dart, mitm_modules.dart, `MitmModulesAction`).
 
+use crate::ca_trust::{self, TrustCheck};
 use crate::mitm::{self, Certificate, MitmModule, ModuleRead};
 use crate::mitm_network::{self, Change, Network, UserNetwork};
 use crate::settings_app::Effect;
@@ -104,8 +105,14 @@ fn modules_count(n: usize) -> String {
     }
 }
 
-/// `_certificateItems` with no trust store to ask, as on a platform without one.
-pub fn certificate_rows(cert: &Option<Result<Option<Certificate>, String>>) -> Vec<SetRow> {
+/// What the trust store answered, None on a platform without one.
+pub type Trust<'a> = Option<&'a Option<Result<TrustCheck, String>>>;
+
+/// `_certificateItems`.
+pub fn certificate_rows(
+    cert: &Option<Result<Option<Certificate>, String>>,
+    trust: Trust,
+) -> Vec<SetRow> {
     match cert {
         None => vec![SetRow {
             enabled: false,
@@ -114,7 +121,12 @@ pub fn certificate_rows(cert: &Option<Result<Option<Certificate>, String>>) -> V
         Some(Ok(None)) => vec![row("cert-generate", "value", "生成证书", "")],
         Some(Err(e)) => vec![row("cert-generate", "value", "生成证书", e)],
         Some(Ok(Some(c))) => vec![
-            row("cert", "value", &c.subject, "无法检查信任状态"),
+            row(
+                "cert",
+                "value",
+                &c.subject,
+                &trust.map_or("无法检查信任状态".into(), ca_trust::label),
+            ),
             row("cert-export", "value", "导出证书", ""),
             row("cert-regen", "value", "重新生成证书", ""),
         ],
@@ -125,11 +137,13 @@ pub fn certificate_rows(cert: &Option<Result<Option<Certificate>, String>>) -> V
 pub fn main_sections(
     s: &Settings,
     cert: &Option<Result<Option<Certificate>, String>>,
+    trust: Trust,
     invalid_hosts: usize,
 ) -> Vec<SetSection> {
     let m = &s.mitm;
-    let cert_footer = match cert {
-        Some(Ok(Some(_))) => format!("{EXPORT_TIP}\n{TRUST_TIP}"),
+    let cert_footer = match (cert, trust) {
+        (_, Some(t)) => ca_trust::footer(t).to_string(),
+        (Some(Ok(Some(_))), None) => format!("{EXPORT_TIP}\n{TRUST_TIP}"),
         _ => EXPORT_TIP.to_string(),
     };
     vec![
@@ -150,7 +164,7 @@ pub fn main_sections(
                 ),
             ],
         ),
-        section("证书", &cert_footer, certificate_rows(cert)),
+        section("证书", &cert_footer, certificate_rows(cert, trust)),
         section(
             "模块",
             "",
@@ -515,7 +529,7 @@ fn new_id() -> String {
 }
 
 impl App {
-    fn mitm_settings(&self) -> Settings {
+    pub(crate) fn mitm_settings(&self) -> Settings {
         self.store.lock().unwrap().state.settings.clone()
     }
 
@@ -545,6 +559,7 @@ impl App {
         } else {
             Vec::new()
         };
+        let trust = self.can_trust().then(|| self.trust());
         let st = state().lock().unwrap();
         let read = st.read.as_ref().and_then(|r| r.as_ref().ok());
         Some(match page {
@@ -555,7 +570,7 @@ impl App {
                     .iter()
                     .filter(|l| st.host_issues.contains_key(*l))
                     .count();
-                main_sections(s, &st.cert, invalid)
+                main_sections(s, &st.cert, trust.as_ref(), invalid)
             }
             "mitm-capture" => capture_sections(&s.mitm, &s.mitm_modules),
             "mitm-hosts" => hosts_sections(&s.mitm.hostname, &st.host_issues),
@@ -634,12 +649,12 @@ impl App {
         });
     }
 
-    fn mitm_publish(self: &Arc<Self>) {
+    pub(crate) fn mitm_publish(self: &Arc<Self>) {
         self.publish_settings();
         self.ui(|ui| ui.set_meta_rev(ui.get_meta_rev() + 1));
     }
 
-    fn mitm_loading(self: &Arc<Self>, label: &str) {
+    pub(crate) fn mitm_loading(self: &Arc<Self>, label: &str) {
         state().lock().unwrap().loading = label.to_string();
         let label: SharedString = label.into();
         self.ui(move |ui| ui.set_mitm_loading(label));
@@ -650,12 +665,16 @@ impl App {
         if page != "editor" {
             state().lock().unwrap().editor = None;
         }
+        self.trust_shown(page == "mitm");
         match page {
             "mitm" => {
                 let loaded = matches!(state().lock().unwrap().cert, Some(Ok(_)));
-                if !loaded {
-                    self.spawn(|app| app.load_certificate());
-                }
+                self.spawn(move |app| {
+                    if !loaded {
+                        app.load_certificate();
+                    }
+                    app.refresh_trust();
+                });
                 self.spawn(|app| app.check_hosts());
             }
             "mitm-hosts" => self.spawn(|app| app.check_hosts()),
@@ -690,7 +709,7 @@ impl App {
         self.mitm_publish();
     }
 
-    fn generate_certificate(self: &Arc<Self>, label: &str) -> bool {
+    pub(crate) fn generate_certificate(self: &Arc<Self>, label: &str) -> bool {
         self.mitm_loading(label);
         let result = self
             .bridge()
@@ -700,6 +719,7 @@ impl App {
             Ok(r) => {
                 state().lock().unwrap().cert = Some(Ok(mitm::certificate_of(&r)));
                 self.update_settings(Effect::Reapply, |s| s.mitm.trusted_fingerprint = None);
+                self.refresh_trust();
                 true
             }
             Err(e) => {
@@ -734,7 +754,7 @@ impl App {
         });
     }
 
-    fn current_certificate(&self) -> Option<Certificate> {
+    pub(crate) fn current_certificate(&self) -> Option<Certificate> {
         match &state().lock().unwrap().cert {
             Some(Ok(Some(c))) => Some(c.clone()),
             _ => None,
@@ -756,18 +776,7 @@ impl App {
             ("mitm", "cert-generate") => self.spawn(|app| {
                 app.generate_certificate("生成证书");
             }),
-            ("mitm", "cert") => {
-                if let Some(c) = self.current_certificate() {
-                    self.alert(
-                        c.subject.clone(),
-                        format!(
-                            "有效期至 {}\n\nSHA-256\n{}",
-                            crate::date(c.not_after / 1000),
-                            c.fingerprint
-                        ),
-                    );
-                }
-            }
+            ("mitm", "cert") => self.certificate_tapped(),
             ("mitm", "cert-export") => {
                 if let Some(c) = self.current_certificate() {
                     self.export_certificate(c);
@@ -836,6 +845,9 @@ impl App {
     }
 
     pub(crate) fn mitm_confirmed(self: &Arc<Self>, action: &str, arg: &str, yes: bool) {
+        if self.trust_confirmed(action, arg, yes) {
+            return;
+        }
         match (action, yes) {
             ("mitm-enable", true) => self.spawn(|app| {
                 if !matches!(state().lock().unwrap().cert, Some(Ok(_))) {
@@ -856,9 +868,7 @@ impl App {
                 app.publish_mitm_consent();
                 app.auto_update_modules();
             }),
-            ("mitm-regen", true) => self.spawn(|app| {
-                app.generate_certificate("重新生成证书");
-            }),
+            ("mitm-regen", true) => self.spawn(|app| app.regenerate_certificate()),
             ("mitm-delete", true) => self.delete_module(arg),
             ("mitm-detach", true) => {
                 if let Some((id, name)) = arg.split_once('\t') {
@@ -1910,14 +1920,15 @@ mod tests {
     #[test]
     fn main_page_follows_the_certificate() {
         let s = Settings::default();
-        let none = main_sections(&s, &Some(Ok(None)), 0);
+        let none = main_sections(&s, &Some(Ok(None)), None, 0);
         assert_eq!(none.len(), 5);
         assert_eq!(titles(&none[1]), vec!["生成证书"]);
         let cert = Certificate {
             subject: "SeasonCat CA".into(),
             ..Default::default()
         };
-        let some = main_sections(&s, &Some(Ok(Some(cert))), 0);
+        let cert = Some(Ok(Some(cert)));
+        let some = main_sections(&s, &cert, None, 0);
         assert_eq!(
             titles(&some[1]),
             vec!["SeasonCat CA", "导出证书", "重新生成证书"]
@@ -1925,6 +1936,13 @@ mod tests {
         assert!(some[1].footer.contains("本机未信任时也解密"));
         assert_eq!(some[3].rows.row_data(0).unwrap().subtitle, "无");
         assert!(some[4].rows.row_data(1).unwrap().on);
+        let user = Some(Ok(TrustCheck {
+            user: true,
+            ..Default::default()
+        }));
+        let trusted = main_sections(&s, &cert, Some(&user), 0);
+        assert_eq!(trusted[1].rows.row_data(0).unwrap().subtitle, "已信任");
+        assert_eq!(trusted[1].footer, ca_trust::ANDROID_READY_TIP);
     }
 
     #[test]
