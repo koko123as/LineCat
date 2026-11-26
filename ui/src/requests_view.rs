@@ -258,6 +258,7 @@ impl ReqState {
                     header: true,
                     label: s(requests::minute_label(minute, cx.now, cx.offset)),
                     count: s(rows.len().to_string()),
+                    time: rows.first().map(|r| r.time.clone()).unwrap_or_default(),
                     ..Default::default()
                 });
                 let last = rows.len().saturating_sub(1);
@@ -277,7 +278,7 @@ impl ReqState {
                     .into_iter()
                     .map(|e| (e.start, http_row(e)))
                     .collect();
-                push_groups(group(items));
+                push_groups(group(items, cx.offset));
             }
             DNS => {
                 let items: Vec<(i64, RecordRow)> = self
@@ -286,7 +287,7 @@ impl ReqState {
                     .into_iter()
                     .map(|(_, q)| (q.time, dns_row(q)))
                     .collect();
-                push_groups(group(items));
+                push_groups(group(items, cx.offset));
             }
             _ => {
                 let items: Vec<(i64, RecordRow)> =
@@ -294,7 +295,7 @@ impl ReqState {
                         .into_iter()
                         .map(|(c, n)| (c.start, conn_row(c, n, cx.now)))
                         .collect();
-                push_groups(group(items));
+                push_groups(group(items, cx.offset));
             }
         }
         out
@@ -1284,11 +1285,32 @@ impl ReqState {
     }
 }
 
-fn group(items: Vec<(i64, RecordRow)>) -> Vec<(i64, Vec<RecordRow>)> {
+fn group(items: Vec<(i64, RecordRow)>, offset: i64) -> Vec<(i64, Vec<RecordRow>)> {
     requests::minute_groups(items, |(t, _)| *t)
         .into_iter()
-        .map(|(m, rows)| (m, rows.into_iter().map(|(_, r)| r).collect()))
+        .map(|(m, rows)| {
+            let rows = rows
+                .into_iter()
+                .map(|(t, mut r)| {
+                    r.time = s(requests::full_time(t, offset));
+                    r
+                })
+                .collect();
+            (m, rows)
+        })
         .collect()
+}
+
+/// Where the record `id` starts in `rows`, as the list lays them out.
+pub fn row_y(rows: impl IntoIterator<Item = RecordRow>, id: i32) -> Option<f32> {
+    let mut y = 0.0;
+    for r in rows {
+        if !r.header && r.id == id {
+            return Some(y);
+        }
+        y += if r.header { 40.0 } else { 64.0 };
+    }
+    None
 }
 
 fn section(title: &str, rows: Vec<DetailRow>) -> DetailSection {
@@ -1512,6 +1534,10 @@ mod tests {
         assert_eq!(rows[1].well, "C");
         assert_eq!(monogram("com.google.android.youtube"), "Y");
         assert_eq!(st.status_labels()[1], "活动 2");
+        assert_eq!(rows[1].time, rows[0].time);
+        assert!(rows[1].time.starts_with("1970-01-01 00:02:"));
+        assert_eq!(row_y(rows.iter().cloned(), 1), Some(40.0 + 64.0 + 40.0));
+        assert_eq!(row_y(rows.iter().cloned(), 9), None);
     }
 
     #[test]

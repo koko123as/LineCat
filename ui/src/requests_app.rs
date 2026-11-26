@@ -199,8 +199,22 @@ impl App {
             req.segment = CONNECTIONS;
         }
         let rows = req.rows(&cx);
-        if let Some(m) = set_rows(ui.get_req_rows(), rows) {
+        let old = ui.get_req_rows();
+        let first = old.iter().find(|r| !r.header).map(|r| r.id);
+        let shift = match first {
+            Some(id) if ui.get_req_segment() == req.segment => {
+                let was = requests_view::row_y(old.iter(), id);
+                let now = requests_view::row_y(rows.iter().cloned(), id);
+                was.zip(now).map(|(a, b)| b - a).unwrap_or(0.0)
+            }
+            _ => 0.0,
+        };
+        if let Some(m) = set_rows(old, rows) {
             ui.set_req_rows(m);
+        }
+        if shift != 0.0 {
+            ui.set_req_shift(shift);
+            ui.set_req_shift_seq(ui.get_req_shift_seq().wrapping_add(1));
         }
         ui.set_req_segment(req.segment);
         ui.set_req_shows_http(shows_http);

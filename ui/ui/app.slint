@@ -310,6 +310,8 @@ export struct RecordRow {
     first: bool,
     last: bool,
     selected: bool,
+    // `showFull`, local: what the scrollbar's hint shows at this row.
+    time: string,
 }
 
 export struct ConditionItem {
@@ -7802,21 +7804,135 @@ component ReqHeader inherits VerticalLayout {
     }
 }
 
+// `RecordFeedView`: the list follows the newest until scrolled away from it and again once
+// back at it (`ScrollToEndBox`), rows that come in meanwhile leave the rows read in place
+// (`FollowEndScrollPhysics`), and dragging the thumb shows the time at that point
+// (`FloatingScrollbar`), slowed by moving the finger sideways.
 component ReqList inherits Rectangle {
     in property <[RecordRow]> rows;
     in property <bool> marks;
     in property <string> empty;
     in property <string> empty-desc;
     in property <length> bottom-gap;
+    in property <int> segment;
+    in property <length> shift;
+    in property <int> shift-seq;
     callback select(int);
     callback menu(int);
+    property <bool> following: true;
+    property <length> track: lv.height - 4px;
+    property <length> range: max(0px, lv.content-height - lv.height);
+    property <float> fraction: root.range > 0 ? clamp(-lv.content-y / root.range, 0, 1) : 0;
+    property <length> thumb: clamp(root.range > 0 ? root.track * lv.height / lv.content-height : root.track, min(48px, root.track), root.track);
+    property <length> thumb-y: 2px + root.fraction * (root.track - root.thumb);
+    property <bool> scrubbing: bar-ta.pressed && root.range > 0;
+    property <bool> bar-shown;
+    property <int> idle;
+    property <float> rate: 1;
+    property <length> last-y;
+    property <length> origin-x;
+    property <bool> hint-shown: root.scrubbing || hint-hold.running;
+    property <int> at: root.rows.length > 0 ? clamp(round(root.fraction * (root.rows.length - 1)), 0, root.rows.length - 1) : 0;
+
+    changed segment => {
+        root.following = true;
+        lv.content-y = 0;
+    }
+    changed shift-seq => {
+        if (root.following) {
+            lv.content-y = 0;
+        } else {
+            lv.content-y = max(lv.content-y - root.shift, min(0px, lv.height - lv.content-height));
+        }
+    }
+    changed scrubbing => {
+        if (!self.scrubbing) { hint-hold.running = true; }
+    }
+
     if root.rows.length == 0: NullStatus { label: root.empty; description: root.empty-desc; }
-    if root.rows.length > 0: ListView {
+    lv := ListView {
+        visible: root.rows.length > 0;
+        vertical-scrollbar-policy: always-off;
+        scrolled => {
+            root.following = self.content-y >= -0.5px;
+            root.bar-shown = true;
+            root.idle = 0;
+        }
         for r in root.rows: RecordRowView {
             rec: r;
             marks: root.marks;
             select(id) => { root.select(id); }
             menu(id) => { root.menu(id); }
+        }
+    }
+    fade := Timer {
+        interval: 200ms;
+        running: root.bar-shown && !root.scrubbing;
+        triggered => {
+            root.idle += 1;
+            if (root.idle >= 6) { root.bar-shown = false; }
+        }
+    }
+    hint-hold := Timer {
+        interval: 500ms;
+        running: false;
+        triggered => { self.running = false; }
+    }
+    if root.rows.length > 0 && root.range > 0: Rectangle {
+        property <float> t: root.scrubbing ? 1 : 0;
+        x: parent.width - self.width - 2px;
+        y: root.thumb-y;
+        width: 6px + 4px * self.t;
+        height: root.thumb;
+        border-radius: self.width / 2;
+        opacity: root.bar-shown || root.scrubbing ? 1 : 0;
+        background: Theme.s.on-surface.with-alpha(Theme.is-dark ? 0.35 + 0.3 * self.t : 0.25 + 0.25 * self.t);
+        animate width, background { duration: 120ms; easing: ease-out; }
+        animate opacity { duration: 250ms; }
+    }
+    bar-ta := TouchArea {
+        x: parent.width - 24px;
+        y: root.thumb-y - 8px;
+        width: 24px;
+        height: root.thumb + 16px;
+        enabled: root.rows.length > 0 && root.range > 0 && (root.bar-shown || self.pressed);
+        changed pressed => {
+            if (self.pressed) {
+                root.last-y = self.mouse-y;
+                root.origin-x = self.mouse-x;
+                root.rate = 1;
+                root.bar-shown = true;
+                root.idle = 0;
+            } else {
+                root.following = lv.content-y >= -0.5px;
+            }
+        }
+        moved => {
+            // `_scrubRateFor`: each 48px sideways halves the speed, down to 1/8.
+            root.rate = abs(self.mouse-x - root.origin-x) >= 144px ? 0.125 : abs(self.mouse-x - root.origin-x) >= 96px ? 0.25 : abs(self.mouse-x - root.origin-x) >= 48px ? 0.5 : 1;
+            if (root.track > root.thumb) {
+                lv.content-y = clamp(lv.content-y - (self.mouse-y - root.last-y) * root.rate * root.range / (root.track - root.thumb), -root.range, 0px);
+            }
+            root.last-y = self.mouse-y;
+            root.following = lv.content-y >= -0.5px;
+        }
+    }
+    if root.rows.length > 0 && root.range > 0 && root.hint-shown: Rectangle {
+        x: parent.width - 40px - self.width;
+        y: clamp(root.thumb-y + root.thumb / 2 - self.height / 2, 0px, max(0px, parent.height - root.bottom-gap - 8px - self.height));
+        width: pill.preferred-width + 24px;
+        height: pill.preferred-height + 12px;
+        border-radius: self.height / 2;
+        background: Theme.s.card;
+        drop-shadow-offset-y: 4px;
+        drop-shadow-blur: 16px;
+        drop-shadow-color: #0000001f;
+        pill := HorizontalLayout {
+            x: 12px;
+            y: 6px;
+            spacing: 6px;
+            Text { text: root.rows[root.at].time; font-size: 13px * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
+            if root.scrubbing && root.rate < 1: Text { text: root.rate + "×"; font-size: 13px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; }
         }
     }
 }
@@ -8013,6 +8129,8 @@ component RequestsPage inherits Rectangle {
     in property <int> segment;
     in property <bool> shows-http;
     in property <[RecordRow]> rows;
+    in property <length> shift;
+    in property <int> shift-seq;
     in property <[string]> statuses;
     in property <int> status;
     in property <[ConditionLine]> conditions;
@@ -8114,6 +8232,9 @@ component RequestsPage inherits Rectangle {
         if !root.split: ReqList {
             vertical-stretch: 1;
             rows: root.rows;
+            segment: root.segment;
+            shift: root.shift;
+            shift-seq: root.shift-seq;
             marks: !root.mobile;
             empty: root.empty;
             empty-desc: root.empty-desc;
@@ -8140,6 +8261,9 @@ component RequestsPage inherits Rectangle {
                 ReqList {
                     vertical-stretch: 1;
                     rows: root.rows;
+                    segment: root.segment;
+                    shift: root.shift;
+                    shift-seq: root.shift-seq;
                     marks: true;
                     empty: root.empty;
                     empty-desc: root.empty-desc;
@@ -9078,6 +9202,8 @@ export component AppWindow inherits Window {
     in-out property <int> req-segment;
     in property <bool> req-shows-http;
     in property <[RecordRow]> req-rows;
+    in property <length> req-shift;
+    in property <int> req-shift-seq;
     in property <[string]> req-statuses;
     in property <int> req-status;
     in property <[ConditionLine]> req-conditions;
@@ -10078,6 +10204,8 @@ export component AppWindow inherits Window {
                     segment: root.req-segment;
                     shows-http: root.req-shows-http;
                     rows: root.req-rows;
+                    shift: root.req-shift;
+                    shift-seq: root.req-shift-seq;
                     statuses: root.req-statuses;
                     status: root.req-status;
                     conditions: root.req-conditions;
@@ -10296,6 +10424,8 @@ export component AppWindow inherits Window {
                 segment: root.req-segment;
                 shows-http: root.req-shows-http;
                 rows: root.req-rows;
+                shift: root.req-shift;
+                shift-seq: root.req-shift-seq;
                 statuses: root.req-statuses;
                 status: root.req-status;
                 conditions: root.req-conditions;
