@@ -1717,6 +1717,55 @@ component DashSheet inherits Rectangle {
     }
 }
 
+// `showSnapSheet`: a sheet over the page at 9/16 of the window's height that its handle
+// drags up to 0.9 of it; let go past half of its first height lower, it closes.
+component SnapSheet inherits Rectangle {
+    in property <length> top-inset;
+    in-out property <bool> tall;
+    callback close();
+    property <length> short-h: root.height * 9 / 16;
+    property <length> tall-h: min(root.height * 0.9, root.height - root.top-inset);
+    property <length> drag;
+    property <length> sheet-h: clamp((root.tall ? root.tall-h : root.short-h) - root.drag, 0px, root.tall-h);
+    function settle() {
+        let d = root.drag;
+        root.drag = 0px;
+        if (d > (root.tall ? root.tall-h - root.short-h / 2 : root.short-h / 2)) {
+            root.close();
+        } else if (root.tall && d > 48px) {
+            root.tall = false;
+        } else if (!root.tall && d < -48px) {
+            root.tall = true;
+        }
+    }
+    background: #00000066;
+    TouchArea { clicked => { root.close(); } }
+    Rectangle {
+        width: min(parent.width, 640px);
+        x: (parent.width - self.width) / 2;
+        y: parent.height - root.sheet-h;
+        height: root.sheet-h;
+        background: Theme.s.page;
+        border-top-left-radius: 24px;
+        border-top-right-radius: 24px;
+        clip: true;
+        TouchArea { }
+        VerticalLayout {
+            Rectangle {
+                height: 24px;
+                Rectangle { y: 10px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+                TouchArea {
+                    moved => { root.drag += self.mouse-y - self.pressed-y; }
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { root.settle(); }
+                    }
+                }
+            }
+            @children
+        }
+    }
+}
+
 // A label and value row in a sheet's section.
 component SheetRow inherits HorizontalLayout {
     in property <string> label;
@@ -2950,6 +2999,8 @@ component GroupHeader inherits Card {
 }
 
 component Proxies inherits Rectangle {
+    // `ProxiesView(picker: true)`: in a sheet, without locate and the ⋯ menu.
+    in property <bool> picker;
     in property <[ProxyGroup]> groups;
     in property <ProxyStyle> style;
     in-out property <string> current-group;
@@ -3001,11 +3052,11 @@ component Proxies inherits Rectangle {
                 alignment: center;
                 IconButton { glyph: Icons.bolt; loading: root.testing; tint: Theme.s.on-surface; clicked => { root.test-group(root.current-group); } }
             }
-            if root.style.kind == 0 && root.groups.length > 0: VerticalLayout {
+            if !root.picker && root.style.kind == 0 && root.groups.length > 0: VerticalLayout {
                 alignment: center;
                 IconButton { glyph: Icons.locate; tint: Theme.s.on-surface; clicked => { root.go-to(root.current-group); } }
             }
-            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-options(); } } }
+            if !root.picker: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-options(); } } }
         }
         if root.searching: HorizontalLayout {
             height: 56px;
@@ -8912,7 +8963,19 @@ export component AppWindow inherits Window {
     in-out property <bool> req-actions-open;
     in property <string> req-actions-title;
     in property <[ActionItem]> req-actions;
-    out property <bool> req-visible: root.tab == 4 || (root.tab == 3 && root.tools-page == "requests");
+    property <bool> req-tab-visible: root.tab == 4 || (root.tab == 3 && root.tools-page == "requests");
+    out property <bool> req-visible: root.req-tab-visible || (root.tab == 0 && root.feed-open);
+    // `openDashboardFeed`: the requests page in a sheet over the dashboard, with its own
+    // search, filters and selection (`req-feed`).
+    in-out property <bool> feed-open;
+    in-out property <bool> feed-tall;
+    in-out property <bool> feed-searching;
+    in-out property <string> feed-query;
+    callback req-feed(bool, int);
+    // `showProxiesSheet`: the proxies page as a picker in a sheet over the dashboard.
+    in-out property <bool> group-sheet-open;
+    in-out property <bool> group-sheet-tall;
+    in-out property <bool> group-sheet-searching;
     // The condition chips' row width, which Rust wraps them to.
     callback req-cond-width(length);
     // Whether the requests page shows its detail beside the list.
@@ -9129,6 +9192,32 @@ export component AppWindow inherits Window {
         root.go(t);
     }
 
+    public function open-feed(segment: int) {
+        root.feed-tall = false;
+        root.feed-searching = false;
+        root.feed-query = "";
+        root.req-sheet-open = false;
+        root.feed-open = true;
+        root.req-feed(true, segment);
+    }
+    public function close-feed() {
+        root.req-sheet-open = false;
+        root.feed-open = false;
+        root.req-feed(false, 0);
+    }
+    // The sheet searches on its own; the proxies page's query comes back once it closes.
+    public function open-group-sheet() {
+        root.group-sheet-tall = false;
+        root.group-sheet-searching = false;
+        root.search-proxies("");
+        root.group-sheet-open = true;
+    }
+    public function close-group-sheet() {
+        root.group-sheet-open = false;
+        root.group-sheet-searching = false;
+        root.search-proxies(proxies-page.query);
+    }
+
     // A tools page opened from another tab, as 前往配置脚本 pushes ScriptsView.
     public function open-tools(page: string) {
         root.go(3);
@@ -9137,6 +9226,8 @@ export component AppWindow inherits Window {
 
     function go(t: int) {
         if (root.custom-open) { root.custom-back(); }
+        if (root.feed-open) { root.close-feed(); }
+        if (root.group-sheet-open) { root.close-group-sheet(); }
         root.tab = t;
         root.tools-page = "";
         root.profiles-page = "";
@@ -9200,12 +9291,16 @@ export component AppWindow inherits Window {
                 if (root.profile-sheet-open) { root.profile-sheet-open = false; return accept; }
                 if (root.tab == 3 && root.tools-page == "logs" && root.log-searching) { root.log-searching = false; root.log-query = ""; return accept; }
                 if (root.req-sheet-open) { root.req-sheet-open = false; root.req-sheet-closed(); return accept; }
+                if (root.feed-open && root.feed-searching) { root.feed-searching = false; root.feed-query = ""; return accept; }
+                if (root.feed-open) { root.close-feed(); return accept; }
                 if (root.req-visible && root.req-searching) { root.req-searching = false; root.req-query = ""; return accept; }
                 if (root.ctx-kind != "") { root.ctx-kind = ""; return accept; }
                 if (root.tab == 3 && root.set-sorting) { root.set-sorting = false; return accept; }
                 if (root.tab == 3 && root.meta.known && root.meta.selecting) { root.set-clicked(root.tools-page, "sel-clear"); return accept; }
                 if (root.proxy-sub != "") { root.proxy-sub = ""; return accept; }
                 if (root.proxy-options-open) { root.proxy-options-open = false; return accept; }
+                if (root.group-sheet-open && root.group-sheet-searching) { root.group-sheet-searching = false; root.search-proxies(""); return accept; }
+                if (root.group-sheet-open) { root.close-group-sheet(); return accept; }
                 if (root.tab == 1 && root.proxy-searching) { root.proxy-searching = false; root.search-proxies(""); return accept; }
                 if (root.confirm-open && (root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save")) { root.confirm-open = false; return accept; }
                 if (root.confirm-open) {
@@ -9324,12 +9419,12 @@ export component AppWindow inherits Window {
                     editing <=> root.dash-editing;
                     toggle-vpn => { root.toggle-vpn(); }
                     set-mode(m) => { root.set-mode(m); }
-                    open-profiles => { root.go(2); }
+                    open-profiles => { root.picker-open = true; }
                     sync-profile(id) => { root.update-profile(id); }
                     open-group(g) => {
                         if (g != "") { root.current-group = g; }
-                        root.go(1);
                         root.open-group(root.current-group);
+                        root.open-group-sheet();
                     }
                     refresh-ip => { root.refresh-ip(); }
                     copy-ip(a) => { root.copy-text(a); }
@@ -9350,10 +9445,7 @@ export component AppWindow inherits Window {
                     retry-services => { root.dash-probe-services(); }
                     services-checking: root.dash-services-checking;
                     open-services => { root.svc-sheet-page = ""; root.svc-sheet-open = true; }
-                    open-stats(i) => {
-                        if (root.wide) { root.go(4); } else { root.go(3); root.tools-page = "requests"; }
-                        root.req-set-segment(i == 2 ? 2 : 0);
-                    }
+                    open-stats(i) => { root.open-feed(i == 2 ? 2 : 0); }
                     edit(a, w) => { root.edit-dashboard(a, w); }
                     move(f, t) => { root.dash-move(f, t); }
                     card-height(i, h) => { root.dash-card-height(i, h); }
@@ -9828,7 +9920,7 @@ export component AppWindow inherits Window {
                     check-update => { root.check-update(); }
                     logo-tapped => { root.about-logo-tapped(); }
                 }
-                if root.req-visible: RequestsPage {
+                if root.req-tab-visible: RequestsPage {
                     width: parent.width;
                     height: parent.height;
                     mobile: !root.wide;
@@ -10040,6 +10132,164 @@ export component AppWindow inherits Window {
                 }
             }
         }
+        }
+
+        // `openDashboardFeed`: the requests page in a snap sheet over the dashboard, on DNS
+        // for the DNS figure.
+        if root.feed-open && root.tab == 0: SnapSheet {
+            top-inset: root.top-inset;
+            tall <=> root.feed-tall;
+            close => { root.close-feed(); }
+            RequestsPage {
+                mobile: true;
+                can-back: false;
+                segment: root.req-segment;
+                shows-http: root.req-shows-http;
+                rows: root.req-rows;
+                statuses: root.req-statuses;
+                status: root.req-status;
+                conditions: root.req-conditions;
+                empty: root.req-empty;
+                empty-desc: root.req-empty-desc;
+                detail: root.req-detail;
+                has-menu: root.req-has-menu;
+                searching <=> root.feed-searching;
+                query <=> root.feed-query;
+                search(q) => { root.req-search(q); }
+                open-menu => { root.req-open-menu(); }
+                set-segment(s) => { root.req-set-segment(s); }
+                set-status(s) => { root.req-set-status(s); }
+                add-condition => { root.req-add-condition(); }
+                edit-condition(i) => { root.req-edit-condition(i); }
+                remove-condition(i) => { root.req-remove-condition(i); }
+                clear-conditions => { root.req-clear-conditions(); }
+                cond-width-changed(w) => { root.req-cond-width(w); }
+                select(id, split) => {
+                    root.req-sheet-open = true;
+                    root.req-select(id, false);
+                }
+                row-menu(id) => { root.req-row-menu(id); }
+                detail-tab(i) => { root.req-detail-tab(i); }
+                detail-close => { root.req-detail-close(); }
+                detail-menu => { root.req-detail-menu(); }
+                detail-row(a) => { root.req-detail-row(a); }
+            }
+        }
+
+        // `showProxiesSheet`: the proxies page as a picker over the dashboard.
+        if root.group-sheet-open && root.tab == 0: SnapSheet {
+            top-inset: root.top-inset;
+            tall <=> root.group-sheet-tall;
+            close => { root.close-group-sheet(); }
+            Proxies {
+                picker: true;
+                groups: root.proxy-groups;
+                style: root.proxy-style;
+                current-group <=> root.current-group;
+                searching <=> root.group-sheet-searching;
+                testing: root.testing;
+                hint: root.proxies-hint;
+                view-width: self.width;
+                open-group(g) => { root.open-group(g); }
+                select-node(g, n) => { root.select-node(g, n); }
+                test-group(g) => { root.test-group(g); }
+                test-node(g, n) => { root.test-node(g, n); }
+                toggle-group(g) => { root.toggle-group(g); }
+                search(q) => { root.search-proxies(q); }
+                locate(g) => { return root.locate(g); }
+                node-menu(g, k, n, x, y, w, h) => {
+                    root.ctx-kind = "node";
+                    root.ctx-a = g;
+                    root.ctx-b = n.name;
+                    root.ctx-names = [];
+                    root.ctx-items = k == "Selector"
+                        ? (n.addable
+                            ? [{ id: "select", glyph: "check-circle", label: "选中", check: true, checked: n.selected, enabled: true }, { id: "add-local", glyph: "list-add", label: "添加到本地代理", check: false, checked: false, enabled: true }]
+                            : [{ id: "select", glyph: "check-circle", label: "选中", check: true, checked: n.selected, enabled: true }])
+                        : k == "URLTest" || k == "Fallback" || k == "Smart"
+                        ? (n.addable
+                            ? [{ id: "select", glyph: "pin", label: "首选", check: true, checked: n.pinned, enabled: true }, { id: "add-local", glyph: "list-add", label: "添加到本地代理", check: false, checked: false, enabled: true }]
+                            : [{ id: "select", glyph: "pin", label: "首选", check: true, checked: n.pinned, enabled: true }])
+                        : n.addable ? [{ id: "add-local", glyph: "list-add", label: "添加到本地代理", check: false, checked: false, enabled: true }] : [];
+                    root.ctx-x = x;
+                    root.ctx-y = y;
+                    root.ctx-w = w;
+                    root.ctx-h = h;
+                }
+                group-menu(x, y, w, h) => {
+                    root.ctx-kind = "group";
+                    root.ctx-items = [];
+                    root.ctx-names = root.proxy-group-names;
+                    root.ctx-x = x;
+                    root.ctx-y = y;
+                    root.ctx-w = w;
+                    root.ctx-h = h;
+                }
+            }
+        }
+
+        // `showProfilesSheet` (`ProfilesView(picker: true)`): the profiles, a tap makes one
+        // current; with none, 暂无配置 and 添加配置 opening AddProfileMenu.
+        if root.picker-open && root.tab == 0: DashSheet {
+            title: "配置";
+            top-inset: root.top-inset;
+            bottom-inset: root.bottom-inset;
+            close => { root.picker-open = false; }
+            if root.profiles.length == 0: VerticalLayout {
+                padding-top: 48px;
+                padding-bottom: 48px;
+                spacing: 8px;
+                Text { text: "暂无配置"; font-size: 18px * Type.scale; color: Theme.s.on-surface; horizontal-alignment: center; }
+                Text { text: "添加一个配置文件后即可开始使用"; font-size: 14px * Type.scale; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
+                HorizontalLayout {
+                    alignment: center;
+                    padding-top: 8px;
+                    TextButton {
+                        text: root.adding ? "加载中…" : "添加配置";
+                        filled: true;
+                        enabled: !root.adding;
+                        clicked => {
+                            root.ctx-x = self.absolute-position.x;
+                            root.ctx-y = self.absolute-position.y;
+                            root.ctx-w = self.width;
+                            root.ctx-h = self.height;
+                            root.add-menu-open = true;
+                        }
+                    }
+                }
+            }
+            if root.profiles.length > 0: Rectangle {
+                background: Theme.s.card;
+                border-radius: 16px;
+                height: self.preferred-height;
+                VerticalLayout {
+                    for pp[ppi] in root.profiles: Rectangle {
+                        height: 60px;
+                        background: pk-ta.pressed ? Theme.s.inset : transparent;
+                        border-radius: 16px;
+                        if ppi > 0: Rectangle { y: 0; x: 16px; width: parent.width - 32px; height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text { text: pp.name; font-size: 15px * Type.scale; font-weight: pp.active ? 600 : 400; color: Theme.s.on-surface; overflow: elide; }
+                                Text { text: pp.subtitle; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
+                            }
+                            if pp.active: VerticalLayout { alignment: center; Icon { glyph: Icons.check; size: 20px; tint: Theme.s.primary; } }
+                        }
+                        pk-ta := TouchArea {
+                            clicked => {
+                                root.picker-open = false;
+                                if (!pp.active) { root.select-profile(pp.id); }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // The proxies page's menu (`_buildMenuItems`), as a sheet from the bottom.
@@ -10521,46 +10771,6 @@ export component AppWindow inherits Window {
                                 spacing: 2px;
                                 Text { text: pr.name; font-size: 15px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
                                 Text { text: pr.subtitle; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // `showProfilesSheet`: the profiles as a picker; a tap makes one current.
-        if root.picker-open && root.tab == 0: DashSheet {
-            title: "切换配置";
-            top-inset: root.top-inset;
-            bottom-inset: root.bottom-inset;
-            close => { root.picker-open = false; }
-            Rectangle {
-                background: Theme.s.card;
-                border-radius: 16px;
-                height: self.preferred-height;
-                VerticalLayout {
-                    for pp[ppi] in root.profiles: Rectangle {
-                        height: 60px;
-                        background: pk-ta.pressed ? Theme.s.inset : transparent;
-                        border-radius: 16px;
-                        if ppi > 0: Rectangle { y: 0; x: 16px; width: parent.width - 32px; height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
-                        HorizontalLayout {
-                            padding-left: 16px;
-                            padding-right: 16px;
-                            spacing: 12px;
-                            VerticalLayout {
-                                alignment: center;
-                                horizontal-stretch: 1;
-                                spacing: 2px;
-                                Text { text: pp.name; font-size: 15px * Type.scale; font-weight: pp.active ? 600 : 400; color: Theme.s.on-surface; overflow: elide; }
-                                Text { text: pp.subtitle; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
-                            }
-                            if pp.active: VerticalLayout { alignment: center; Icon { glyph: Icons.check; size: 20px; tint: Theme.s.primary; } }
-                        }
-                        pk-ta := TouchArea {
-                            clicked => {
-                                root.picker-open = false;
-                                if (!pp.active) { root.select-profile(pp.id); }
                             }
                         }
                     }

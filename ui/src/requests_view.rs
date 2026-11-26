@@ -50,6 +50,22 @@ pub struct ReqState {
     pub limit_open: bool,
     /// The width a condition line's chips wrap to.
     pub cond_width: f32,
+    /// The requests tab's view while the dashboard's sheet (`openDashboardFeed`) shows its own.
+    pub tab_view: Option<ReqView>,
+}
+
+#[derive(Default)]
+pub struct ReqView {
+    segment: i32,
+    query: String,
+    filters: [Filters; 3],
+    selected: [Option<i64>; 3],
+    tab: [i32; 3],
+    exchange: Option<Value>,
+    bodies: [Option<String>; 2],
+    conn_http: Option<(i64, Vec<Summary>)>,
+    draft: Option<Draft>,
+    limit_open: bool,
 }
 
 /// What a page build reads besides the state.
@@ -130,6 +146,37 @@ fn monogram(name: &str) -> String {
 }
 
 impl ReqState {
+    fn swap_view(&mut self, v: &mut ReqView) {
+        use std::mem::swap;
+        swap(&mut self.segment, &mut v.segment);
+        swap(&mut self.query, &mut v.query);
+        swap(&mut self.filters, &mut v.filters);
+        swap(&mut self.selected, &mut v.selected);
+        swap(&mut self.tab, &mut v.tab);
+        swap(&mut self.exchange, &mut v.exchange);
+        swap(&mut self.bodies, &mut v.bodies);
+        swap(&mut self.conn_http, &mut v.conn_http);
+        swap(&mut self.draft, &mut v.draft);
+        swap(&mut self.limit_open, &mut v.limit_open);
+    }
+
+    /// The dashboard's sheet opens on `segment` with nothing searched, filtered or picked.
+    pub fn open_sheet(&mut self, segment: i32) {
+        self.close_sheet();
+        let mut v = ReqView {
+            segment: segment.clamp(0, 2),
+            ..Default::default()
+        };
+        self.swap_view(&mut v);
+        self.tab_view = Some(v);
+    }
+
+    pub fn close_sheet(&mut self) {
+        if let Some(mut v) = self.tab_view.take() {
+            self.swap_view(&mut v);
+        }
+    }
+
     pub fn filters(&self) -> &Filters {
         &self.filters[self.segment.clamp(0, 2) as usize]
     }
@@ -1394,6 +1441,33 @@ fn http_row(e: &Summary) -> RecordRow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_dashboard_sheet_keeps_its_own_view() {
+        let mut st = ReqState {
+            segment: HTTP,
+            query: "github".into(),
+            selected: [Some(4), None, None],
+            ..Default::default()
+        };
+        st.filters[0].status = 1;
+        st.open_sheet(DNS);
+        assert_eq!(st.segment, DNS);
+        assert_eq!(st.query, "");
+        assert_eq!(st.selected, [None; 3]);
+        assert_eq!(st.filters[0].status, 0);
+        st.query = "dns".into();
+        st.open_sheet(CONNECTIONS);
+        assert_eq!(st.segment, CONNECTIONS);
+        assert_eq!(st.query, "");
+        st.close_sheet();
+        assert_eq!(st.segment, HTTP);
+        assert_eq!(st.query, "github");
+        assert_eq!(st.selected, [Some(4), None, None]);
+        assert_eq!(st.filters[0].status, 1);
+        st.close_sheet();
+        assert_eq!(st.query, "github");
+    }
     use serde_json::json;
 
     fn cx<'a>(groups: &'a Groups, delays: &'a HashMap<String, i32>) -> Ctx<'a> {

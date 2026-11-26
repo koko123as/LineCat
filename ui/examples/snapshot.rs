@@ -2231,6 +2231,20 @@ fn main() {
         ("dash-profsheet-small", 0, "", "", 1, "profsheet"),
         ("dash-profsheet-wide", 0, "", "", 1, "profsheet"),
         ("dash-profsheet-tablet", 0, "", "", 1, "profsheet"),
+        ("dash-feed", 0, "", "", 1, "feed:0"),
+        ("dash-feed-small", 0, "", "", 1, "feed:0"),
+        ("dash-feed-wide", 0, "", "", 1, "feed:0"),
+        ("dash-feed-tablet", 0, "", "", 1, "feed:0"),
+        ("dash-feed-dns", 0, "", "", 1, "feed:2"),
+        ("dash-feed-tall", 0, "", "", 1, "feed:0:tall"),
+        ("dash-groupsheet", 0, "", "", 1, "groupsheet"),
+        ("dash-groupsheet-small", 0, "", "", 1, "groupsheet"),
+        ("dash-groupsheet-wide", 0, "", "", 1, "groupsheet"),
+        ("dash-groupsheet-tablet", 0, "", "", 1, "groupsheet"),
+        ("dash-picker-empty", 0, "", "", 1, "picker-empty"),
+        ("dash-picker-empty-small", 0, "", "", 1, "picker-empty"),
+        ("dash-picker-empty-wide", 0, "", "", 1, "picker-empty"),
+        ("dash-picker-empty-tablet", 0, "", "", 1, "picker-empty"),
         ("dash-picker", 0, "", "", 1, "picker"),
         ("dash-picker-small", 0, "", "", 1, "picker"),
         ("dash-picker-wide", 0, "", "", 1, "picker"),
@@ -2927,6 +2941,7 @@ fn main() {
     let mut saved_logs: Option<ModelRc<LogItem>> = None;
     let base_traffic = ui.get_dash_traffic();
     let base_groups = ui.get_proxy_groups();
+    let base_profiles = ui.get_profiles();
     for (name, tab, group, page, mode, overlay) in shots {
         if !only.is_empty() && !only.split(',').any(|p| name.contains(p)) {
             continue;
@@ -2986,7 +3001,16 @@ fn main() {
             ui.set_proxy_groups(base_groups.clone());
         }
         ui.set_profile_sheet_open(*overlay == "profsheet");
-        ui.set_picker_open(*overlay == "picker");
+        ui.set_picker_open(overlay.starts_with("picker"));
+        if *overlay == "picker-empty" {
+            ui.set_profiles(ModelRc::new(VecModel::<ProfileItem>::default()));
+        } else {
+            ui.set_profiles(base_profiles.clone());
+        }
+        // "feed:<segment>[:tall]": the requests page in the dashboard's sheet.
+        ui.set_feed_open(overlay.starts_with("feed:"));
+        ui.set_feed_tall(overlay.ends_with(":tall"));
+        ui.set_group_sheet_open(*overlay == "groupsheet");
         ui.set_dash_fault_count(if *overlay == "faults" { 2 } else { 0 });
         // "live:<front>": the developer page's deck on that card; "live-open" with the
         // warnings opened; "pill:<kind>": the bar button for one status.
@@ -3071,6 +3095,9 @@ fn main() {
         ui.set_cond_open(false);
         if overlay.starts_with("req") {
             requests_shot(&ui, &mut req, now, overlay, w);
+        } else if let Some(seg) = overlay.strip_prefix("feed:") {
+            let seg = seg.split(':').next().unwrap_or("0");
+            requests_shot(&ui, &mut req, now, &format!("req:{seg}:0:0"), 412);
         }
         ui.set_res_dialog(overlay.strip_prefix("res:").unwrap_or("").into());
         if *overlay == "res:interval" {
@@ -3262,7 +3289,7 @@ fn main() {
         ui.set_menu_open(matches!(*overlay, "menu" | "menu-custom"));
         ui.set_menu_more(true);
         ui.set_menu_item(
-            ui.get_profiles()
+            base_profiles
                 .row_data(if *overlay == "menu-custom" { 3 } else { 0 })
                 .unwrap(),
         );

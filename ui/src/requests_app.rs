@@ -1022,6 +1022,17 @@ impl App {
             a.republish();
         });
         let a = self.clone();
+        ui.on_req_feed(move |open, segment| {
+            let mut req = a.req.lock().unwrap();
+            if open {
+                req.open_sheet(segment);
+            } else {
+                req.close_sheet();
+            }
+            drop(req);
+            a.republish();
+        });
+        let a = self.clone();
         ui.on_req_action(move |id| a.action(&id));
         let a = self.clone();
         let w = ui.as_weak();
