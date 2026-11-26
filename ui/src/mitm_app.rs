@@ -476,7 +476,7 @@ pub fn page_meta(s: &Settings, page: &str) -> Option<PageMeta> {
             action: "add-circle".into(),
             action2: "more-circle".into(),
             empty: "暂无主机名".into(),
-            empty_action: "添加".into(),
+            action_empty: true,
             long_press: true,
             ..meta("主机名", "mitm")
         },
@@ -488,7 +488,7 @@ pub fn page_meta(s: &Settings, page: &str) -> Option<PageMeta> {
                 "".into()
             },
             empty: "暂无模块".into(),
-            empty_action: "添加".into(),
+            action_empty: true,
             long_press: true,
             ..meta("模块", "mitm")
         },

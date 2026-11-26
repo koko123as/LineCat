@@ -194,6 +194,7 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
             } else {
                 "".into()
             },
+            action_empty: true,
             long_press: true,
             ..meta("用户代理", "general")
         },
@@ -1280,5 +1281,37 @@ impl App {
                 self.toggle_vpn();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_lists_keep_the_add_button_in_the_bar() {
+        let s = store::Settings::default();
+        for page in [
+            "filters",
+            "scripts",
+            "rule-sets",
+            "icon-sets",
+            "rules",
+            "user-agents",
+            "mitm-hosts",
+            "mitm-modules",
+        ] {
+            let m = page_meta(&s, page);
+            assert!(m.known, "{page}");
+            assert_eq!(m.action, "add-circle", "{page}");
+            assert!(m.action_empty, "{page}");
+            assert_eq!(m.empty_action, "", "{page}");
+        }
+    }
+
+    #[test]
+    fn selecting_rules_drops_the_add_button() {
+        let m = page_meta(&store::Settings::default(), "rules-select");
+        assert_ne!(m.action, "add-circle");
     }
 }

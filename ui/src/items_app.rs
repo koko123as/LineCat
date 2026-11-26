@@ -61,6 +61,7 @@ pub fn page_meta(page: &str) -> Option<PageMeta> {
         parent: "advanced".into(),
         action: "add-circle".into(),
         empty: empty.into(),
+        action_empty: true,
         ..Default::default()
     })
 }

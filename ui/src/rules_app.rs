@@ -123,6 +123,7 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> Option<PageMeta> {
             action: "add-circle".into(),
             action2: "bolt".into(),
             empty: "暂无规则".into(),
+            action_empty: true,
             long_press: true,
             ..meta("附加规则", "advanced")
         },

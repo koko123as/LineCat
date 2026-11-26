@@ -37,6 +37,7 @@ pub fn page_meta(sets: &[RuleSet], page: &str) -> Option<PageMeta> {
             "".into()
         },
         empty: "暂无规则集".into(),
+        action_empty: true,
         long_press: true,
         ..Default::default()
     })

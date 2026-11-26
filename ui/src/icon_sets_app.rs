@@ -30,6 +30,7 @@ pub fn page_meta(sets: &[IconSet], page: &str) -> Option<PageMeta> {
             "".into()
         },
         empty: "暂无图标集".into(),
+        action_empty: true,
         long_press: true,
         ..Default::default()
     })
