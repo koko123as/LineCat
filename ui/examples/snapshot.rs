@@ -2412,6 +2412,10 @@ fn main() {
             "pm:providers:empty",
         ),
         ("extend", 2, "", "extend", 1, "ext:main"),
+        ("extend-scripts", 2, "", "extend", 1, "ext:main"),
+        ("extend-scripts-small", 2, "", "extend", 1, "ext:main"),
+        ("extend-scripts-wide", 2, "", "extend", 1, "ext:main"),
+        ("extend-scripts-tablet", 2, "", "extend", 1, "ext:main"),
         ("extend-small", 2, "", "extend", 1, "ext:main"),
         ("extend-wide", 2, "", "extend", 1, "ext:main"),
         ("extend-tablet", 2, "", "extend", 1, "ext:main"),
@@ -3174,6 +3178,11 @@ fn main() {
         } else {
             ui.set_tools_page((*page).into());
             ui.set_profiles_page("".into());
+        }
+        ui.set_tools_over(false);
+        if name.starts_with("extend-scripts") {
+            ui.invoke_open_tools("scripts".into());
+            settings_shot(&ui, w, "scripts", "");
         }
         if *overlay == "cp-add" {
             ui.set_ctx_names(ModelRc::default());

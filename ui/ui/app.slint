@@ -8963,7 +8963,7 @@ export component AppWindow inherits Window {
     in-out property <bool> req-actions-open;
     in property <string> req-actions-title;
     in property <[ActionItem]> req-actions;
-    property <bool> req-tab-visible: root.tab == 4 || (root.tab == 3 && root.tools-page == "requests");
+    property <bool> req-tab-visible: root.tab == 4 || (root.tools-shown && root.tools-page == "requests");
     out property <bool> req-visible: root.req-tab-visible || (root.tab == 0 && root.feed-open);
     // `openDashboardFeed`: the requests page in a sheet over the dashboard, with its own
     // search, filters and selection (`req-feed`).
@@ -9133,6 +9133,7 @@ export component AppWindow inherits Window {
     changed req-visible => { if (root.req-visible) { root.page-shown(); } }
     callback tools-page-changed();
     changed tools-page => {
+        if (root.tools-over && root.tools-page == "") { root.tools-over = false; }
         root.set-sorting = false;
         if (root.tools-page == "resources") { root.page-shown(); }
         root.tools-page-changed();
@@ -9218,10 +9219,19 @@ export component AppWindow inherits Window {
         root.search-proxies(proxies-page.query);
     }
 
-    // A tools page opened from another tab, as 前往配置脚本 pushes ScriptsView.
+    // A tools page pushed over the current page, as 前往配置脚本 pushes ScriptsView over the
+    // extend page: the bar keeps its tab and back leaving the tools page returns there.
+    in-out property <bool> tools-over;
+    in-out property <string> tools-over-root;
+    property <bool> tools-shown: root.tab == 3 || root.tools-over;
     public function open-tools(page: string) {
-        root.go(3);
+        root.tools-over = root.tab != 3;
+        root.tools-over-root = page;
         root.tools-page = page;
+    }
+    // Up from a tools page: to its parent, or off the pushed one back to the page under it.
+    function tools-up(parent: string) {
+        root.tools-page = root.tools-over && root.tools-page == root.tools-over-root ? "" : parent;
     }
 
     function go(t: int) {
@@ -9229,6 +9239,7 @@ export component AppWindow inherits Window {
         if (root.feed-open) { root.close-feed(); }
         if (root.group-sheet-open) { root.close-group-sheet(); }
         root.tab = t;
+        root.tools-over = false;
         root.tools-page = "";
         root.profiles-page = "";
         root.tab-changed(t);
@@ -9275,6 +9286,8 @@ export component AppWindow inherits Window {
     keys := FocusScope {
         key-pressed(event) => {
             if (event.text == Key.Back) {
+                // A search field that closes takes the focus with it; back keeps it here.
+                keys.focus();
                 if (root.alert-open) { root.alert-open = false; return accept; }
                 if (root.live-open) { root.live-close(); return accept; }
                 if (root.input-open) { root.input-open = false; return accept; }
@@ -9289,14 +9302,14 @@ export component AppWindow inherits Window {
                 if (root.svc-sheet-open) { root.svc-sheet-open = false; return accept; }
                 if (root.picker-open) { root.picker-open = false; return accept; }
                 if (root.profile-sheet-open) { root.profile-sheet-open = false; return accept; }
-                if (root.tab == 3 && root.tools-page == "logs" && root.log-searching) { root.log-searching = false; root.log-query = ""; return accept; }
+                if (root.tools-shown && root.tools-page == "logs" && root.log-searching) { root.log-searching = false; root.log-query = ""; return accept; }
                 if (root.req-sheet-open) { root.req-sheet-open = false; root.req-sheet-closed(); return accept; }
                 if (root.feed-open && root.feed-searching) { root.feed-searching = false; root.feed-query = ""; return accept; }
                 if (root.feed-open) { root.close-feed(); return accept; }
                 if (root.req-visible && root.req-searching) { root.req-searching = false; root.req-query = ""; return accept; }
                 if (root.ctx-kind != "") { root.ctx-kind = ""; return accept; }
-                if (root.tab == 3 && root.set-sorting) { root.set-sorting = false; return accept; }
-                if (root.tab == 3 && root.meta.known && root.meta.selecting) { root.set-clicked(root.tools-page, "sel-clear"); return accept; }
+                if (root.tools-shown && root.set-sorting) { root.set-sorting = false; return accept; }
+                if (root.tools-shown && root.meta.known && root.meta.selecting) { root.set-clicked(root.tools-page, "sel-clear"); return accept; }
                 if (root.proxy-sub != "") { root.proxy-sub = ""; return accept; }
                 if (root.proxy-options-open) { root.proxy-options-open = false; return accept; }
                 if (root.group-sheet-open && root.group-sheet-searching) { root.group-sheet-searching = false; root.search-proxies(""); return accept; }
@@ -9315,6 +9328,23 @@ export component AppWindow inherits Window {
                 if (root.custom-import-open) { root.custom-import-open = false; return accept; }
                 if (root.add-menu-open) { root.add-menu-open = false; return accept; }
                 if (root.link-open) { root.link-open = false; return accept; }
+                if (root.dav-open) { root.dav-open = false; return accept; }
+                if (root.ports-open) { root.ports-open = false; return accept; }
+                if (root.tools-shown && root.tools-page == "access" && root.acc-searching) { root.acc-query = ""; root.acc-searching = false; return accept; }
+                if (root.tools-shown && root.tools-page == "access") { root.acc-back(); return accept; }
+                if (root.tools-shown && root.tools-page == "theme-color") { root.tools-page = "theme"; return accept; }
+                if (root.tools-shown && root.tools-page == "font" && root.font-searching) { root.font-query = ""; root.font-searching = false; return accept; }
+                if (root.tools-shown && root.tools-page == "font") { root.tools-page = "theme"; return accept; }
+                if (root.tools-shown && root.tools-page == "icon-set" && root.iconset-searching) { root.iconset-query = ""; root.iconset-searching = false; return accept; }
+                if (root.tools-shown && root.tools-page == "icon-set") { root.tools-page = "icon-sets"; return accept; }
+                if (root.tools-shown && root.meta.known && root.set-searching) { root.set-query = ""; root.set-searching = false; return accept; }
+                if (root.tools-shown && root.meta.known) { root.tools-up(root.meta.parent); return accept; }
+                if (root.tools-shown && root.tools-page == "editor" && root.tools-editor-guard) { root.tools-editor-back(root.tools-editor-text); return accept; }
+                if (root.tools-shown && root.tools-page == "editor") { root.tools-page = root.tools-editor-parent; return accept; }
+                if (root.tools-shown && root.tools-page != "") {
+                    root.tools-page = "";
+                    return accept;
+                }
                 if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "group") { root.group-yaml-closed(); root.editor-parent = ""; root.profiles-page = "group"; return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "rules") { root.editor-parent = ""; root.pr-act("yaml-closed"); return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor" && root.editor-parent == "pmore") { root.editor-parent = ""; root.pm-clicked("yaml-closed"); root.profiles-page = "pmore"; return accept; }
@@ -9336,23 +9366,6 @@ export component AppWindow inherits Window {
                 if (root.tab == 2 && root.custom-open && (root.profiles-page == "preview" || root.profiles-page == "placeholder")) { root.profiles-page = "custom"; return accept; }
                 if (root.tab == 2 && root.profiles-page == "custom") { root.custom-back(); return accept; }
                 if (root.tab == 2 && root.profiles-page != "") { root.profiles-page = ""; return accept; }
-                if (root.dav-open) { root.dav-open = false; return accept; }
-                if (root.ports-open) { root.ports-open = false; return accept; }
-                if (root.tab == 3 && root.tools-page == "access" && root.acc-searching) { root.acc-query = ""; root.acc-searching = false; return accept; }
-                if (root.tab == 3 && root.tools-page == "access") { root.acc-back(); return accept; }
-                if (root.tab == 3 && root.tools-page == "theme-color") { root.tools-page = "theme"; return accept; }
-                if (root.tab == 3 && root.tools-page == "font" && root.font-searching) { root.font-query = ""; root.font-searching = false; return accept; }
-                if (root.tab == 3 && root.tools-page == "font") { root.tools-page = "theme"; return accept; }
-                if (root.tab == 3 && root.tools-page == "icon-set" && root.iconset-searching) { root.iconset-query = ""; root.iconset-searching = false; return accept; }
-                if (root.tab == 3 && root.tools-page == "icon-set") { root.tools-page = "icon-sets"; return accept; }
-                if (root.tab == 3 && root.meta.known && root.set-searching) { root.set-query = ""; root.set-searching = false; return accept; }
-                if (root.tab == 3 && root.meta.known) { root.tools-page = root.meta.parent; return accept; }
-                if (root.tab == 3 && root.tools-page == "editor" && root.tools-editor-guard) { root.tools-editor-back(root.tools-editor-text); return accept; }
-                if (root.tab == 3 && root.tools-page == "editor") { root.tools-page = root.tools-editor-parent; return accept; }
-                if (root.tab == 3 && root.tools-page != "") {
-                    root.tools-page = "";
-                    return accept;
-                }
                 if (root.tab == 0 && root.dash-editing) { root.dash-editing = false; return accept; }
                 if (root.tab != 0) {
                     root.go(0);
@@ -9776,7 +9789,14 @@ export component AppWindow inherits Window {
                     sections: root.tools-sections;
                     open(p) => { root.tools-clicked(p); }
                 }
-                if root.tab == 3 && root.meta.known: SettingsPage {
+                // The page under a pushed tools page takes no touches.
+                if root.tools-over && root.tools-page != "": Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    background: Theme.s.page;
+                    TouchArea { }
+                }
+                if root.tools-shown && root.meta.known: SettingsPage {
                     locked: od-body.dragging;
                     action-glyph: Glyphs.of(root.meta.action);
                     action-empty: root.meta.action-empty;
@@ -9805,7 +9825,7 @@ export component AppWindow inherits Window {
                         if (root.meta.selecting) {
                             root.set-clicked(root.tools-page, "sel-clear");
                         } else {
-                            root.tools-page = root.meta.parent;
+                            root.tools-up(root.meta.parent);
                         }
                     }
                     clicked(id) => { root.set-clicked(root.tools-page, id); }
@@ -9851,7 +9871,7 @@ export component AppWindow inherits Window {
                         clicked(id) => { root.od-clicked(id); }
                     }
                 }
-                if root.tab == 3 && root.tools-page == "icon-set": IconSetPage {
+                if root.tools-shown && root.tools-page == "icon-set": IconSetPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.iconset-title;
@@ -9862,7 +9882,7 @@ export component AppWindow inherits Window {
                     back => { root.tools-page = "icon-sets"; }
                     search(q) => { root.iconset-search(q); }
                 }
-                if root.tab == 3 && root.tools-page == "editor": EditorPage {
+                if root.tools-shown && root.tools-page == "editor": EditorPage {
                     width: parent.width;
                     height: parent.height;
                     title: root.tools-editor-title;
@@ -9877,13 +9897,13 @@ export component AppWindow inherits Window {
                         }
                     }
                 }
-                if root.tab == 3 && root.meta.known && root.meta.fab: Fab {
+                if root.tools-shown && root.meta.known && root.meta.fab: Fab {
                     x: parent.width - self.width - 16px;
                     y: parent.height - self.height - 16px - Dock.pad;
                     glyph: Icons.plus;
                     clicked => { root.set-clicked(root.tools-page, "add"); }
                 }
-                if root.tab == 3 && root.tools-page == "access": AccessPage {
+                if root.tools-shown && root.tools-page == "access": AccessPage {
                     width: parent.width;
                     height: parent.height;
                     rows: root.acc-rows;
@@ -9907,7 +9927,7 @@ export component AppWindow inherits Window {
                     grant => { root.acc-grant(); }
                     search(q) => { root.acc-search(q); }
                 }
-                if root.tab == 3 && root.tools-page == "about": AboutPage {
+                if root.tools-shown && root.tools-page == "about": AboutPage {
                     width: parent.width;
                     height: parent.height;
                     icon: root.app-icon;
@@ -9964,7 +9984,7 @@ export component AppWindow inherits Window {
                     detail-menu => { root.req-detail-menu(); }
                     detail-row(a) => { root.req-detail-row(a); }
                 }
-                if root.tab == 3 && root.tools-page == "resources": ResourcesPage {
+                if root.tools-shown && root.tools-page == "resources": ResourcesPage {
                     width: parent.width;
                     height: parent.height;
                     items: root.res-items;
@@ -9982,7 +10002,7 @@ export component AppWindow inherits Window {
                     tapped(k) => { root.res-tapped(k); }
                     menu(k) => { root.res-menu(k); }
                 }
-                if root.tab == 3 && root.tools-page == "logs": Logs {
+                if root.tools-shown && root.tools-page == "logs": Logs {
                     width: parent.width;
                     height: parent.height;
                     logs: root.logs;
@@ -9998,7 +10018,7 @@ export component AppWindow inherits Window {
                     unfilter(l) => { root.logs-unfilter(l); }
                     open(id) => { root.logs-open(id); }
                 }
-                if root.tab == 3 && root.tools-page == "font": FontPage {
+                if root.tools-shown && root.tools-page == "font": FontPage {
                     width: parent.width;
                     height: parent.height;
                     families: root.font-families;
@@ -10011,7 +10031,7 @@ export component AppWindow inherits Window {
                     search(q) => { root.font-search(q); }
                     back => { root.tools-page = "theme"; }
                 }
-                if root.tab == 3 && root.tools-page == "theme": ThemePage {
+                if root.tools-shown && root.tools-page == "theme": ThemePage {
                     width: parent.width;
                     height: parent.height;
                     theme-mode: root.theme-mode;
@@ -10042,7 +10062,7 @@ export component AppWindow inherits Window {
                     pick-style => { root.pick-color-style(); }
                     back => { root.tools-page = ""; }
                 }
-                if root.tab == 3 && root.tools-page == "theme-color": ColorPage {
+                if root.tools-shown && root.tools-page == "theme-color": ColorPage {
                     width: parent.width;
                     height: parent.height;
                     draft: root.color-draft;
@@ -10893,7 +10913,7 @@ export component AppWindow inherits Window {
         }
 
         // `_showLogDetail`: the record's time and level, then its whole payload.
-        if root.log-detail-open && root.tab == 3 && root.tools-page == "logs": Rectangle {
+        if root.log-detail-open && root.tools-shown && root.tools-page == "logs": Rectangle {
             background: #00000066;
             TouchArea { clicked => { root.log-detail-open = false; } }
             Rectangle {
