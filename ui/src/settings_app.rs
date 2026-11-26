@@ -769,12 +769,7 @@ impl App {
                     );
                 }
             }
-            ("advanced", id)
-                if overrides::spec(id).is_some()
-                    || matches!(id, "rules" | "scripts" | "filters") =>
-            {
-                self.open_page(id)
-            }
+            ("advanced", id) if advanced_opens(id) => self.open_page(id),
             (page, id) if overrides::spec(page).is_some() => self.override_clicked(page, id),
             ("developer", "message-test") => self.message_test(),
             ("developer", "logs-test") => self.logs_test(),
@@ -1287,9 +1282,27 @@ impl App {
     }
 }
 
+/// Whether a 进阶配置 row opens a page of its own.
+fn advanced_opens(id: &str) -> bool {
+    overrides::spec(id).is_some()
+        || matches!(
+            id,
+            "rules" | "scripts" | "filters" | "rule-sets" | "icon-sets" | "custom-proxies"
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_custom_row_opens_its_page() {
+        let s = store::Settings::default();
+        for id in ["rule-sets", "filters", "icon-sets", "custom-proxies"] {
+            assert!(advanced_opens(id), "{id}");
+            assert!(page_meta(&s, id).known, "{id}");
+        }
+    }
 
     #[test]
     fn empty_lists_keep_the_add_button_in_the_bar() {
