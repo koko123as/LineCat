@@ -1672,12 +1672,14 @@ impl App {
     fn auto_update_loop(self: Arc<Self>) {
         // A failed profile waits its interval before the next try, not a minute.
         let mut failed: HashMap<String, u64> = HashMap::new();
-        // `_autoUpdateProfilesTask` updates the MITM modules at start and every 20 minutes.
+        // `_autoUpdateProfilesTask` updates the resources and the MITM modules at start and
+        // every 20 minutes.
         let mut modules_at: Option<std::time::Instant> = None;
         while self.alive.load(Ordering::SeqCst) {
             if self.bridge().is_ok() {
                 if modules_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(20 * 60)) {
                     modules_at = Some(std::time::Instant::now());
+                    self.auto_update_resources();
                     self.auto_update_modules();
                 }
                 let now = now_secs();

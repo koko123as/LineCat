@@ -8094,6 +8094,8 @@ component ResourceRow inherits Rectangle {
 // lib/views/resources.dart: the geo files' auto update and each file.
 component ResourcesPage inherits Rectangle {
     in property <[ResourceItem]> items;
+    in property <[ResourceItem]> icon-sets;
+    in property <[ResourceItem]> rule-sets;
     in property <[ResourceItem]> scripts;
     in property <[ResourceItem]> modules;
     in property <bool> auto;
@@ -8162,6 +8164,34 @@ component ResourcesPage inherits Rectangle {
                         for it[i] in root.items: ResourceRow {
                             item: it;
                             divider: i < root.items.length - 1;
+                            tapped(k) => { root.tapped(k); }
+                            menu(k) => { root.menu(k); }
+                        }
+                    }
+                }
+                if root.icon-sets.length > 0: HorizontalLayout { padding-left: 14px; Text { text: "图标集"; height: 40px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: bottom; } }
+                if root.icon-sets.length > 0: Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 16px;
+                    clip: true;
+                    VerticalLayout {
+                        for it[i] in root.icon-sets: ResourceRow {
+                            item: it;
+                            divider: i < root.icon-sets.length - 1;
+                            tapped(k) => { root.tapped(k); }
+                            menu(k) => { root.menu(k); }
+                        }
+                    }
+                }
+                if root.rule-sets.length > 0: HorizontalLayout { padding-left: 14px; Text { text: "规则集"; height: 40px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: bottom; } }
+                if root.rule-sets.length > 0: Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 16px;
+                    clip: true;
+                    VerticalLayout {
+                        for it[i] in root.rule-sets: ResourceRow {
+                            item: it;
+                            divider: i < root.rule-sets.length - 1;
                             tapped(k) => { root.tapped(k); }
                             menu(k) => { root.menu(k); }
                         }
@@ -8919,6 +8949,8 @@ export component AppWindow inherits Window {
     callback cond-submit();
     // Resources
     in property <[ResourceItem]> res-items;
+    in property <[ResourceItem]> res-icon-sets;
+    in property <[ResourceItem]> res-rule-sets;
     in property <[ResourceItem]> res-scripts;
     in property <[ResourceItem]> res-modules;
     in property <bool> res-auto;
@@ -9844,6 +9876,8 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
                     items: root.res-items;
+                    icon-sets: root.res-icon-sets;
+                    rule-sets: root.res-rule-sets;
                     scripts: root.res-scripts;
                     modules: root.res-modules;
                     auto: root.res-auto;

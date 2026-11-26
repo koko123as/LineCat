@@ -29,6 +29,12 @@ pub(crate) fn utc_offset(ms: i64) -> i64 {
     tm.tm_gmtoff as i64
 }
 
+fn res_syncing() -> &'static std::sync::Mutex<std::collections::BTreeSet<String>> {
+    static S: std::sync::OnceLock<std::sync::Mutex<std::collections::BTreeSet<String>>> =
+        std::sync::OnceLock::new();
+    S.get_or_init(Default::default)
+}
+
 fn model<T: Clone + 'static>(v: Vec<T>) -> ModelRc<T> {
     ModelRc::new(VecModel::from(v))
 }
@@ -477,8 +483,10 @@ impl App {
             "res-copy" => {
                 let settings = self.store.lock().unwrap().state.settings.clone();
                 let url = match arg.split_once(':') {
-                    Some(_) => resources::remote_scripts(&settings.scripts)
+                    Some(_) => resources::remote_icon_sets(&settings.icon_sets)
                         .into_iter()
+                        .chain(resources::remote_rule_sets(&settings.rule_sets))
+                        .chain(resources::remote_scripts(&settings.scripts))
                         .chain(resources::remote_modules(&settings.mitm_modules))
                         .find(|r| r.key == arg)
                         .map(|r| r.url),
@@ -576,6 +584,34 @@ impl App {
             url: r.url.into(),
             busy,
         };
+        let syncing = res_syncing().lock().unwrap().clone();
+        let icon_sets: Vec<ResourceItem> = resources::remote_icon_sets(&settings.icon_sets)
+            .into_iter()
+            .map(|r| {
+                let chip = settings
+                    .icon_sets
+                    .iter()
+                    .find(|s| r.key == format!("icon:{}", s.id))
+                    .map(|s| crate::icon_sets::compact(s.icons.len()))
+                    .unwrap_or_default();
+                let busy = syncing.contains(&r.key);
+                remote(r, chip, busy)
+            })
+            .collect();
+        let rules_dir = self.rule_sets_dir();
+        let rule_sets: Vec<ResourceItem> = resources::remote_rule_sets(&settings.rule_sets)
+            .into_iter()
+            .zip(settings.rule_sets.iter().filter(|s| s.is_remote()))
+            .map(|(mut r, s)| {
+                let path = rules_dir.join(s.file_name());
+                r.updated = crate::rule_sets_app::modified_secs(&path);
+                let chip = std::fs::metadata(&path)
+                    .map(|m| crate::size(m.len() as i64))
+                    .unwrap_or_default();
+                let busy = syncing.contains(&r.key);
+                remote(r, chip, busy)
+            })
+            .collect();
         let scripts: Vec<ResourceItem> = resources::remote_scripts(&settings.scripts)
             .into_iter()
             .map(|r| {
@@ -594,9 +630,23 @@ impl App {
                 remote(r, String::new(), busy)
             })
             .collect();
-        ui.set_res_updating(items.iter().chain(&scripts).chain(&modules).any(|i| i.busy));
+        ui.set_res_updating(
+            items
+                .iter()
+                .chain(&icon_sets)
+                .chain(&rule_sets)
+                .chain(&scripts)
+                .chain(&modules)
+                .any(|i| i.busy),
+        );
         if let Some(m) = set_rows(ui.get_res_items(), items) {
             ui.set_res_items(m);
+        }
+        if let Some(m) = set_rows(ui.get_res_icon_sets(), icon_sets) {
+            ui.set_res_icon_sets(m);
+        }
+        if let Some(m) = set_rows(ui.get_res_rule_sets(), rule_sets) {
+            ui.set_res_rule_sets(m);
         }
         if let Some(m) = set_rows(ui.get_res_scripts(), scripts) {
             ui.set_res_scripts(m);
@@ -639,12 +689,18 @@ impl App {
         });
     }
 
-    /// `updateAll`: the geo files, then every remote script and module.
+    /// `updateAll`: the geo files, then every remote icon set, rule set, script and module.
     fn update_all_geo(self: &Arc<Self>) {
         for (_, key, _) in resources::GEO {
             self.update_geo(key.to_string(), false);
         }
         let settings = self.store.lock().unwrap().state.settings.clone();
+        for r in resources::remote_icon_sets(&settings.icon_sets) {
+            self.sync_set(&r.key);
+        }
+        for r in resources::remote_rule_sets(&settings.rule_sets) {
+            self.sync_set(&r.key);
+        }
         for r in resources::remote_scripts(&settings.scripts) {
             self.sync_script(&r.key["script:".len()..]);
         }
@@ -653,12 +709,92 @@ impl App {
         }
     }
 
-    /// 同步 on a row: a geo file, a script or a module by its key.
+    /// 同步 on a row, by its key.
     fn sync_resource(self: &Arc<Self>, key: &str) {
         match key.split_once(':') {
             Some(("script", id)) => self.sync_script(id),
             Some(("module", id)) => self.sync_module(id),
-            _ => self.update_geo(key.to_string(), true),
+            Some(_) => self.sync_set(key),
+            None => self.update_geo(key.to_string(), true),
+        }
+    }
+
+    /// `updateIconSet` / `updateRuleProvider`.
+    fn sync_set(self: &Arc<Self>, key: &str) {
+        if !res_syncing().lock().unwrap().insert(key.to_string()) {
+            return;
+        }
+        self.republish_resources();
+        let key = key.to_string();
+        self.spawn(move |app| {
+            let result = app.update_set(&key);
+            res_syncing().lock().unwrap().remove(&key);
+            app.republish_resources();
+            if let Err(e) = result {
+                app.show_failures(vec![(app.resource_title(&key), e)]);
+            }
+        });
+    }
+
+    fn update_set(self: &Arc<Self>, key: &str) -> Result<(), String> {
+        match key.split_once(':') {
+            Some(("icon", id)) => self.update_icon_set(id),
+            Some(("rule", id)) => self.update_rule_set(id),
+            _ => Ok(()),
+        }
+    }
+
+    fn resource_title(&self, key: &str) -> String {
+        let settings = self.store.lock().unwrap().state.settings.clone();
+        resources::remote_icon_sets(&settings.icon_sets)
+            .into_iter()
+            .chain(resources::remote_rule_sets(&settings.rule_sets))
+            .chain(resources::remote_scripts(&settings.scripts))
+            .find(|r| r.key == key)
+            .map(|r| r.title)
+            .unwrap_or_default()
+    }
+
+    /// `ResourcesAction.autoUpdate`; the geo files are left to the Core.
+    pub(crate) fn auto_update_resources(self: &Arc<Self>) {
+        let settings = self.store.lock().unwrap().state.settings.clone();
+        if !settings.geo_auto_update {
+            return;
+        }
+        let (hours, now) = (settings.geo_update_interval, crate::now_secs());
+        let mut due: Vec<String> = Vec::new();
+        for r in resources::remote_icon_sets(&settings.icon_sets) {
+            if resources::is_due(r.updated, hours, now) {
+                due.push(r.key);
+            }
+        }
+        for r in resources::remote_scripts(&settings.scripts) {
+            if resources::is_due(r.updated, hours, now) {
+                due.push(r.key);
+            }
+        }
+        let dir = self.rule_sets_dir();
+        for s in settings.rule_sets.iter().filter(|s| s.is_remote()) {
+            let updated = crate::rule_sets_app::modified_secs(&dir.join(s.file_name()));
+            if resources::is_due(updated, hours, now) {
+                due.push(format!("rule:{}", s.id));
+            }
+        }
+        for key in due {
+            if key.starts_with("rule:") && self.bridge().is_err() {
+                break;
+            }
+            let result = match key.split_once(':') {
+                Some(("script", id)) => self.update_script(id),
+                _ => self.update_set(&key),
+            };
+            if let Err(e) = result {
+                self.push_log(&json!({
+                    "level": "warning",
+                    "time": crate::now_secs() as i64 * 1000,
+                    "text": format!("auto update {}: {e}", self.resource_title(&key)),
+                }));
+            }
         }
     }
 
@@ -940,7 +1076,8 @@ impl App {
         ui.on_res_menu(move |key| {
             let busy = match key.split_once(':') {
                 Some(("script", id)) => a.script_syncing(id),
-                Some((_, id)) => a.module_updating(id),
+                Some(("module", id)) => a.module_updating(id),
+                Some(_) => res_syncing().lock().unwrap().contains(key.as_str()),
                 None => resources::GEO
                     .iter()
                     .find(|g| g.1 == key.as_str())

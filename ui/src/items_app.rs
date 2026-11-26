@@ -458,16 +458,9 @@ impl App {
         match profile::download(url, check) {
             Ok(d) => match id {
                 Some(id) => {
-                    if let Err(e) = std::fs::write(self.script_path(&id), &d.bytes) {
-                        return self.toast(e.to_string());
+                    if let Err(e) = self.write_script(&id, url, &d.bytes) {
+                        self.toast(e);
                     }
-                    let url = url.to_string();
-                    self.update_items(move |s| {
-                        if let Some(x) = s.scripts.iter_mut().find(|x| x.id == id) {
-                            x.url = Some(url);
-                            x.updated = now_ms();
-                        }
-                    });
                 }
                 None => {
                     let scripts = self.store.lock().unwrap().state.settings.scripts.clone();
@@ -477,6 +470,33 @@ impl App {
             },
             Err(e) => self.toast(e),
         }
+    }
+
+    fn write_script(self: &Arc<Self>, id: &str, url: &str, bytes: &[u8]) -> Result<(), String> {
+        std::fs::write(self.script_path(id), bytes).map_err(|e| e.to_string())?;
+        let (id, url) = (id.to_string(), url.to_string());
+        self.update_items(move |s| {
+            if let Some(x) = s.scripts.iter_mut().find(|x| x.id == id) {
+                x.url = Some(url);
+                x.updated = now_ms();
+            }
+        });
+        Ok(())
+    }
+
+    /// `updateScript` for the resources' auto update, which logs rather than toasts.
+    pub(crate) fn update_script(self: &Arc<Self>, id: &str) -> Result<(), String> {
+        let settings = self.store.lock().unwrap().state.settings.clone();
+        let Some(url) = settings
+            .scripts
+            .iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.url.clone())
+        else {
+            return Ok(());
+        };
+        let d = profile::download(&url, settings.general.check_certificate)?;
+        self.write_script(id, &url, &d.bytes)
     }
 
     fn import_script_file(self: &Arc<Self>) {

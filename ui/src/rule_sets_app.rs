@@ -474,6 +474,24 @@ impl App {
         }
     }
 
+    /// `updateRuleProvider` from the resources page: the remote set downloaded again.
+    pub(crate) fn update_rule_set(self: &Arc<Self>, id: &str) -> Result<(), String> {
+        let Some(s) = self
+            .rule_sets()
+            .into_iter()
+            .find(|x| x.id == id && x.is_remote())
+        else {
+            return Ok(());
+        };
+        let next = self.compile_rule_set(s.clone(), Some(&s), None, true)?;
+        self.update_rule_sets(move |sets| {
+            if let Some(x) = sets.iter_mut().find(|x| x.id == next.id) {
+                *x = next;
+            }
+        });
+        Ok(())
+    }
+
     fn compile_rule_set(
         &self,
         s: RuleSet,

@@ -425,11 +425,22 @@ impl App {
 
     /// `sync`: a set whose url changed or that was deleted meanwhile is left as it now is.
     fn sync_icon_set(self: &Arc<Self>, s: IconSet) {
+        if let Err(e) = self.try_sync_icon_set(s) {
+            self.toast(e);
+        }
+    }
+
+    /// `updateIconSet` from the resources page, by id.
+    pub(crate) fn update_icon_set(self: &Arc<Self>, id: &str) -> Result<(), String> {
+        match self.icon_sets().into_iter().find(|x| x.id == id) {
+            Some(s) if s.is_remote() => self.try_sync_icon_set(s),
+            _ => Ok(()),
+        }
+    }
+
+    fn try_sync_icon_set(self: &Arc<Self>, s: IconSet) -> Result<(), String> {
         let before = self.icon_sets().into_iter().find(|x| x.id == s.id);
-        let (_, icons) = match download(&s.url) {
-            Ok(r) => r,
-            Err(e) => return self.toast(e),
-        };
+        let (_, icons) = download(&s.url)?;
         let latest = self.icon_sets().into_iter().find(|x| x.id == s.id);
         let base = match (before, latest) {
             (Some(b), Some(l)) if l.url == b.url => IconSet {
@@ -437,7 +448,7 @@ impl App {
                 url: s.url,
                 ..l
             },
-            (Some(_), _) => return,
+            (Some(_), _) => return Ok(()),
             (None, _) => s,
         };
         self.put_icon_set(IconSet {
@@ -445,6 +456,7 @@ impl App {
             updated: now_secs(),
             ..base
         });
+        Ok(())
     }
 
     fn import_icon_set_file(self: &Arc<Self>) {

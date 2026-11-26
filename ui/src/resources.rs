@@ -1,8 +1,10 @@
 //! The resources page (lib/views/resources.dart): the geo files the Core keeps, its
-//! auto update and the update interval, then the remote scripts and MITM modules.
+//! auto update and the update interval, then the remote icon sets, rule sets, scripts and modules.
 
+use crate::icon_sets::IconSet;
 use crate::items::Script;
 use crate::mitm::MitmModule;
+use crate::rule_sets::RuleSet;
 use std::collections::BTreeMap;
 
 /// A remote `_ResourceItem`; `updated` in Unix seconds, None reads 未知.
@@ -12,6 +14,39 @@ pub struct Remote {
     pub title: String,
     pub url: String,
     pub updated: Option<u64>,
+}
+
+pub fn remote_icon_sets(sets: &[IconSet]) -> Vec<Remote> {
+    sets.iter()
+        .filter(|s| s.is_remote())
+        .map(|s| Remote {
+            key: format!("icon:{}", s.id),
+            title: s.name.clone(),
+            url: s.url.clone(),
+            updated: (s.updated > 0).then_some(s.updated),
+        })
+        .collect()
+}
+
+/// `updated` is the file's, filled by the caller.
+pub fn remote_rule_sets(sets: &[RuleSet]) -> Vec<Remote> {
+    sets.iter()
+        .filter(|s| s.is_remote())
+        .map(|s| Remote {
+            key: format!("rule:{}", s.id),
+            title: s.label.clone(),
+            url: s.url.clone(),
+            updated: None,
+        })
+        .collect()
+}
+
+/// `autoUpdate`'s `isDue`: never updated, or the interval in hours has passed.
+pub fn is_due(updated: Option<u64>, interval_hours: i64, now: u64) -> bool {
+    match updated {
+        None => true,
+        Some(at) => at.saturating_add(interval_hours.max(0) as u64 * 3600) < now,
+    }
 }
 
 /// `_readResources().scripts`: the scripts with a URL, keyed `script:<id>`.
@@ -123,6 +158,54 @@ mod tests {
         assert_eq!(check_url("ftp:/x"), Err("必须为URL".into()));
         assert!(check_url("https://example.com/geo.dat").is_ok());
         assert_eq!(default_urls().len(), 3);
+    }
+
+    #[test]
+    fn lists_only_remote_icon_and_rule_sets() {
+        let icons = [
+            IconSet {
+                id: "a".into(),
+                name: "Qure".into(),
+                url: "https://example.com/qure.json".into(),
+                updated: 1_700_000_000,
+                ..Default::default()
+            },
+            IconSet {
+                id: "b".into(),
+                name: "本地".into(),
+                ..Default::default()
+            },
+        ];
+        let rows = remote_icon_sets(&icons);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].key, "icon:a");
+        assert_eq!(rows[0].updated, Some(1_700_000_000));
+        let rules = [
+            RuleSet {
+                id: "r".into(),
+                label: "ads".into(),
+                url: "https://example.com/ads.yaml".into(),
+                ..Default::default()
+            },
+            RuleSet {
+                id: "l".into(),
+                label: "local".into(),
+                ..Default::default()
+            },
+        ];
+        let rows = remote_rule_sets(&rules);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            (rows[0].key.as_str(), rows[0].title.as_str()),
+            ("rule:r", "ads")
+        );
+    }
+
+    #[test]
+    fn due_once_the_interval_passed() {
+        assert!(is_due(None, 24, 0));
+        assert!(!is_due(Some(1000), 1, 1000 + 3600));
+        assert!(is_due(Some(1000), 1, 1001 + 3600));
     }
 
     #[test]

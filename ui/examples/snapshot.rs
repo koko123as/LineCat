@@ -2062,6 +2062,11 @@ fn main() {
                 .collect::<Vec<_>>(),
         ))
     };
+    ui.set_res_icon_sets(remote(&[("icon:a", "Qure", "3 天前", "1.2K", false)]));
+    ui.set_res_rule_sets(remote(&[
+        ("rule:r", "reject-domains", "2 小时前", "182 KB", false),
+        ("rule:s", "telegram-cidr", "未知", "", true),
+    ]));
     ui.set_res_scripts(remote(&[
         ("script:1", "去广告与地区分组", "5 小时前", "2.4 KB", false),
         (
