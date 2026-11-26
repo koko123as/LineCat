@@ -77,4 +77,12 @@ fn navigation() {
     back(&ui);
     assert!(!ui.get_group_sheet_open());
     assert_eq!(ui.get_tab(), 0);
+
+    // A sheet's grabber or title bar dragged down: past half its height, or flung, it closes.
+    let drag = ui.global::<SheetDrag>();
+    assert!(drag.invoke_closes(260.0, 500.0, 1000));
+    assert!(!drag.invoke_closes(200.0, 500.0, 1000));
+    assert!(drag.invoke_closes(120.0, 500.0, 100));
+    assert!(!drag.invoke_closes(10.0, 500.0, 5));
+    assert!(!drag.invoke_closes(-80.0, 500.0, 50));
 }
