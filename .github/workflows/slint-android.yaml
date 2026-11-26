@@ -104,11 +104,13 @@ jobs:
           llvm="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
           export LIBCLANG_PATH="$(dirname "$(ls "$llvm"/lib/libclang.so* "$llvm"/lib64/libclang.so* 2>/dev/null | head -1)")"
           echo "LIBCLANG_PATH=$LIBCLANG_PATH"
-          # Without an API level in the target the NDK headers refuse to parse.
-          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=aarch64-linux-android$ANDROID_MIN_SDK"
+          # The NDK headers refuse an unversioned target. cargo-ndk sets the underscore form of
+          # this variable without one; bindgen reads the hyphen form first.
+          bindgen_args="--target=aarch64-linux-android$ANDROID_MIN_SDK --sysroot=$llvm/sysroot -I$llvm/sysroot/usr/include/aarch64-linux-android"
           ls -l "$ANDROID_JAR" "$ANDROID_HOME/build-tools/36.0.0/lib/d8.jar"
           grep -H 'Pkg.Revision' "$ANDROID_NDK_HOME/source.properties"
-          cargo ndk -t arm64-v8a --platform "$ANDROID_MIN_SDK" -o ../android/app/src/main/jniLibs build --release --locked
+          env "BINDGEN_EXTRA_CLANG_ARGS_aarch64-linux-android=$bindgen_args" \
+            cargo ndk -t arm64-v8a --platform "$ANDROID_MIN_SDK" -o ../android/app/src/main/jniLibs build --release --locked
           ls -l ../android/app/src/main/jniLibs/arm64-v8a/
           echo "libseasoncat_ui.so: $(stat -c %s ../android/app/src/main/jniLibs/arm64-v8a/libseasoncat_ui.so) bytes" >> "$GITHUB_STEP_SUMMARY"
 
