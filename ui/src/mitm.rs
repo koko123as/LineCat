@@ -460,6 +460,67 @@ pub fn auto_update(
     (m.is_remote() && (due || missing)).then_some(due)
 }
 
+/// `MitmHostChange`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HostChange {
+    pub title: &'static str,
+    pub tip: String,
+    pub exclude: bool,
+}
+
+/// `mitmHostChangeOf`.
+pub fn host_change(
+    hostname: Option<&[String]>,
+    host: &str,
+    network: &str,
+    decrypted: bool,
+) -> Option<HostChange> {
+    let hostname = hostname?;
+    if host.is_empty() || !network.eq_ignore_ascii_case("tcp") {
+        return None;
+    }
+    let has = |l: &str| hostname.iter().any(|h| h == l);
+    Some(host_change_of(
+        host,
+        !has(&format!("-{host}")) && (decrypted || has(host)),
+    ))
+}
+
+pub fn host_change_of(host: &str, exclude: bool) -> HostChange {
+    if exclude {
+        return HostChange {
+            title: "排除解密",
+            tip: format!("要把 -{host} 加到主机名列表顶部吗？之后不再解密该主机。"),
+            exclude,
+        };
+    }
+    HostChange {
+        title: "解密此主机",
+        tip: format!(
+            "要把 {host} 加入主机名列表吗？之后 SeasonCat 能读取发往它的内容，包括 Cookie 和密码。"
+        ),
+        exclude,
+    }
+}
+
+/// `decryptingHost` / `excludingHost`: ahead of the list, since the first match decides.
+pub fn with_host(hostname: &[String], host: &str, exclude: bool) -> Vec<String> {
+    let excluded = format!("-{host}");
+    let first = if exclude {
+        excluded.clone()
+    } else {
+        host.to_string()
+    };
+    std::iter::once(first)
+        .chain(
+            hostname
+                .iter()
+                .filter(|l| *l != host && **l != excluded)
+                .cloned(),
+        )
+        .collect()
+}
+
 /// `MitmModuleDetails`: what `mitm.readModule` makes of a module's text.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ModuleRead {
@@ -881,6 +942,33 @@ mod tests {
         );
         let long = vec![b'a'; 1000];
         assert_eq!(&hex(sha256(&long))[..8], "41edece4");
+    }
+
+    #[test]
+    fn a_connection_host_is_decrypted_or_excluded() {
+        let list = vec!["a.test".to_string(), "-b.test".into(), "c.test".into()];
+        assert!(host_change(None, "a.test", "tcp", false).is_none());
+        assert!(host_change(Some(&list), "a.test", "udp", true).is_none());
+        assert!(
+            host_change(Some(&list), "a.test", "TCP", false)
+                .unwrap()
+                .exclude
+        );
+        assert!(
+            host_change(Some(&list), "x.test", "tcp", true)
+                .unwrap()
+                .exclude
+        );
+        let b = host_change(Some(&list), "b.test", "tcp", true).unwrap();
+        assert!(!b.exclude && b.title == "解密此主机");
+        assert_eq!(
+            with_host(&list, "b.test", false),
+            ["b.test", "a.test", "c.test"]
+        );
+        assert_eq!(
+            with_host(&list, "c.test", true),
+            ["-c.test", "a.test", "-b.test"]
+        );
     }
 
     #[test]

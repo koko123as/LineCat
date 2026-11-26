@@ -186,6 +186,7 @@ impl App {
             capturing: shows_http,
             groups: &groups,
             delays: &delays,
+            mitm_hosts: mitm.enable.then_some(mitm.hostname.as_slice()),
         };
         let mut req = self.req.lock().unwrap();
         if req.segment == HTTP && !shows_http {
@@ -207,7 +208,7 @@ impl App {
         ui.set_req_detail(req.detail(&cx));
     }
 
-    fn republish(self: &Arc<Self>) {
+    pub(crate) fn republish(self: &Arc<Self>) {
         let app = self.clone();
         self.ui(move |ui| app.publish_requests(&ui));
     }
@@ -346,6 +347,9 @@ impl App {
         if let Some(text) = arg.strip_prefix("copy:") {
             self.copy(text.to_string());
             return;
+        }
+        if let Some(change) = arg.strip_prefix("mitm-host:") {
+            return self.ask_mitm_host(change);
         }
         let (segment, id) = match arg.split_once(':') {
             Some(("conn", id)) => (CONNECTIONS, id.parse().ok()),

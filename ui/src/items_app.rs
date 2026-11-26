@@ -328,6 +328,7 @@ impl App {
         self.ui(move |ui| {
             ui.set_tools_editor_title(title);
             ui.set_tools_editor_text(text);
+            ui.set_tools_editor_guard(false);
             ui.set_tools_editor_parent(parent);
             ui.set_tools_editor_readonly(false);
             ui.set_tools_page("editor".into());

@@ -2571,6 +2571,8 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     let a = app.clone();
     ui.on_tools_editor_save(move |text| a.tools_editor_save(text.into()));
     let a = app.clone();
+    ui.on_tools_editor_back(move |text| a.mitm_editor_back(text.into()));
+    let a = app.clone();
     ui.on_preview_profile(move |id| a.preview(id.into()));
     let a = app.clone();
     ui.on_copy_link(move |id| a.copy_link(id.into()));

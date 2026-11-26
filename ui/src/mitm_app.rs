@@ -48,6 +48,10 @@ struct State {
     updating: BTreeSet<String>,
     loading: String,
     editor: Option<(Editor, String)>,
+    /// The module text the editor opened on, and the text back offered to save.
+    editor_text: String,
+    unsaved: String,
+    review: Vec<String>,
 }
 
 fn state() -> &'static Mutex<State> {
@@ -624,6 +628,7 @@ impl App {
     fn mitm_go(self: &Arc<Self>, page: &str) {
         let page: SharedString = page.into();
         self.ui(move |ui| {
+            ui.set_tools_editor_guard(false);
             ui.set_tools_page(page);
             ui.set_meta_rev(ui.get_meta_rev() + 1);
         });
@@ -860,12 +865,34 @@ impl App {
                     self.detach(id, name);
                 }
             }
+            ("mitm-host", true) => {
+                if let Some((exclude, host)) = arg.split_once(':') {
+                    let exclude = exclude == "true";
+                    self.set_hosts(|h| *h = mitm::with_host(h, host, exclude));
+                    self.republish();
+                }
+            }
+            ("mitm-save", _) => {
+                let (text, parent) = {
+                    let st = state().lock().unwrap();
+                    (
+                        st.unsaved.clone(),
+                        st.editor.as_ref().map(|(_, p)| p.clone()),
+                    )
+                };
+                if yes {
+                    self.mitm_editor_save(&text);
+                } else if let Some(parent) = parent {
+                    self.mitm_go(&parent);
+                }
+            }
             ("mitm-consent", _) => {
                 let id = arg.to_string();
                 self.update_module(&id, |m| {
                     m.enabled = yes;
                     m.accepted = Some(yes);
                 });
+                self.next_review();
             }
             _ => self.mitm_publish(),
         }
@@ -934,11 +961,17 @@ impl App {
 
     fn open_tools_text(self: &Arc<Self>, editor: Editor, parent: &str, title: &str, text: String) {
         crate::rule_sets_app::release_editor();
-        state().lock().unwrap().editor = Some((editor, parent.to_string()));
+        let guard = editor != Editor::Hosts;
+        {
+            let mut st = state().lock().unwrap();
+            st.editor = Some((editor, parent.to_string()));
+            st.editor_text = text.clone();
+        }
         let (title, parent): (SharedString, SharedString) = (title.into(), parent.into());
         self.ui(move |ui| {
             ui.set_tools_editor_title(title);
             ui.set_tools_editor_text(text.into());
+            ui.set_tools_editor_guard(guard);
             ui.set_tools_editor_readonly(false);
             ui.set_tools_editor_parent(parent);
             ui.set_tools_page("editor".into());
@@ -1662,6 +1695,60 @@ impl App {
     }
 
     /// The tools editor's save while it holds a module or the hostnames.
+    /// `applyMitmHostChange`: [change] is `exclude:host` from a connection's details.
+    pub(crate) fn ask_mitm_host(self: &Arc<Self>, change: &str) {
+        let Some((exclude, host)) = change.split_once(':') else {
+            return;
+        };
+        let c = mitm::host_change_of(host, exclude == "true");
+        self.confirm(c.title, c.tip, "mitm-host", change.to_string());
+    }
+
+    /// `_reviewModules`.
+    pub(crate) fn review_modules(self: &Arc<Self>) {
+        state().lock().unwrap().review = self
+            .mitm_settings()
+            .mitm_modules
+            .iter()
+            .filter(|m| m.awaits_consent())
+            .map(|m| m.id.clone())
+            .collect();
+        self.next_review();
+    }
+
+    fn next_review(self: &Arc<Self>) {
+        loop {
+            let id = {
+                let mut st = state().lock().unwrap();
+                if st.review.is_empty() {
+                    return;
+                }
+                st.review.remove(0)
+            };
+            if let Some(m) = self.module(&id).filter(MitmModule::awaits_consent) {
+                self.spawn(move |app| app.ask_consent(&m));
+                return;
+            }
+        }
+    }
+
+    /// `onPop`: a module whose text changed asks to save it first.
+    pub(crate) fn mitm_editor_back(self: &Arc<Self>, text: String) {
+        let (editor, original) = {
+            let st = state().lock().unwrap();
+            (st.editor.clone(), st.editor_text.clone())
+        };
+        let Some((editor, parent)) = editor else {
+            return;
+        };
+        if editor != Editor::Hosts && text != original {
+            state().lock().unwrap().unsaved = text;
+            self.confirm("提示", "是否保存更改？".into(), "mitm-save", String::new());
+        } else {
+            self.mitm_go(&parent);
+        }
+    }
+
     pub(crate) fn mitm_editor_save(self: &Arc<Self>, text: &str) -> bool {
         let Some((editor, parent)) = state().lock().unwrap().editor.clone() else {
             return false;

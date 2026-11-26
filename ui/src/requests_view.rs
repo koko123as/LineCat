@@ -59,6 +59,8 @@ pub struct Ctx<'a> {
     pub capturing: bool,
     pub groups: &'a Groups,
     pub delays: &'a HashMap<String, i32>,
+    /// The MITM hostnames while decryption is on.
+    pub mitm_hosts: Option<&'a [String]>,
 }
 
 fn s(v: impl AsRef<str>) -> SharedString {
@@ -821,6 +823,24 @@ impl ReqState {
         );
         traffic.plain = true;
         out.push(traffic);
+        if let Some(change) =
+            crate::mitm::host_change(cx.mitm_hosts, &c.host, &c.network, c.mitm || c.mitm_refused)
+        {
+            let mut decrypt = section(
+                "HTTPS 解密",
+                vec![DetailRow {
+                    kind: s("link"),
+                    title: s(change.title),
+                    arg: s(format!("mitm-host:{}:{}", change.exclude, c.host)),
+                    ..Default::default()
+                }],
+            );
+            if c.mitm_refused {
+                decrypt.footer =
+                    s("客户端拒绝了证书。请安装证书；如果应用固定了证书，请排除此主机。");
+            }
+            out.push(decrypt);
+        }
         let copy = |title: &str, value: String| text_row(title, &value, true);
         let plain = |title: &str, value: String| text_row(title, &value, false);
         let rows: Vec<DetailRow> = [
@@ -1229,6 +1249,7 @@ fn section(title: &str, rows: Vec<DetailRow>) -> DetailSection {
         title: s(title),
         plain: false,
         rows: model(rows),
+        footer: SharedString::new(),
     }
 }
 
@@ -1382,6 +1403,7 @@ mod tests {
             capturing: false,
             groups,
             delays,
+            mitm_hosts: None,
         }
     }
 
@@ -1482,6 +1504,21 @@ mod tests {
         assert_eq!(
             (hop.title.as_str(), hop.note.as_str(), hop.trailing.as_str()),
             ("香港 01", "节点 · Trojan", "88 ms")
+        );
+        assert!(!(0..d.sections.row_count())
+            .any(|i| d.sections.row_data(i).unwrap().title == "HTTPS 解密"));
+        let hosts = vec!["a.com".to_string()];
+        let mitm = Ctx {
+            mitm_hosts: Some(&hosts),
+            ..cx(&groups, &delays)
+        };
+        let d = st.detail(&mitm);
+        let decrypt = d.sections.row_data(2).unwrap();
+        assert_eq!(decrypt.title, "HTTPS 解密");
+        let row = decrypt.rows.row_data(0).unwrap();
+        assert_eq!(
+            (row.title.as_str(), row.arg.as_str()),
+            ("排除解密", "mitm-host:true:a.com")
         );
         st.segment = DNS;
         assert_eq!(st.detail(&cx(&groups, &delays)).empty, "选择一次查询");

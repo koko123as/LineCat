@@ -179,6 +179,7 @@ fn requests_shot(
         capturing: true,
         groups: &groups,
         delays: &delays,
+        mitm_hosts: Some(&[]),
     };
     let model = |v: Vec<RecordRow>| ModelRc::new(VecModel::from(v));
     ui.set_req_rows(model(st.rows(&cx)));
@@ -2035,6 +2036,31 @@ fn main() {
         ("requests-dns", 3, "", "requests", 1, "req:2:0:0"),
         ("requests-http", 3, "", "requests", 1, "req:1:0:0"),
         ("requests-sheet", 3, "", "requests", 1, "req:0:6:0:sheet"),
+        (
+            "requests-info-sheet",
+            3,
+            "",
+            "requests",
+            1,
+            "req:0:3:2:sheet",
+        ),
+        (
+            "requests-info-sheet-small",
+            3,
+            "",
+            "requests",
+            1,
+            "req:0:3:2:sheet",
+        ),
+        ("requests-info-sheet-wide", 4, "", "", 1, "req:0:3:2"),
+        (
+            "requests-info-sheet-tablet",
+            4,
+            "",
+            "",
+            1,
+            "req:0:3:2:sheet",
+        ),
         (
             "requests-sheet-info",
             3,

@@ -106,6 +106,7 @@ impl App {
                 self.with_live(|l| l.asking = true)
             }
             Some(Status::Core(Core::Stopped)) if !preview => self.restart_core(),
+            Some(Status::Consent(_)) if !preview => self.review_modules(),
             _ => {}
         }
     }

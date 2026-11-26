@@ -353,6 +353,7 @@ export struct DetailSection {
     title: string,
     plain: bool,
     rows: [DetailRow],
+    footer: string,
 }
 
 export struct ReqDetail {
@@ -7588,6 +7589,12 @@ component DetailView inherits Rectangle {
                             }
                         }
                     }
+                    if sec.footer != "": HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        padding-top: 6px;
+                        Text { text: sec.footer; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                    }
                 }
             }
         }
@@ -8900,6 +8907,9 @@ export component AppWindow inherits Window {
     in-out property <string> tools-editor-text;
     in property <string> tools-editor-parent;
     in property <bool> tools-editor-readonly;
+    // Back asks Rust first, which offers to save a changed MITM module.
+    in property <bool> tools-editor-guard;
+    callback tools-editor-back(string);
     // 图标集's preview (`icon_sets_app.rs`).
     in property <string> iconset-title;
     in property <[IconTile]> iconset-tiles;
@@ -9161,6 +9171,7 @@ export component AppWindow inherits Window {
                 if (root.tab == 3 && root.tools-page == "icon-set") { root.tools-page = "icon-sets"; return accept; }
                 if (root.tab == 3 && root.meta.known && root.set-searching) { root.set-query = ""; root.set-searching = false; return accept; }
                 if (root.tab == 3 && root.meta.known) { root.tools-page = root.meta.parent; return accept; }
+                if (root.tab == 3 && root.tools-page == "editor" && root.tools-editor-guard) { root.tools-editor-back(root.tools-editor-text); return accept; }
                 if (root.tab == 3 && root.tools-page == "editor") { root.tools-page = root.tools-editor-parent; return accept; }
                 if (root.tab == 3 && root.tools-page != "") {
                     root.tools-page = "";
@@ -9677,7 +9688,13 @@ export component AppWindow inherits Window {
                     readonly: root.tools-editor-readonly;
                     text <=> root.tools-editor-text;
                     save(t) => { root.tools-editor-save(t); }
-                    back => { root.tools-page = root.tools-editor-parent; }
+                    back => {
+                        if (root.tools-editor-guard) {
+                            root.tools-editor-back(root.tools-editor-text);
+                        } else {
+                            root.tools-page = root.tools-editor-parent;
+                        }
+                    }
                 }
                 if root.tab == 3 && root.meta.known && root.meta.fab: Fab {
                     x: parent.width - self.width - 16px;
