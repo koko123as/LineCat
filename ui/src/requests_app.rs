@@ -472,18 +472,18 @@ impl App {
             "only-app" | "hide-host" | "only-domain" => {
                 self.req.lock().unwrap().filter_by(name, num);
             }
-            "res-sync" => self.update_geo(arg.to_string(), true),
+            "res-sync" => self.sync_resource(arg),
             "res-edit" => self.open_geo_url(arg),
             "res-copy" => {
-                let url = self
-                    .store
-                    .lock()
-                    .unwrap()
-                    .state
-                    .settings
-                    .geox_url
-                    .get(arg)
-                    .cloned();
+                let settings = self.store.lock().unwrap().state.settings.clone();
+                let url = match arg.split_once(':') {
+                    Some(_) => resources::remote_scripts(&settings.scripts)
+                        .into_iter()
+                        .chain(resources::remote_modules(&settings.mitm_modules))
+                        .find(|r| r.key == arg)
+                        .map(|r| r.url),
+                    None => settings.geox_url.get(arg).cloned(),
+                };
                 if let Some(url) = url {
                     self.copy(url);
                 }
@@ -564,15 +564,51 @@ impl App {
                 }
             })
             .collect();
-        ui.set_res_updating(items.iter().any(|i| i.busy));
+        let remote = |r: resources::Remote, chip: String, busy: bool| ResourceItem {
+            key: r.key.into(),
+            title: r.title.into(),
+            subtitle: r
+                .updated
+                .map(crate::ago_short)
+                .unwrap_or_else(|| "未知".into())
+                .into(),
+            chip: chip.into(),
+            url: r.url.into(),
+            busy,
+        };
+        let scripts: Vec<ResourceItem> = resources::remote_scripts(&settings.scripts)
+            .into_iter()
+            .map(|r| {
+                let id = r.key["script:".len()..].to_string();
+                let chip = std::fs::metadata(self.script_path(&id))
+                    .map(|m| crate::size(m.len() as i64))
+                    .unwrap_or_default();
+                let busy = self.script_syncing(&id);
+                remote(r, chip, busy)
+            })
+            .collect();
+        let modules: Vec<ResourceItem> = resources::remote_modules(&settings.mitm_modules)
+            .into_iter()
+            .map(|r| {
+                let busy = self.module_updating(&r.key["module:".len()..]);
+                remote(r, String::new(), busy)
+            })
+            .collect();
+        ui.set_res_updating(items.iter().chain(&scripts).chain(&modules).any(|i| i.busy));
         if let Some(m) = set_rows(ui.get_res_items(), items) {
             ui.set_res_items(m);
+        }
+        if let Some(m) = set_rows(ui.get_res_scripts(), scripts) {
+            ui.set_res_scripts(m);
+        }
+        if let Some(m) = set_rows(ui.get_res_modules(), modules) {
+            ui.set_res_modules(m);
         }
         ui.set_res_auto(settings.geo_auto_update);
         ui.set_res_interval(format!("{} 小时", settings.geo_update_interval).into());
     }
 
-    fn republish_resources(self: &Arc<Self>) {
+    pub(crate) fn republish_resources(self: &Arc<Self>) {
         let app = self.clone();
         self.ui(move |ui| app.publish_resources(&ui));
     }
@@ -603,9 +639,26 @@ impl App {
         });
     }
 
+    /// `updateAll`: the geo files, then every remote script and module.
     fn update_all_geo(self: &Arc<Self>) {
         for (_, key, _) in resources::GEO {
             self.update_geo(key.to_string(), false);
+        }
+        let settings = self.store.lock().unwrap().state.settings.clone();
+        for r in resources::remote_scripts(&settings.scripts) {
+            self.sync_script(&r.key["script:".len()..]);
+        }
+        for r in resources::remote_modules(&settings.mitm_modules) {
+            self.sync_module(&r.key["module:".len()..]);
+        }
+    }
+
+    /// 同步 on a row: a geo file, a script or a module by its key.
+    fn sync_resource(self: &Arc<Self>, key: &str) {
+        match key.split_once(':') {
+            Some(("script", id)) => self.sync_script(id),
+            Some(("module", id)) => self.sync_module(id),
+            _ => self.update_geo(key.to_string(), true),
         }
     }
 
@@ -877,13 +930,22 @@ impl App {
             });
         });
         let a = self.clone();
-        ui.on_res_tapped(move |key| a.open_geo_url(&key));
+        // A script or module row has no edit (`_ScriptItem`, `_ModuleItem`).
+        ui.on_res_tapped(move |key| {
+            if !key.contains(':') {
+                a.open_geo_url(&key);
+            }
+        });
         let a = self.clone();
         ui.on_res_menu(move |key| {
-            let busy = resources::GEO
-                .iter()
-                .find(|g| g.1 == key.as_str())
-                .is_some_and(|g| a.geo_busy.lock().unwrap().contains(g.0));
+            let busy = match key.split_once(':') {
+                Some(("script", id)) => a.script_syncing(id),
+                Some((_, id)) => a.module_updating(id),
+                None => resources::GEO
+                    .iter()
+                    .find(|g| g.1 == key.as_str())
+                    .is_some_and(|g| a.geo_busy.lock().unwrap().contains(g.0)),
+            };
             let item = |id: String, glyph: &str, label: &str| ActionItem {
                 id: id.into(),
                 glyph: glyph.into(),
@@ -895,7 +957,9 @@ impl App {
             if !busy {
                 items.push(item(format!("res-sync:{key}"), "sync", "同步"));
             }
-            items.push(item(format!("res-edit:{key}"), "edit", "编辑"));
+            if !key.contains(':') {
+                items.push(item(format!("res-edit:{key}"), "edit", "编辑"));
+            }
             items.push(item(format!("res-copy:{key}"), "copy", "复制链接"));
             a.show_actions(String::new(), items);
         });

@@ -2048,6 +2048,31 @@ fn main() {
         })
         .collect::<Vec<_>>(),
     )));
+    let remote = |rows: &[(&str, &str, &str, &str, bool)]| {
+        ModelRc::new(VecModel::from(
+            rows.iter()
+                .map(|(key, title, sub, chip, busy)| ResourceItem {
+                    key: (*key).into(),
+                    title: (*title).into(),
+                    subtitle: (*sub).into(),
+                    chip: (*chip).into(),
+                    url: "https://example.com/r".into(),
+                    busy: *busy,
+                })
+                .collect::<Vec<_>>(),
+        ))
+    };
+    ui.set_res_scripts(remote(&[
+        ("script:1", "去广告与地区分组", "5 小时前", "2.4 KB", false),
+        (
+            "script:2",
+            "rename-nodes-with-a-very-long-script-name-for-elide",
+            "未知",
+            "",
+            true,
+        ),
+    ]));
+    ui.set_res_modules(remote(&[("module:m", "去广告", "1 天前", "", false)]));
     ui.set_res_auto(true);
     ui.set_res_interval("24 小时".into());
     ui.on_res_check(|kind, value| {
@@ -2162,6 +2187,7 @@ fn main() {
         ("resources-url", 3, "", "resources", 1, "res:url"),
         ("resources-wide", 3, "", "resources", 1, ""),
         ("resources-tablet", 3, "", "resources", 1, ""),
+        ("resources-small", 3, "", "resources", 1, ""),
         ("tools-wide", 3, "", "", 1, ""),
         ("dashboard", 0, "", "", 1, ""),
         ("popt", 1, "节点选择", "", 1, "options"),

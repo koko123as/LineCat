@@ -1443,6 +1443,30 @@ impl App {
         }
     }
 
+    pub(crate) fn module_updating(&self, id: &str) -> bool {
+        state().lock().unwrap().updating.contains(id)
+    }
+
+    /// The resources page's 同步 on a module (`updateModule`, then `offerMitmModule`).
+    pub(crate) fn sync_module(self: &Arc<Self>, id: &str) {
+        let Some(m) = self
+            .mitm_settings()
+            .mitm_modules
+            .into_iter()
+            .find(|m| m.id == id)
+        else {
+            return;
+        };
+        if !state().lock().unwrap().updating.insert(m.id.clone()) {
+            return;
+        }
+        self.republish_resources();
+        self.spawn(move |app| {
+            app.refresh_module(m, None);
+            app.republish_resources();
+        });
+    }
+
     /// `updateModule` / `changeUrl`: the url's text, or a local module's own file read again.
     fn refresh_module(self: &Arc<Self>, m: MitmModule, url: Option<String>) {
         if let Err(e) = self.fetch_module_text(&m, url) {

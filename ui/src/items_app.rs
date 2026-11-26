@@ -5,6 +5,7 @@ use crate::items::{self, Filter, Script};
 use crate::{profile, store, ActionItem, App, PageMeta, SetRow, SetSection, CALL};
 use serde_json::{json, Value};
 use slint::{ModelRc, SharedString, VecModel};
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -15,6 +16,11 @@ use std::time::Duration;
 struct Editing {
     script: Option<String>,
     pending: String,
+}
+
+fn syncing() -> &'static Mutex<BTreeSet<String>> {
+    static S: std::sync::OnceLock<Mutex<BTreeSet<String>>> = std::sync::OnceLock::new();
+    S.get_or_init(Default::default)
 }
 
 fn editing() -> &'static Mutex<Editing> {
@@ -322,12 +328,7 @@ impl App {
                         "",
                         s.url.as_deref().unwrap_or(""),
                     ),
-                    "sync" => {
-                        if let Some(url) = s.url.clone() {
-                            let id = id.to_string();
-                            self.spawn(move |app| app.import_script_url(&url, Some(id)));
-                        }
-                    }
+                    "sync" => self.sync_script(id),
                     "delete" => self.confirm(
                         "提示",
                         "确定删除当前脚本吗？".into(),
@@ -340,6 +341,35 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    pub(crate) fn script_syncing(&self, id: &str) -> bool {
+        syncing().lock().unwrap().contains(id)
+    }
+
+    /// `updateScript`: the script read again from its URL, once at a time.
+    pub(crate) fn sync_script(self: &Arc<Self>, id: &str) {
+        let url = self
+            .store
+            .lock()
+            .unwrap()
+            .state
+            .settings
+            .scripts
+            .iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.url.clone());
+        let Some(url) = url else { return };
+        if !syncing().lock().unwrap().insert(id.to_string()) {
+            return;
+        }
+        self.republish_resources();
+        let id = id.to_string();
+        self.spawn(move |app| {
+            app.import_script_url(&url, Some(id.clone()));
+            syncing().lock().unwrap().remove(&id);
+            app.republish_resources();
+        });
     }
 
     /// `script-delete` confirmed.
