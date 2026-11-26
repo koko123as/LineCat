@@ -447,6 +447,19 @@ pub struct Line {
     pub task: Option<String>,
 }
 
+/// `autoUpdate`: None to leave it, else whether it was due, which also fetches its resources.
+pub fn auto_update(
+    m: &MitmModule,
+    missing: bool,
+    auto: bool,
+    interval_hours: i64,
+    now: u64,
+) -> Option<bool> {
+    let interval = interval_hours.max(0) as u64 * 3600;
+    let due = auto && m.is_remote() && m.updated + interval < now;
+    (m.is_remote() && (due || missing)).then_some(due)
+}
+
 /// `MitmModuleDetails`: what `mitm.readModule` makes of a module's text.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ModuleRead {
@@ -459,7 +472,7 @@ pub struct ModuleRead {
     pub asks_consent: bool,
     pub has_resources: bool,
     pub has_rule_sets: bool,
-    pub network: Vec<String>,
+    pub network: crate::mitm_network::Network,
     pub lists: Vec<(&'static str, Vec<Line>)>,
     pub rules: Vec<String>,
     /// `namedPolicies`: the policies its rules leave to the profile's exits.
@@ -606,11 +619,9 @@ pub fn read_module(source: &str, read: &Value) -> ModuleRead {
         asks_consent: read.get("asksConsent").and_then(Value::as_bool) == Some(true),
         has_resources: !array(read, "resources").is_empty(),
         has_rule_sets: !array(read, "ruleSets").is_empty(),
-        network: read
-            .get("network")
-            .and_then(Value::as_object)
-            .map(|n| n.keys().cloned().collect())
-            .unwrap_or_default(),
+        network: crate::mitm_network::Network::from_core_json(
+            read.get("network").unwrap_or(&Value::Null),
+        ),
         lists,
         rules,
         named_policies,
@@ -770,8 +781,8 @@ pub fn consent_text(read: Option<&ModuleRead>, scripts: usize) -> (String, Strin
     }
     if let Some(r) = read.filter(|r| !r.network.is_empty()) {
         let mut s = "启用时会覆盖下列网络设置。".to_string();
-        for key in &r.network {
-            s.push_str(&format!("\n• {key}"));
+        for c in r.network.changes() {
+            s.push_str(&format!("\n• {}: {}", c.key.title(), c.value()));
         }
         parts.push(s);
     }
@@ -870,6 +881,21 @@ mod tests {
         );
         let long = vec![b'a'; 1000];
         assert_eq!(&hex(sha256(&long))[..8], "41edece4");
+    }
+
+    #[test]
+    fn remote_modules_update_when_due_or_missing() {
+        let mut m = MitmModule {
+            url: "https://x/m".into(),
+            updated: 1000,
+            ..Default::default()
+        };
+        assert_eq!(auto_update(&m, false, true, 1, 1000 + 3600), None);
+        assert_eq!(auto_update(&m, false, true, 1, 1000 + 3601), Some(true));
+        assert_eq!(auto_update(&m, false, false, 1, 99_999), None);
+        assert_eq!(auto_update(&m, true, false, 1, 0), Some(false));
+        m.url.clear();
+        assert_eq!(auto_update(&m, true, true, 0, 99_999), None);
     }
 
     #[test]

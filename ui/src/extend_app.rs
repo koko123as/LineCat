@@ -3,6 +3,8 @@
 //! custom profile's 更多), 立即应用, and the MITM modules' exits read through the Core.
 
 use crate::extend::{self, ExitRow, Outbounds};
+use crate::mitm::{MitmModule, ModuleRead};
+use crate::mitm_network::Network;
 use crate::rules_app::{self, PAGES};
 use crate::store::State;
 use crate::{ActionItem, App, PageMeta, SetRow, SetSection};
@@ -38,8 +40,7 @@ static EXT: Mutex<ExtUi> = Mutex::new(ExtUi {
     query: String::new(),
 });
 
-/// Each read module: its id, what it was read from, and the policies it names.
-static MODULES: Mutex<Vec<(String, String, Vec<String>)>> = Mutex::new(Vec::new());
+static MODULES: Mutex<Vec<(String, String, ModuleRead)>> = Mutex::new(Vec::new());
 
 /// `profile.outbounds` of a profile file, by profile id and update time.
 static OUTBOUNDS: Mutex<Option<(String, u64, Outbounds)>> = Mutex::new(None);
@@ -317,9 +318,8 @@ impl App {
         Some(o)
     }
 
-    /// `mitmModuleExits`: the enabled modules read through the Core, each once per version
-    /// of its file and arguments; none while MITM is off.
-    pub(crate) fn module_exits(&self) -> Vec<(String, Vec<String>)> {
+    /// `enabledMitmModules`, each read once per version of its file, arguments and attachments.
+    pub(crate) fn enabled_module_reads(&self) -> Vec<(MitmModule, ModuleRead)> {
         let settings = self.store.lock().unwrap().state.settings.clone();
         if !settings.mitm.enable {
             return Vec::new();
@@ -334,7 +334,13 @@ impl App {
                         .ok()
                         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                         .map_or(0, |d| d.as_nanos());
-                    format!("{}:{}:{at}:{:?}", m.updated, md.len(), m.arguments)
+                    format!(
+                        "{}:{}:{at}:{:?}:{:?}",
+                        m.updated,
+                        md.len(),
+                        m.arguments,
+                        m.attachments()
+                    )
                 })
                 .unwrap_or_default();
             let cached = MODULES
@@ -342,43 +348,64 @@ impl App {
                 .unwrap()
                 .iter()
                 .find(|(id, s, _)| *id == m.id && *s == stamp)
-                .map(|(_, _, p)| p.clone());
-            let policies = match cached {
-                Some(p) => p,
+                .map(|(_, _, r)| r.clone());
+            let r = match cached {
+                Some(r) => r,
                 None => {
-                    let Ok(p) = std::fs::read_to_string(&path)
+                    let Ok(r) = std::fs::read_to_string(&path)
                         .map_err(|e| e.to_string())
                         .and_then(|text| self.read_text(&text, &m.arguments, &m.attachments()))
-                        .map(|r| r.named_policies)
                     else {
                         continue;
                     };
                     let mut cache = MODULES.lock().unwrap();
                     cache.retain(|(id, _, _)| *id != m.id);
-                    cache.push((m.id.clone(), stamp, p.clone()));
-                    p
+                    cache.push((m.id.clone(), stamp, r.clone()));
+                    r
                 }
             };
-            read.push((m.name.clone(), policies));
+            read.push((m.clone(), r));
         }
+        read
+    }
+
+    pub(crate) fn module_exits(&self) -> Vec<(String, Vec<String>)> {
+        let read: Vec<(String, Vec<String>)> = self
+            .enabled_module_reads()
+            .into_iter()
+            .map(|(m, r)| (m.name, r.named_policies))
+            .collect();
         extend::module_exits(&read)
     }
 
-    /// [module_exits] as last read, without asking the Core.
-    fn cached_module_exits(&self) -> Vec<(String, Vec<String>)> {
+    pub(crate) fn module_network(&self) -> Network {
+        let read = self.enabled_module_reads();
+        Network::merge(read.iter().map(|(_, r)| &r.network))
+    }
+
+    pub(crate) fn cached_module_reads(&self) -> Vec<(MitmModule, ModuleRead)> {
         let settings = self.store.lock().unwrap().state.settings.clone();
         if !settings.mitm.enable {
             return Vec::new();
         }
         let cache = MODULES.lock().unwrap();
-        let read: Vec<(String, Vec<String>)> = settings
+        settings
             .mitm_modules
             .iter()
             .filter(|m| m.enabled)
             .filter_map(|m| {
-                let (_, _, p) = cache.iter().find(|(id, _, _)| *id == m.id)?;
-                Some((m.name.clone(), p.clone()))
+                let (_, _, r) = cache.iter().find(|(id, _, _)| *id == m.id)?;
+                Some((m.clone(), r.clone()))
             })
+            .collect()
+    }
+
+    /// [module_exits] as last read, without asking the Core.
+    fn cached_module_exits(&self) -> Vec<(String, Vec<String>)> {
+        let read: Vec<(String, Vec<String>)> = self
+            .cached_module_reads()
+            .into_iter()
+            .map(|(m, r)| (m.name, r.named_policies))
             .collect();
         extend::module_exits(&read)
     }

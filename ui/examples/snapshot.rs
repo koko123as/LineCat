@@ -471,11 +471,28 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             let mut m = sample_modules()[1].clone();
             m.resources.insert("rewrite.js".into(), "0a1b.js".into());
             m.resources.insert("blank.gif".into(), "0c2d.gif".into());
-            seasoncat_ui::mitm_module_sections(&m, Some(&sample_read()), false, "3 小时前")
+            seasoncat_ui::mitm_module_sections(&m, Some(&sample_read()), &[], false, "3 小时前")
         }
         "mitm-module" => {
             let m = &sample_modules()[0];
-            seasoncat_ui::mitm_module_sections(m, Some(&sample_read()), false, "3 小时前")
+            let net = seasoncat_ui::mitm_network::Network::from_core_json(&serde_json::json!({
+                "nameserver": {"replace": true, "after": ["https://dns.example.com/dns-query"]},
+                "hosts": [{"domain": "api.example.com", "values": ["10.0.0.2"]}],
+                "routeAddress": ["10.0.0.0/8", "172.16.0.0/12"],
+                "routeExcludeAddress": {"before": ["192.168.0.0/16"], "after": ["1.1.1.1/32"]},
+            }));
+            let later = [(
+                "工作网络".to_string(),
+                seasoncat_ui::mitm_network::Network::from_core_json(&serde_json::json!({
+                    "hosts": [{"domain": "api.example.com", "values": ["10.0.0.3"]}],
+                })),
+            )];
+            let user = seasoncat_ui::mitm_network::UserNetwork {
+                dns_keys: vec!["nameserver".into()],
+                ..Default::default()
+            };
+            let states = seasoncat_ui::mitm_network::change_states(&net, &later, &user);
+            seasoncat_ui::mitm_module_sections(m, Some(&sample_read()), &states, false, "3 小时前")
         }
         "mitm-lines" => seasoncat_ui::mitm_lines_sections(&sample_read(), "url-rewrite"),
         "custom-proxies" => {

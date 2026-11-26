@@ -292,6 +292,7 @@ pub fn overlay(base: &Value, mode: &str, settings: &crate::store::Settings) -> V
         settings,
         &crate::custom_profile::Own::default(),
         Vec::new(),
+        &crate::mitm_network::Network::default(),
     )
 }
 
@@ -303,6 +304,7 @@ pub fn overlay_for(
     settings: &crate::store::Settings,
     own: &crate::custom_profile::Own,
     added: Vec<String>,
+    modules: &crate::mitm_network::Network,
 ) -> Value {
     let mut c: Map<String, Value> = base.as_object().cloned().unwrap_or_default();
     c.remove("rule");
@@ -442,6 +444,9 @@ pub fn overlay_for(
         set(&mut c, &k, v);
     }
     crate::custom_profile::apply_own(&mut c, own, added);
+    if let Some(tun) = c.get_mut("tun").and_then(Value::as_object_mut) {
+        modules.apply_to_tun(tun);
+    }
     Value::Object(c)
 }
 
@@ -550,7 +555,10 @@ pub fn host_settings(general: &crate::store::General) -> Option<Value> {
 /// `vpnOptionsProvider` with FlClash's defaults (VpnProps, NetworkProps, Tun). An empty
 /// route list routes everything; the private ranges stay out through the overlay's
 /// `route-exclude-address`, which the Core applies to the TUN.
-pub fn vpn_options(settings: &crate::store::Settings) -> Value {
+pub fn vpn_options(
+    settings: &crate::store::Settings,
+    modules: &crate::mitm_network::Network,
+) -> Value {
     let n = &settings.network;
     let authenticated = !authentication(&settings.general).is_empty();
     json!({
@@ -563,7 +571,7 @@ pub fn vpn_options(settings: &crate::store::Settings) -> Value {
         // VpnService.setHttpProxy cannot carry credentials.
         "systemProxy": n.system_proxy && !authenticated,
         "bypassDomain": n.bypass_domain,
-        "routeAddress": n.route_address,
+        "routeAddress": modules.vpn_route_address(&n.route_address),
         "mtu": n.mtu,
         "congestionController": n.congestion_controller,
     })
@@ -636,7 +644,7 @@ mod tests {
             (o["skipCertVerify"].clone(), o["delayTestTimeout"].clone()),
             (json!(true), json!(2000))
         );
-        assert_eq!(vpn_options(&settings)["port"], 7899);
+        assert_eq!(vpn_options(&settings, &Default::default())["port"], 7899);
     }
 
     #[test]
@@ -757,7 +765,14 @@ mod tests {
             &state.settings,
             &own,
             vec!["DOMAIN,x,DIRECT".into()],
+            &crate::mitm_network::Network::from_core_json(&json!({
+                "routeAddress": ["10.0.0.0/8"],
+                "routeExcludeAddress": {"after": ["1.1.1.1/32"]},
+            })),
         );
+        assert!(o["tun"].get("route-address").is_none());
+        let excluded = o["tun"]["route-exclude-address"].as_array().unwrap();
+        assert_eq!(excluded.last().unwrap(), "1.1.1.1/32");
         assert_eq!(o["proxy-groups"][0]["name"], "G");
         assert_eq!(o["rules"], json!(["MATCH,G"]));
         assert_eq!(o["sniffer"]["enable"], true);

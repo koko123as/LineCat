@@ -82,6 +82,7 @@ pub use proxy_groups_app::{
 pub mod custom_proxies;
 pub mod mitm;
 mod mitm_app;
+pub mod mitm_network;
 pub use mitm_app::{
     capture_sections as mitm_capture_sections, hosts_sections as mitm_hosts_sections,
     lines_sections as mitm_lines_sections, main_sections as mitm_sections,
@@ -732,6 +733,7 @@ impl App {
             &settings,
             &own,
             lines,
+            &self.module_network(),
         );
         if !policies.is_empty() {
             if let Some(m) = overlay.get_mut("mitm").and_then(Value::as_object_mut) {
@@ -1004,7 +1006,7 @@ impl App {
             "vpn.start",
             json!({
                 "profileName": name,
-                "vpnOptions": profile::vpn_options(&settings),
+                "vpnOptions": profile::vpn_options(&settings, &self.module_network()),
                 "setupParams": setup,
                 "onlyStatisticsProxy": settings.general.only_statistics_proxy,
                 "showStopAction": settings.general.show_notification_stop_action,
@@ -1629,8 +1631,14 @@ impl App {
     fn auto_update_loop(self: Arc<Self>) {
         // A failed profile waits its interval before the next try, not a minute.
         let mut failed: HashMap<String, u64> = HashMap::new();
+        // `_autoUpdateProfilesTask` updates the MITM modules at start and every 20 minutes.
+        let mut modules_at: Option<std::time::Instant> = None;
         while self.alive.load(Ordering::SeqCst) {
             if self.bridge().is_ok() {
+                if modules_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(20 * 60)) {
+                    modules_at = Some(std::time::Instant::now());
+                    self.auto_update_modules();
+                }
                 let now = now_secs();
                 let due: Vec<(String, u64)> = self
                     .store

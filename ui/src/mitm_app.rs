@@ -2,6 +2,7 @@
 //! (lib/views/config/mitm.dart, mitm_modules.dart, `MitmModulesAction`).
 
 use crate::mitm::{self, Certificate, MitmModule, ModuleRead};
+use crate::mitm_network::{self, Change, Network, UserNetwork};
 use crate::settings_app::Effect;
 use crate::store::{MitmSettings, Settings};
 use crate::{ActionItem, Anchor, App, PageMeta, SetRow, SetSection, CALL};
@@ -9,6 +10,7 @@ use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -262,9 +264,12 @@ pub fn modules_sections(modules: &[MitmModule], updating: &BTreeSet<String>) -> 
 }
 
 /// `MitmModuleView`.
+/// [network] is `mitmModuleNetworkChanges`: each change, whether it goes over the user's own
+/// setting, and the later module that replaces it.
 pub fn module_sections(
     m: &MitmModule,
     read: Option<&ModuleRead>,
+    network: &[(Change, bool, Option<String>)],
     updating: bool,
     updated: &str,
 ) -> Vec<SetSection> {
@@ -309,7 +314,33 @@ pub fn module_sections(
             rows,
         ));
     }
+    let network_section = || {
+        let rows = network
+            .iter()
+            .enumerate()
+            .map(|(i, (c, yours, by))| {
+                let chip = match by {
+                    Some(name) => format!("已被模块 {name} 覆盖"),
+                    None if *yours => "会盖过你的设置".into(),
+                    None => String::new(),
+                };
+                SetRow {
+                    chip: chip.into(),
+                    ..row(
+                        &format!("net:{i}"),
+                        "info",
+                        c.key.title(),
+                        &c.value().replace('\n', "；"),
+                    )
+                }
+            })
+            .collect();
+        section("网络设置", "启用时会覆盖下列网络设置。", rows)
+    };
     let Some(read) = read else {
+        if !network.is_empty() {
+            out.push(network_section());
+        }
         return out;
     };
     if !read.arguments.is_empty() {
@@ -328,6 +359,9 @@ pub fn module_sections(
             })
             .collect();
         out.push(section("参数", &mitm::arguments_footer(read), rows));
+    }
+    if !network.is_empty() {
+        out.push(network_section());
     }
     let mut rules: Vec<SetRow> = read
         .lists
@@ -501,6 +535,12 @@ impl App {
         if !PAGES.contains(&page) {
             return None;
         }
+        let user = (page == "mitm-module").then(|| self.user_network(s));
+        let later = if page == "mitm-module" {
+            self.cached_module_reads()
+        } else {
+            Vec::new()
+        };
         let st = state().lock().unwrap();
         let read = st.read.as_ref().and_then(|r| r.as_ref().ok());
         Some(match page {
@@ -518,7 +558,28 @@ impl App {
             "mitm-modules" => modules_sections(&s.mitm_modules, &st.updating),
             "mitm-module" => match s.mitm_modules.iter().find(|m| m.id == st.module) {
                 Some(m) => {
-                    module_sections(m, read, st.updating.contains(&m.id), &crate::ago(m.updated))
+                    let at = |id: &str| s.mitm_modules.iter().position(|x| x.id == id);
+                    let later: Vec<(String, Network)> = later
+                        .into_iter()
+                        .filter(|(l, _)| at(&l.id) > at(&m.id))
+                        .map(|(l, r)| (l.name, r.network))
+                        .collect();
+                    let network = read
+                        .map(|r| {
+                            mitm_network::change_states(
+                                &r.network,
+                                &later,
+                                &user.clone().unwrap_or_default(),
+                            )
+                        })
+                        .unwrap_or_default();
+                    module_sections(
+                        m,
+                        read,
+                        &network,
+                        st.updating.contains(&m.id),
+                        &crate::ago(m.updated),
+                    )
                 }
                 None => Vec::new(),
             },
@@ -526,6 +587,38 @@ impl App {
                 .map(|r| lines_sections(r, &st.list))
                 .unwrap_or_default(),
         })
+    }
+
+    /// What of the current profile's settings a module can go over: a custom profile's own
+    /// DNS, else the DNS page's, and the hosts.
+    fn user_network(&self, s: &Settings) -> UserNetwork {
+        let own = {
+            let store = self.store.lock().unwrap();
+            store
+                .active()
+                .filter(|p| p.is_custom())
+                .map(|p| p.overrides.clone())
+        };
+        let (dns, tun) = match &own {
+            Some(o) => (&o.dns, Some(&o.tun)),
+            None => (&s.dns_override, None),
+        };
+        let has = |k: &str| dns.keys.iter().any(|x| x == k);
+        UserNetwork {
+            dns_keys: dns.keys.clone(),
+            nameserver_policy: if has("nameserver-policy") {
+                dns.model
+                    .get("nameserver-policy")
+                    .and_then(Value::as_object)
+                    .map(|m| m.keys().cloned().collect())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            },
+            hosts: s.general.hosts.keys().cloned().collect(),
+            tun_route_exclude: crate::custom_profile::shows_tun()
+                && tun.is_some_and(|t| t.keys.iter().any(|k| k == "route-exclude-address")),
+        }
     }
 
     fn mitm_go(self: &Arc<Self>, page: &str) {
@@ -756,6 +849,7 @@ impl App {
                 }
                 app.update_settings(Effect::Reapply, |s| s.mitm.enable = true);
                 app.publish_mitm_consent();
+                app.auto_update_modules();
             }),
             ("mitm-regen", true) => self.spawn(|app| {
                 app.generate_certificate("重新生成证书");
@@ -1079,6 +1173,7 @@ impl App {
             }
             st.read = Some(read.clone());
         }
+        self.enabled_module_reads();
         if let Err(e) = &read {
             self.toast(e.clone());
         }
@@ -1307,26 +1402,72 @@ impl App {
 
     /// `updateModule` / `changeUrl`: the url's text, or a local module's own file read again.
     fn refresh_module(self: &Arc<Self>, m: MitmModule, url: Option<String>) {
+        if let Err(e) = self.fetch_module_text(&m, url) {
+            self.toast(format!("{}: {e}", m.name));
+        }
+    }
+
+    /// `updateModule`: the text read again from its URL, or from its file for a local one.
+    fn fetch_module_text(
+        self: &Arc<Self>,
+        m: &MitmModule,
+        url: Option<String>,
+    ) -> Result<MitmModule, String> {
         state().lock().unwrap().updating.insert(m.id.clone());
         self.mitm_publish();
         let source = url.clone().or_else(|| m.is_remote().then(|| m.url.clone()));
         let text = match &source {
             Some(u) => crate::profile::download(u, self.mitm_settings().general.check_certificate)
                 .map(|d| String::from_utf8_lossy(&d.bytes).into_owned()),
-            None => std::fs::read_to_string(self.module_path(&m)).map_err(|e| e.to_string()),
+            None => std::fs::read_to_string(self.module_path(m)).map_err(|e| e.to_string()),
         };
         let result = text
             .and_then(|t| self.save_module(m.clone(), &t, false, false, false, source.as_deref()));
         state().lock().unwrap().updating.remove(&m.id);
         self.mitm_publish();
-        match result {
-            Ok(saved) => {
-                if m.enabled && !saved.enabled {
-                    self.offer_module(&saved);
-                }
+        if let Ok(saved) = &result {
+            if m.enabled && !saved.enabled {
+                self.offer_module(saved);
             }
-            Err(e) => self.toast(format!("{}: {e}", m.name)),
         }
+        result
+    }
+
+    /// `autoUpdate`: with MITM on, each remote module past the update interval while
+    /// resources update on their own, and any whose file is gone; one run at a time.
+    pub(crate) fn auto_update_modules(self: &Arc<Self>) {
+        static RUNNING: AtomicBool = AtomicBool::new(false);
+        let settings = self.mitm_settings();
+        if !settings.mitm.enable || RUNNING.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        for m in &settings.mitm_modules {
+            let missing = !self.module_path(m).exists();
+            let Some(due) = mitm::auto_update(
+                m,
+                missing,
+                settings.geo_auto_update,
+                settings.geo_update_interval,
+                now_secs(),
+            ) else {
+                continue;
+            };
+            let result = self.fetch_module_text(m, None).and_then(|saved| {
+                if due && saved.enabled {
+                    self.bridge()?
+                        .call("mitm.fetchModule", json!({"name": saved.id}), CALL)?;
+                }
+                Ok(())
+            });
+            if let Err(e) = result {
+                self.push_log(&json!({
+                    "level": "warning",
+                    "time": now_secs() as i64 * 1000,
+                    "text": format!("auto update {}: {e}", m.name),
+                }));
+            }
+        }
+        RUNNING.store(false, Ordering::SeqCst);
     }
 
     fn import_module_urls(self: &Arc<Self>, input: String) {
@@ -1745,16 +1886,27 @@ mod tests {
         };
         let mut m = m;
         m.resources.insert("a.js".into(), "h.js".into());
-        let s = module_sections(&m, Some(&read), false, "刚刚");
+        let s = module_sections(&m, Some(&read), &[], false, "刚刚");
         assert_eq!(s.len(), 5);
         assert_eq!(titles(&s[1]), vec!["来源", "上次更新", "编辑"]);
         assert_eq!(titles(&s[2]), vec!["a.js", "添加本地文件"]);
         assert!(s[3].rows.row_data(0).unwrap().on);
         assert_eq!(titles(&s[4]), vec!["URL 重写", "忽略的行"]);
         assert_eq!(s[4].rows.row_data(0).unwrap().subtitle, "2 条中 1 条无效");
-        assert_eq!(module_sections(&m, None, false, "").len(), 3);
+        let net = mitm_network::Network::from_core_json(&json!({
+            "hosts": [{"domain": "a.test", "values": ["1.2.3.4"]}],
+            "bypassDomain": {"replace": true, "after": ["*.b"]},
+        }));
+        let states = mitm_network::change_states(&net, &[], &Default::default());
+        let s = module_sections(&m, Some(&read), &states, false, "刚刚");
+        assert_eq!(s[4].title, "网络设置");
+        assert_eq!(titles(&s[4]), vec!["Hosts", "排除域名"]);
+        let bypass = s[4].rows.row_data(1).unwrap();
+        assert_eq!(bypass.subtitle, "替换为 *.b");
+        assert_eq!(bypass.chip, "会盖过你的设置");
+        assert_eq!(module_sections(&m, None, &[], false, "").len(), 3);
         m.url = "https://x/m".into();
-        assert_eq!(module_sections(&m, None, false, "").len(), 2);
+        assert_eq!(module_sections(&m, None, &[], false, "").len(), 2);
         let lines = lines_sections(&read, "url-rewrite");
         assert_eq!(titles(&lines[0]), vec!["a", "b"]);
         assert_eq!(lines_of(&read, "ignored").1[0].1, "不支持此设置");
