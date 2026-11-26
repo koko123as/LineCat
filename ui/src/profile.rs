@@ -524,6 +524,8 @@ pub fn shared_state(
         "setupParams": setup,
         "onlyStatisticsProxy": settings.general.only_statistics_proxy,
         "showStopAction": settings.general.show_notification_stop_action,
+        // `SharedState.mitm`: the service polls memory only while MITM is on.
+        "mitm": settings.mitm.enable,
     })
 }
 
@@ -592,7 +594,11 @@ mod tests {
         assert_eq!(s["profileName"], "机场 B");
         assert_eq!(s["setupParams"], setup);
         assert_eq!(s["showStopAction"], false);
+        assert_eq!(s["mitm"], false);
         assert!(s["vpnOptions"].is_object());
+        settings.mitm.enable = true;
+        let s = shared_state("机场 B", &settings, &Default::default(), setup);
+        assert_eq!(s["mitm"], true);
     }
 
     #[test]
