@@ -296,6 +296,19 @@ pub fn module_sections(
         source.push(row("edit", "value", "编辑", ""));
     }
     out.push(section("来源", "", source));
+    if !m.is_remote() {
+        let mut rows: Vec<SetRow> = m
+            .attachments()
+            .keys()
+            .map(|name| row(&format!("att:{name}"), "value", name, ""))
+            .collect();
+        rows.push(row("att-add", "value", "添加本地文件", ""));
+        out.push(section(
+            "附件",
+            "行内按文件名引用附件，如 script-path=a.js。",
+            rows,
+        ));
+    }
     let Some(read) = read else {
         return out;
     };
@@ -434,7 +447,10 @@ pub fn page_meta(s: &Settings, page: &str) -> Option<PageMeta> {
                 .find(|m| m.id == st.module)
                 .map(|m| m.name.as_str())
                 .unwrap_or("模块");
-            meta(name, "mitm-modules")
+            PageMeta {
+                long_press: true,
+                ..meta(name, "mitm-modules")
+            }
         }
         _ => {
             let title = match &st.read {
@@ -745,6 +761,11 @@ impl App {
                 app.generate_certificate("重新生成证书");
             }),
             ("mitm-delete", true) => self.delete_module(arg),
+            ("mitm-detach", true) => {
+                if let Some((id, name)) = arg.split_once('\t') {
+                    self.detach(id, name);
+                }
+            }
             ("mitm-consent", _) => {
                 let id = arg.to_string();
                 self.update_module(&id, |m| {
@@ -996,6 +1017,14 @@ impl App {
                 };
                 self.module_action(m, action, "mitm-modules");
             }
+            "ma" => {
+                let mid = state().lock().unwrap().module.clone();
+                let Some(m) = self.module(&mid) else { return };
+                if let (Some(name), "delete") = (m.attachments().into_keys().nth(index), action) {
+                    let text = format!("确定删除当前{name}吗？");
+                    self.confirm("提示", text, "mitm-detach", format!("{mid}\t{name}"));
+                }
+            }
             "ml" => {
                 let task = {
                     let st = state().lock().unwrap();
@@ -1042,7 +1071,7 @@ impl App {
         let m = self.module(&id)?;
         let read = std::fs::read_to_string(self.module_path(&m))
             .map_err(|e| e.to_string())
-            .and_then(|text| self.read_text(&text, &m.arguments));
+            .and_then(|text| self.read_text(&text, &m.arguments, &m.attachments()));
         {
             let mut st = state().lock().unwrap();
             if st.module != id {
@@ -1062,11 +1091,12 @@ impl App {
         &self,
         text: &str,
         arguments: &BTreeMap<String, String>,
+        attachments: &BTreeMap<String, String>,
     ) -> Result<ModuleRead, String> {
         let language = mitm::language(self.mitm_settings().locale.as_deref());
         let answer = self.bridge()?.call(
             "mitm.readModule",
-            json!({"text": text, "arguments": arguments, "attachments": {}, "language": language}),
+            json!({"text": text, "arguments": arguments, "attachments": attachments, "language": language}),
             CALL,
         )?;
         Ok(mitm::read_module(text, &answer))
@@ -1082,7 +1112,7 @@ impl App {
         edited: bool,
         url: Option<&str>,
     ) -> Result<MitmModule, String> {
-        let read = self.read_text(text, &module.arguments)?;
+        let read = self.read_text(text, &module.arguments, &module.attachments())?;
         if read.is_empty() && !edited {
             return Err(mitm::MODULE_INVALID.into());
         }
@@ -1116,7 +1146,7 @@ impl App {
     fn ask_consent(self: &Arc<Self>, m: &MitmModule) {
         let read = std::fs::read_to_string(self.module_path(m))
             .map_err(|e| e.to_string())
-            .and_then(|text| self.read_text(&text, &m.arguments))
+            .and_then(|text| self.read_text(&text, &m.arguments, &m.attachments()))
             .ok();
         let (title, text) = mitm::consent_text(read.as_ref(), m.scripts);
         self.confirm(&title, text, "mitm-consent", m.id.clone());
@@ -1174,6 +1204,13 @@ impl App {
             }
             "edit" => self.module_action(m, "edit", "mitm-module"),
             "source" if m.is_remote() => self.module_action(m, "url", "mitm-module"),
+            "att-add" => self.spawn(move |app| app.attach(m)),
+            id if id.starts_with("long:att:") => {
+                let names: Vec<String> = m.attachments().into_keys().collect();
+                if let Some(i) = names.iter().position(|n| n == &id["long:att:".len()..]) {
+                    self.open_menu("ma", i, vec![item("delete", "delete", "删除", true)]);
+                }
+            }
             id if id.starts_with("list:") => {
                 state().lock().unwrap().list = id["list:".len()..].to_string();
                 self.mitm_go("mitm-lines");
@@ -1360,11 +1397,15 @@ impl App {
     }
 
     pub(crate) fn delete_module(self: &Arc<Self>, id: &str) {
-        if let Some(m) = self.module(id) {
-            let _ = std::fs::remove_file(self.module_path(&m));
+        let removed = self.module(id);
+        if let Some(m) = &removed {
+            let _ = std::fs::remove_file(self.module_path(m));
         }
         let id = id.to_string();
         self.update_modules(move |l| l.retain(|m| m.id != id));
+        if let Some(m) = removed {
+            self.drop_attachments(m.attachments().into_values().collect());
+        }
         let open = state().lock().unwrap().module.clone();
         if self.module(&open).is_none() {
             self.ui(|ui| {
@@ -1374,6 +1415,109 @@ impl App {
                 }
             });
         }
+    }
+
+    fn resources_dir(&self) -> PathBuf {
+        self.core_home
+            .lock()
+            .unwrap()
+            .join("mitm")
+            .join(mitm::RESOURCES_DIR)
+    }
+
+    /// `attach`: a picked file joins the local module under its own name, replacing one of
+    /// the same name.
+    fn attach(self: &Arc<Self>, m: MitmModule) {
+        let dir = self.resources_dir();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            return self.toast(e.to_string());
+        }
+        let tmp = dir.join(".attach.part");
+        let picked = self.bridge().and_then(|b| {
+            b.shell(
+                "file.open",
+                json!({"dest": tmp.to_string_lossy()}),
+                Duration::from_secs(3600),
+            )
+        });
+        let file_name = match picked {
+            Ok(r) if r.get("cancelled").and_then(Value::as_bool) == Some(true) => return,
+            Ok(r) => r
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            Err(e) => return self.toast(e),
+        };
+        let bytes = std::fs::read(&tmp).unwrap_or_default();
+        if bytes.len() > mitm::MAX_RESOURCE_SIZE {
+            let _ = std::fs::remove_file(&tmp);
+            let limit = mitm::MAX_RESOURCE_SIZE >> 20;
+            return self.alert("提示", format!("文件大于 {limit} MB"));
+        }
+        let file_name = if file_name.is_empty() {
+            "file".to_string()
+        } else {
+            file_name
+        };
+        let name = mitm::resource_name(&file_name, &bytes);
+        let target = dir.join(&name);
+        let stored = if target.exists() {
+            std::fs::remove_file(&tmp)
+        } else {
+            std::fs::rename(&tmp, &target)
+        };
+        if let Err(e) = stored {
+            return self.toast(e.to_string());
+        }
+        let Some(current) = self.module(&m.id) else {
+            return self.drop_attachments(vec![name]);
+        };
+        let replaced = current.attachments().get(&file_name).cloned();
+        let (fname, stored) = (file_name.clone(), name.clone());
+        self.update_module(&m.id, move |m| {
+            m.resources.insert(fname, stored);
+        });
+        if let Some(old) = replaced.filter(|old| old != &name) {
+            self.drop_attachments(vec![old]);
+        }
+        self.after_attachments_changed();
+    }
+
+    fn detach(self: &Arc<Self>, id: &str, file_name: &str) {
+        let Some(current) = self.module(id) else {
+            return;
+        };
+        let stored = current.attachments().get(file_name).cloned();
+        let key = file_name.to_string();
+        self.update_module(id, move |m| {
+            m.resources.remove(&key);
+        });
+        if let Some(stored) = stored {
+            self.drop_attachments(vec![stored]);
+        }
+        self.after_attachments_changed();
+    }
+
+    /// `_dropAttachments`: a stored file goes once no module names it.
+    fn drop_attachments(&self, names: Vec<String>) {
+        let modules = self.mitm_settings().mitm_modules;
+        let dir = self.resources_dir();
+        for name in names {
+            let named = modules
+                .iter()
+                .any(|m| m.attachments().values().any(|v| v == &name));
+            if !named && mitm::is_resource_name(&name) {
+                let _ = std::fs::remove_file(dir.join(&name));
+            }
+        }
+    }
+
+    fn after_attachments_changed(self: &Arc<Self>) {
+        self.mitm_publish();
+        self.spawn(|app| {
+            app.reload_module_read();
+        });
     }
 
     /// The tools editor's save while it holds a module or the hostnames.
@@ -1599,12 +1743,17 @@ mod tests {
             id: "1".into(),
             ..Default::default()
         };
+        let mut m = m;
+        m.resources.insert("a.js".into(), "h.js".into());
         let s = module_sections(&m, Some(&read), false, "刚刚");
-        assert_eq!(s.len(), 4);
+        assert_eq!(s.len(), 5);
         assert_eq!(titles(&s[1]), vec!["来源", "上次更新", "编辑"]);
-        assert!(s[2].rows.row_data(0).unwrap().on);
-        assert_eq!(titles(&s[3]), vec!["URL 重写", "忽略的行"]);
-        assert_eq!(s[3].rows.row_data(0).unwrap().subtitle, "2 条中 1 条无效");
+        assert_eq!(titles(&s[2]), vec!["a.js", "添加本地文件"]);
+        assert!(s[3].rows.row_data(0).unwrap().on);
+        assert_eq!(titles(&s[4]), vec!["URL 重写", "忽略的行"]);
+        assert_eq!(s[4].rows.row_data(0).unwrap().subtitle, "2 条中 1 条无效");
+        assert_eq!(module_sections(&m, None, false, "").len(), 3);
+        m.url = "https://x/m".into();
         assert_eq!(module_sections(&m, None, false, "").len(), 2);
         let lines = lines_sections(&read, "url-rewrite");
         assert_eq!(titles(&lines[0]), vec!["a", "b"]);

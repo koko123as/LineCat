@@ -467,6 +467,12 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             let busy = std::collections::BTreeSet::from(["3".to_string()]);
             seasoncat_ui::mitm_modules_sections(&s.mitm_modules, &busy)
         }
+        "mitm-module" if overlay == "local" => {
+            let mut m = sample_modules()[1].clone();
+            m.resources.insert("rewrite.js".into(), "0a1b.js".into());
+            m.resources.insert("blank.gif".into(), "0c2d.gif".into());
+            seasoncat_ui::mitm_module_sections(&m, Some(&sample_read()), false, "3 小时前")
+        }
         "mitm-module" => {
             let m = &sample_modules()[0];
             seasoncat_ui::mitm_module_sections(m, Some(&sample_read()), false, "3 小时前")
@@ -2463,6 +2469,10 @@ fn main() {
         ("set-mitm-module-small", 3, "", "mitm-module", 1, ""),
         ("set-mitm-module-wide", 3, "", "mitm-module", 1, ""),
         ("set-mitm-module-tablet", 3, "", "mitm-module", 1, ""),
+        ("set-mitm-local", 3, "", "mitm-module", 1, "local"),
+        ("set-mitm-local-small", 3, "", "mitm-module", 1, "local"),
+        ("set-mitm-local-wide", 3, "", "mitm-module", 1, "local"),
+        ("set-mitm-local-tablet", 3, "", "mitm-module", 1, "local"),
         ("set-mitm-lines", 3, "", "mitm-lines", 1, ""),
         ("set-mitm-lines-small", 3, "", "mitm-lines", 1, ""),
         ("set-mitm-lines-wide", 3, "", "mitm-lines", 1, ""),

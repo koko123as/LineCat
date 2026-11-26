@@ -5,9 +5,12 @@
 //! FlClash's archive carries its database; this app keeps its state in `ui/state.json`, so
 //! the archive holds that file and the profiles beside it.
 
+use crate::mitm;
 use crate::store::{State, Store};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::io::Read;
+use std::path::Path;
 use std::time::Duration;
 
 /// `sideBySideName`: the folder the backup goes in on the server.
@@ -17,6 +20,7 @@ pub const DAV_FILE_NAME: &str = "backup.zip";
 const STATE_ENTRY: &str = "seasoncat.json";
 const ARCHIVE_VERSION: i64 = 1;
 const MAX_ARCHIVE_BYTES: u64 = 256 << 20;
+const MODULES_DIR: &str = "modules";
 
 /// `DAVProps`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -168,8 +172,9 @@ struct Archive {
     state: State,
 }
 
-/// `_createArchive`: the state and every profile's file.
-pub fn create(store: &Store) -> Result<Vec<u8>, String> {
+/// `_createArchive`: the state, every profile's file, and each local module with its
+/// attachments from `mitm_dir` (a remote module downloads again, `BackupFiles.of`).
+pub fn create(store: &Store, mitm_dir: &Path) -> Result<Vec<u8>, String> {
     let archive = Archive {
         version: ARCHIVE_VERSION,
         state: store.state.clone(),
@@ -183,6 +188,29 @@ pub fn create(store: &Store) -> Result<Vec<u8>, String> {
             entries.push((format!("profiles/{}.yaml", p.id), bytes));
         }
     }
+    let local = store
+        .state
+        .settings
+        .mitm_modules
+        .iter()
+        .filter(|m| !m.is_remote());
+    let mut attachments = BTreeSet::new();
+    for m in local {
+        let path = format!("{MODULES_DIR}/{}", m.file_name());
+        if let Ok(bytes) = std::fs::read(mitm_dir.join(&path)) {
+            entries.push((format!("mitm/{path}"), bytes));
+        }
+        attachments.extend(m.attachments().into_values());
+    }
+    for name in attachments
+        .into_iter()
+        .filter(|n| mitm::is_resource_name(n))
+    {
+        let path = format!("{}/{name}", mitm::RESOURCES_DIR);
+        if let Ok(bytes) = std::fs::read(mitm_dir.join(&path)) {
+            entries.push((format!("mitm/{path}"), bytes));
+        }
+    }
     Ok(zip(&entries))
 }
 
@@ -190,6 +218,8 @@ pub fn create(store: &Store) -> Result<Vec<u8>, String> {
 pub struct Restored {
     pub state: State,
     pub files: Vec<(String, Vec<u8>)>,
+    /// Module files and attachments by their path under the Core's `mitm` directory.
+    pub mitm: Vec<(String, Vec<u8>)>,
 }
 
 /// `restoreTask`: the archive read back; the errors are `BackupFailure`'s messages.
@@ -204,6 +234,14 @@ pub fn read(bytes: &[u8]) -> Result<Restored, String> {
     if archive.version > ARCHIVE_VERSION {
         return Err("备份来自更新的版本".into());
     }
+    let mitm = entries
+        .iter()
+        .filter_map(|(n, d)| {
+            let (dir, name) = n.strip_prefix("mitm/")?.split_once('/')?;
+            let known = dir == MODULES_DIR || dir == mitm::RESOURCES_DIR;
+            (known && mitm::is_resource_name(name)).then(|| (format!("{dir}/{name}"), d.clone()))
+        })
+        .collect();
     let files = entries
         .into_iter()
         .filter_map(|(n, d)| {
@@ -214,6 +252,7 @@ pub fn read(bytes: &[u8]) -> Result<Restored, String> {
     Ok(Restored {
         state: archive.state,
         files,
+        mitm,
     })
 }
 
@@ -437,8 +476,32 @@ mod tests {
         store.state.active = Some("p1".into());
         store.state.settings.general.mixed_port = 7999;
         std::fs::write(store.profile_path("p1"), b"proxies: []\n").unwrap();
-        let bytes = create(&store).unwrap();
+        let mitm_dir = dir.join("mitm");
+        std::fs::create_dir_all(mitm_dir.join("modules")).unwrap();
+        std::fs::create_dir_all(mitm_dir.join("resources")).unwrap();
+        let mut local = crate::mitm::MitmModule {
+            id: "m1".into(),
+            ..Default::default()
+        };
+        local.resources.insert("a.js".into(), "h.js".into());
+        let remote = crate::mitm::MitmModule {
+            id: "m2".into(),
+            url: "https://x/m".into(),
+            ..Default::default()
+        };
+        std::fs::write(mitm_dir.join("modules/m1.txt"), b"#!name=a").unwrap();
+        std::fs::write(mitm_dir.join("modules/m2.txt"), b"#!name=b").unwrap();
+        std::fs::write(mitm_dir.join("resources/h.js"), b"1").unwrap();
+        store.state.settings.mitm_modules = vec![local, remote];
+        let bytes = create(&store, &mitm_dir).unwrap();
         let restored = read(&bytes).unwrap();
+        assert_eq!(
+            restored.mitm,
+            [
+                ("modules/m1.txt".to_string(), b"#!name=a".to_vec()),
+                ("resources/h.js".to_string(), b"1".to_vec())
+            ]
+        );
         assert_eq!(
             restored.files,
             [("p1".to_string(), b"proxies: []\n".to_vec())]

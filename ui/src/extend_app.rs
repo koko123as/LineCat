@@ -348,7 +348,7 @@ impl App {
                 None => {
                     let Ok(p) = std::fs::read_to_string(&path)
                         .map_err(|e| e.to_string())
-                        .and_then(|text| self.read_text(&text, &m.arguments))
+                        .and_then(|text| self.read_text(&text, &m.arguments, &m.attachments()))
                         .map(|r| r.named_policies)
                     else {
                         continue;

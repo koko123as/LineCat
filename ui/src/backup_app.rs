@@ -279,7 +279,8 @@ impl App {
     fn run_backup(self: &Arc<Self>, remote: bool) {
         self.spawn(move |app| {
             let result = (|| -> Result<bool, String> {
-                let bytes = backup::create(&app.store.lock().unwrap())?;
+                let mitm_dir = app.core_home.lock().unwrap().join("mitm");
+                let bytes = backup::create(&app.store.lock().unwrap(), &mitm_dir)?;
                 if remote {
                     app.dav_client()?.upload(bytes)?;
                     return Ok(true);
@@ -333,6 +334,14 @@ impl App {
                 let mut store = app.store.lock().unwrap();
                 for (id, data) in &restored.files {
                     std::fs::write(store.profile_path(id), data).map_err(|e| e.to_string())?;
+                }
+                let mitm_dir = app.core_home.lock().unwrap().join("mitm");
+                for (path, data) in &restored.mitm {
+                    let target = mitm_dir.join(path);
+                    if let Some(parent) = target.parent() {
+                        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                    }
+                    std::fs::write(target, data).map_err(|e| e.to_string())?;
                 }
                 let over = store.state.settings.restore_override;
                 backup::apply(&mut store.state, restored.state, option, over);
