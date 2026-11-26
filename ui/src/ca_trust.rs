@@ -117,6 +117,7 @@ impl Installed {
 pub enum Reply {
     None,
     Alert(String),
+    TitledAlert(&'static str, String),
     Toast(String),
     Settings {
         title: String,
@@ -177,7 +178,7 @@ pub fn remove_reply(outcome: Removed, subject: &str) -> Reply {
             ),
             user: true,
         },
-        Removed::NeedsRoot => Reply::Alert(REMOVE_SYSTEM_TIP.into()),
+        Removed::NeedsRoot => Reply::TitledAlert(CANNOT_REMOVE, REMOVE_SYSTEM_TIP.into()),
         Removed::Failed => Reply::Toast(SYSTEM_STORE_REMOVE_FAILED.into()),
     }
 }
@@ -265,6 +266,10 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(remove_outcome(&user, || unreachable!()), Removed::UserStore);
+        assert_eq!(
+            remove_reply(Removed::NeedsRoot, "CA"),
+            Reply::TitledAlert("无法移除", REMOVE_SYSTEM_TIP.into())
+        );
         assert!(matches!(old_left_reply(true, false, "CA"), Reply::Alert(_)));
         assert!(matches!(
             old_left_reply(false, false, "CA"),

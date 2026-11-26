@@ -76,6 +76,7 @@ impl App {
         match reply {
             Reply::None => {}
             Reply::Alert(text) => self.alert("", text),
+            Reply::TitledAlert(title, text) => self.alert(title, text),
             Reply::Toast(text) => self.toast(text),
             Reply::Settings { title, text, user } => self.confirm_labeled(
                 &title,
