@@ -78,13 +78,17 @@ fn navigation() {
     assert!(!ui.get_group_sheet_open());
     assert_eq!(ui.get_tab(), 0);
 
-    // A sheet's grabber or title bar dragged down: past half its height, or flung, it closes.
+    // A sheet's grabber or title bar let go: past half its height, or flung down at the
+    // release, it closes; flung back up it stays.
     let drag = ui.global::<SheetDrag>();
-    assert!(drag.invoke_closes(260.0, 500.0, 1000));
-    assert!(!drag.invoke_closes(200.0, 500.0, 1000));
-    assert!(drag.invoke_closes(120.0, 500.0, 100));
-    assert!(!drag.invoke_closes(10.0, 500.0, 5));
-    assert!(!drag.invoke_closes(-80.0, 500.0, 50));
+    assert!(drag.invoke_closes(260.0, 500.0, 0.0));
+    assert!(!drag.invoke_closes(200.0, 500.0, 0.0));
+    assert!(drag.invoke_closes(120.0, 500.0, 900.0));
+    assert!(!drag.invoke_closes(120.0, 500.0, 600.0));
+    assert!(!drag.invoke_closes(300.0, 500.0, -900.0));
+    assert_eq!(drag.invoke_speed(110.0, 1050, 100.0, 1040, 0.0), 500.0);
+    assert_eq!(drag.invoke_speed(110.0, 1060, 100.0, 1050, 500.0), 750.0);
+    assert_eq!(drag.invoke_speed(110.0, 1050, 110.0, 1050, 300.0), 300.0);
 
     let card = ui.global::<ProxyCardMetrics>();
     for scale in [1.0f32, 1.3] {

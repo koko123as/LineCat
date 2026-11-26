@@ -1668,9 +1668,17 @@ component EditFrame inherits Rectangle {
 
 // Flutter's `BottomSheet` drag end: closed past half the sheet's height
 // (`_closeProgressThreshold`) or flung down faster than 700 px/s (`_minFlingVelocity`).
+// `BottomSheet`'s release: flung down faster than `_minFlingVelocity` (px/s, measured over
+// the last moves as `VelocityTracker` does) or let go past `_closeProgressThreshold`.
 export global SheetDrag {
-    public pure function closes(drag: length, height: length, held: duration) -> bool {
-        return drag > height / 2 || (drag > 16px && held > 0ms && drag / 1px * 1000 / (held / 1ms) > 700);
+    public pure function closes(drag: length, height: length, velocity: float) -> bool {
+        return velocity > 700 || (velocity > -700 && drag > height / 2);
+    }
+    // The finger's speed at `y` given the last sample, smoothed over moves closer than 40ms.
+    public pure function speed(y: length, t: duration, last-y: length, last-t: duration, was: float) -> float {
+        if (t - last-t <= 0ms) { return was; }
+        let now = (y - last-y) / 1px * 1000 / ((t - last-t) / 1ms);
+        return t - last-t < 40ms ? (was + now) / 2 : now;
     }
 }
 
@@ -1694,13 +1702,15 @@ component DashSheet inherits Rectangle {
     // `showModalBottomSheet`'s drag: the grabber or the title bar pulls the sheet down;
     // let go past half its height, or flung down, it closes, else it springs back.
     property <length> drag;
-    property <duration> drag-start;
+    property <float> fling;
+    property <length> last-y;
+    property <duration> last-t;
     property <length> sheet-top: max(root.top-inset + 24px, root.height - body.preferred-height - 60px - root.bottom-inset - 20px);
     function settle() {
         let d = root.drag;
-        let t = animation-tick() - root.drag-start;
+        let v = animation-tick() - root.last-t > 100ms ? 0 : root.fling;
         root.drag = 0px;
-        if (SheetDrag.closes(d, root.height - root.sheet-top, t)) { root.close(); }
+        if (SheetDrag.closes(d, root.height - root.sheet-top, v)) { root.close(); }
     }
     background: #00000066;
     TouchArea { clicked => { root.close(); } }
@@ -1718,9 +1728,18 @@ component DashSheet inherits Rectangle {
         TouchArea {
             y: 0;
             height: 60px;
-            moved => { root.drag += self.mouse-y - self.pressed-y; }
+            moved => {
+                root.drag += self.mouse-y - self.pressed-y;
+                root.fling = SheetDrag.speed(self.absolute-position.y + self.mouse-y, animation-tick(), root.last-y, root.last-t, root.fling);
+                root.last-y = self.absolute-position.y + self.mouse-y;
+                root.last-t = animation-tick();
+            }
             pointer-event(e) => {
-                if (e.kind == PointerEventKind.down) { root.drag-start = animation-tick(); }
+                if (e.kind == PointerEventKind.down) {
+                    root.fling = 0;
+                    root.last-y = self.absolute-position.y + self.mouse-y;
+                    root.last-t = animation-tick();
+                }
                 if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { root.settle(); }
             }
         }
@@ -1765,13 +1784,15 @@ component SnapSheet inherits Rectangle {
     property <length> short-h: root.height * 9 / 16;
     property <length> tall-h: min(root.height * 0.9, root.height - root.top-inset);
     property <length> drag;
-    property <duration> drag-start;
+    property <float> fling;
+    property <length> last-y;
+    property <duration> last-t;
     property <length> sheet-h: clamp((root.tall ? root.tall-h : root.short-h) - root.drag, 0px, root.tall-h);
     function settle() {
         let d = root.drag;
-        let t = animation-tick() - root.drag-start;
+        let v = animation-tick() - root.last-t > 100ms ? 0 : root.fling;
         root.drag = 0px;
-        if (d > (root.tall ? root.tall-h - root.short-h / 2 : root.short-h / 2) || (!root.tall && SheetDrag.closes(d, root.short-h, t))) {
+        if (d > (root.tall ? root.tall-h - root.short-h / 2 : root.short-h / 2) || (!root.tall && SheetDrag.closes(d, root.short-h, v))) {
             root.close();
         } else if (root.tall && d > 48px) {
             root.tall = false;
@@ -1796,9 +1817,18 @@ component SnapSheet inherits Rectangle {
                 height: 24px;
                 Rectangle { y: 10px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
                 TouchArea {
-                    moved => { root.drag += self.mouse-y - self.pressed-y; }
+                    moved => {
+                        root.drag += self.mouse-y - self.pressed-y;
+                        root.fling = SheetDrag.speed(self.absolute-position.y + self.mouse-y, animation-tick(), root.last-y, root.last-t, root.fling);
+                        root.last-y = self.absolute-position.y + self.mouse-y;
+                        root.last-t = animation-tick();
+                    }
                     pointer-event(e) => {
-                        if (e.kind == PointerEventKind.down) { root.drag-start = animation-tick(); }
+                        if (e.kind == PointerEventKind.down) {
+                            root.fling = 0;
+                            root.last-y = self.absolute-position.y + self.mouse-y;
+                            root.last-t = animation-tick();
+                        }
                         if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) { root.settle(); }
                     }
                 }
