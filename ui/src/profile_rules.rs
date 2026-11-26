@@ -69,9 +69,9 @@ pub const TARGETS: [&str; 7] = [
     "GLOBAL",
 ];
 
-/// The enum name FlClash shows for a type (`ruleAction.name`).
+/// The type as a profile writes it, as FlClash shows it (`ruleAction.value`).
 pub fn name(action: &str) -> String {
-    action.replace('-', "_")
+    action.to_string()
 }
 
 pub fn is_action(value: &str) -> bool {
@@ -847,7 +847,7 @@ mod tests {
         assert_eq!(rule("").target, "DIRECT");
         let r = rule("DOMAIN-REGEX,^a{1,3}$,DIRECT");
         assert_eq!(r.content, "^a{1,3}$");
-        assert_eq!(name("IP-CIDR6"), "IP_CIDR6");
+        assert_eq!(name("IP-CIDR6"), "IP-CIDR6");
     }
 
     #[test]
@@ -955,6 +955,10 @@ mod tests {
             (4, true)
         );
         assert!(matches(
+            &rule("DOMAIN-SUFFIX,a.com,DIRECT"),
+            "domain-suffix"
+        ));
+        assert!(!matches(
             &rule("DOMAIN-SUFFIX,a.com,DIRECT"),
             "domain_suffix"
         ));

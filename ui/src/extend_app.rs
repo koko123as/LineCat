@@ -950,7 +950,7 @@ mod tests {
         assert_eq!(tones(&rule("DOMAIN", "落地", true)), (3, false));
         let group = rule("DOMAIN-SUFFIX", "节点选择", false);
         assert_eq!(tones(&group), (4, true));
-        assert_eq!(added_rule_row(&group, true).name.as_str(), "DOMAIN_SUFFIX");
+        assert_eq!(added_rule_row(&group, true).name.as_str(), "DOMAIN-SUFFIX");
         assert_eq!(added_rule_issue(&group), "节点选择 是一个无效的策略");
         let sub = ProfileRule {
             sub_rule: "sub".into(),

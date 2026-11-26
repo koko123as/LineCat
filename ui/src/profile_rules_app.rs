@@ -884,7 +884,7 @@ mod tests {
         let b = pr::parse("RULE-SET,cn,节点选择", 2, "p");
         let c = pr::parse("MATCH,香港", 3, "p");
         let rows = rule_rows(&[&a, &b, &c], &targets(), &[2].into());
-        assert_eq!(rows[0].name, "DOMAIN_SUFFIX");
+        assert_eq!(rows[0].name, "DOMAIN-SUFFIX");
         assert_eq!((rows[0].tone, rows[0].invalid), (1, false));
         assert_eq!(
             (rows[1].content.as_str(), rows[1].invalid, rows[1].selected),
