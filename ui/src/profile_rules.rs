@@ -240,7 +240,7 @@ fn int_ranges(payload: &str) -> Option<Vec<u64>> {
 
 /// The spans of `(RULE-SET,<name>` in a logic rule's payload (`_nestedRuleSet`), the name
 /// without the spaces around it.
-fn nested_rule_sets(text: &str) -> Vec<(usize, usize)> {
+pub(crate) fn nested_rule_sets(text: &str) -> Vec<(usize, usize)> {
     let bytes = text.as_bytes();
     let skip = |mut i: usize| {
         while i < bytes.len() && bytes[i].is_ascii_whitespace() {
@@ -711,7 +711,13 @@ pub fn profiles_using(state: &State, label: &str) -> Vec<String> {
     state
         .profiles
         .iter()
-        .filter(|p| using.contains(p.id.as_str()))
+        .filter(|p| {
+            using.contains(p.id.as_str())
+                || p.is_custom()
+                    && crate::profile_refs::rule_sets(&p.overrides)
+                        .iter()
+                        .any(|s| s == label)
+        })
         .map(|p| p.label())
         .collect()
 }
@@ -729,16 +735,28 @@ pub fn rename_rule_set_everywhere(state: &mut State, old: &str, new: &str) {
     {
         rename_rule_set(r, old, new);
     }
+    let names = [(old.to_string(), new.to_string())].into();
+    for p in state.profiles.iter_mut().filter(|p| p.is_custom()) {
+        crate::profile_refs::rename_rule_sets(&mut p.overrides, &names);
+    }
 }
 
-/// `customReferencedProviders.rule`: the rule sets the profile's rules name, once each.
+/// `customReferencedProviders.rule`, with the rule sets the DNS and sniffer settings name.
 pub fn referenced_rule_sets(state: &State, profile_id: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for r in cp::rules(state, profile_id) {
-        for s in rule_sets(r) {
-            if !out.contains(&s) {
-                out.push(s);
-            }
+    let from_settings = state
+        .profiles
+        .iter()
+        .find(|p| p.id == profile_id && p.is_custom())
+        .map(|p| crate::profile_refs::rule_sets(&p.overrides))
+        .unwrap_or_default();
+    for s in cp::rules(state, profile_id)
+        .into_iter()
+        .flat_map(rule_sets)
+        .chain(from_settings)
+    {
+        if !out.contains(&s) {
+            out.push(s);
         }
     }
     out

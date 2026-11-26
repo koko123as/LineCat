@@ -45,9 +45,6 @@ pub(crate) fn list_get(
                 overrides::Kind::List(_, desc) => {
                     Some((overrides::strings(&v), k.label.into(), desc))
                 }
-                overrides::Kind::Sniff => {
-                    Some((crate::tun_sniffer_ntp::ports(&v), "端口".into(), ""))
-                }
                 _ => None,
             }
         }
@@ -62,13 +59,7 @@ fn list_put(s: &mut store::Settings, key: &str, items: Vec<String>) {
         "route-exclude" => n.route_exclude_address = items,
         _ => {
             if let Some((spec, state, path)) = override_mut(s, key) {
-                let value = match spec.key(path).map(|k| k.kind) {
-                    Some(overrides::Kind::Sniff) => {
-                        crate::tun_sniffer_ntp::with_ports(&spec.value(state, path), items)
-                    }
-                    _ => serde_json::json!(items),
-                };
-                spec.set(state, path, value);
+                spec.set(state, path, serde_json::json!(items));
             }
         }
     }
@@ -112,9 +103,6 @@ fn override_state<'a>(s: &'a store::Settings, spec: &str) -> Option<&'a override
     match spec {
         "dns" => Some(&s.dns_override),
         "general" => Some(&s.general_override),
-        "tun" => Some(&s.tun_override),
-        "sniffer" => Some(&s.sniffer_override),
-        "ntp" => Some(&s.ntp_override),
         _ => None,
     }
 }
@@ -126,9 +114,6 @@ fn override_state_mut<'a>(
     match spec {
         "dns" => Some(&mut s.dns_override),
         "general" => Some(&mut s.general_override),
-        "tun" => Some(&mut s.tun_override),
-        "sniffer" => Some(&mut s.sniffer_override),
-        "ntp" => Some(&mut s.ntp_override),
         _ => None,
     }
 }
@@ -192,9 +177,6 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
         return meta;
     }
     if let Some(meta) = crate::on_demand_app::page_meta(page) {
-        return meta;
-    }
-    if let Some(meta) = crate::tun_sniffer_ntp_app::page_meta(page) {
         return meta;
     }
     let t = targets().lock().unwrap();
@@ -304,6 +286,9 @@ impl App {
             if let Some(e) = a.groups_check(&key, &v1) {
                 return e.into();
             }
+            if let Some(e) = a.pm_check(&key, &v1, &v2) {
+                return e.into();
+            }
             if key.starts_with("map:") {
                 return if v1.trim().is_empty() {
                     "键不能为空".into()
@@ -338,7 +323,7 @@ impl App {
         ui.on_input_submit(move |key, v1, v2| a.input_submit(&key, &v1, &v2));
         let a = self.clone();
         ui.on_input_remove(move |key| {
-            if a.items_removed(&key) || a.mitm_removed(&key) {
+            if a.items_removed(&key) || a.mitm_removed(&key) || a.pm_removed(&key) {
                 return;
             }
             if key.starts_with("list:") {
@@ -414,7 +399,6 @@ impl App {
                 "advanced" => settings_view::advanced(&settings),
                 "network" => settings_view::network(&settings),
                 "on-demand" => Vec::new(),
-                "sniff" => crate::tun_sniffer_ntp_app::sniff_sections(&settings),
                 "user-agents" => settings_view::user_agents(&settings),
                 "list" => {
                     let key = targets().lock().unwrap().list.0.clone();
@@ -586,7 +570,6 @@ impl App {
 
     fn set_clicked(self: &Arc<Self>, page: &str, id: &str) {
         if self.mitm_clicked(page, id)
-            || self.tsn_clicked(page, id)
             || self.rules_clicked(page, id)
             || self.items_clicked(page, id)
             || self.rule_sets_clicked(page, id)
@@ -800,7 +783,6 @@ impl App {
 
     fn set_toggled(self: &Arc<Self>, page: &str, id: &str, on: bool) {
         if self.mitm_toggled(page, id, on)
-            || self.tsn_toggled(page, id, on)
             || self.rules_toggled(page, id, on)
             || self.custom_proxies_toggled(page, id, on)
         {
@@ -887,7 +869,7 @@ impl App {
             || self.profile_rules_picked(key, &value)
             || self.theme_picked(key, &value)
             || self.logs_picked(key, &value)
-            || self.tsn_picked(key, &value)
+            || self.pm_picked(key, &value)
         {
             return;
         }
@@ -943,6 +925,7 @@ impl App {
             || self.custom_profile_input(key, v1)
             || self.groups_input(key, v1)
             || self.profile_rules_input(key, v1)
+            || self.pm_input(key, v1, v2)
         {
             return;
         }
@@ -1126,7 +1109,7 @@ impl App {
         match k.kind {
             overrides::Kind::List(..) => self.open_list(&key, parent),
             overrides::Kind::Map(_) => self.open_map(&key, parent),
-            overrides::Kind::Sniff => self.open_sniff(&key),
+            overrides::Kind::Sniff => {}
             overrides::Kind::Options(options) => {
                 let current = spec.text(state, id);
                 let items: Vec<ActionItem> = options

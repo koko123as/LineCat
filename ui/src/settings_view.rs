@@ -242,8 +242,6 @@ pub fn advanced(_settings: &Settings) -> Vec<SetSection> {
             vec![
                 open("network", "key", "网络"),
                 open("dns", "dns", "DNS"),
-                open("sniffer", "eye", "域名嗅探"),
-                open("ntp", "clock", "NTP"),
                 open("rules", "rules", "附加规则"),
                 open("scripts", "code", "脚本"),
                 open("mitm", "lock-open", "MITM"),
@@ -278,8 +276,6 @@ pub fn network(settings: &Settings) -> Vec<SetSection> {
         footer.push("认证启用时，系统代理不生效。");
     }
     footer.push("排除域名仅在系统代理启用时生效。");
-    let (tun_rows, tun_footer) =
-        crate::tun_sniffer_ntp::TUN.inline(&settings.tun_override, network_tun_rows(n));
     vec![
         section("", "", vec![toggle("vpn", "VPN", n.vpn)]),
         section(
@@ -299,7 +295,7 @@ pub fn network(settings: &Settings) -> Vec<SetSection> {
                 toggle("dns-hijacking", "DNS劫持", n.dns_hijacking),
             ],
         ),
-        section("虚拟网卡", &tun_footer, tun_rows),
+        section("虚拟网卡", "", network_tun_rows(n)),
     ]
 }
 

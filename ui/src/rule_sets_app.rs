@@ -42,7 +42,7 @@ pub fn page_meta(sets: &[RuleSet], page: &str) -> Option<PageMeta> {
     })
 }
 
-fn modified_secs(path: &std::path::Path) -> Option<u64> {
+pub(crate) fn modified_secs(path: &std::path::Path) -> Option<u64> {
     let t = std::fs::metadata(path).ok()?.modified().ok()?;
     t.duration_since(std::time::UNIX_EPOCH)
         .ok()

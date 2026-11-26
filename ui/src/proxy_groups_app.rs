@@ -5,6 +5,7 @@
 use crate::custom_profile as cp;
 use crate::icon_picker::{self as ip, Source};
 use crate::net_images::is_image_src;
+use crate::providers::{self as pv, PKind, POpt, POPTS};
 use crate::proxy_groups::{self as pg, Data, Issue, Member, MemberKind, Opt, OPTS};
 use crate::{
     profile_ref, ActionItem, Anchor, App, GroupRow, IconSection, IconTile, MemberItem, MemberPick,
@@ -26,6 +27,10 @@ pub struct Draft {
     pub shown: BTreeSet<Opt>,
     pub submitted: bool,
     pub filter_errors: BTreeMap<usize, String>,
+    /// A proxy provider's options (`_ProxyProviderOptionsView`) in place of a group: `def`
+    /// holds the options, whose filters the members list edits.
+    pub provider: Option<String>,
+    pub pshown: BTreeSet<POpt>,
 }
 
 impl Draft {
@@ -36,6 +41,19 @@ impl Draft {
             shown: shown_in(&def),
             origin: def.clone(),
             def,
+            ..Default::default()
+        }
+    }
+
+    pub fn open_provider(name: &str, options: Value) -> Draft {
+        Draft {
+            provider: Some(name.to_string()),
+            pshown: POPTS
+                .into_iter()
+                .filter(|o| o.is_set_in(&options))
+                .collect(),
+            origin: options.clone(),
+            def: options,
             ..Default::default()
         }
     }
@@ -100,6 +118,9 @@ impl Draft {
 
     /// The banner's issues: the incomplete ones wait for the first save on a new group.
     pub fn issues(&self, data: &Data) -> Vec<Issue> {
+        if self.provider.is_some() {
+            return self.filter_issues();
+        }
         let show_incomplete = !self.is_new || self.submitted;
         pg::issues(self.id, &self.def, data)
             .into_iter()
@@ -237,6 +258,9 @@ fn member_message(m: &Member) -> String {
 
 /// The form's sections around the members: 常规, then 选项 and 操作.
 pub fn form_sections(d: &Draft, data: &Data) -> Vec<SetSection> {
+    if d.provider.is_some() {
+        return vec![section("", Vec::new()), section("选项", provider_rows(d))];
+    }
     let issues = d.issues(data);
     let name = pg::name(&d.def);
     let mut name_row = row(
@@ -314,6 +338,43 @@ pub fn form_sections(d: &Draft, data: &Data) -> Vec<SetSection> {
         ));
     }
     out
+}
+
+/// The provider options' rows: each added option with its remove button, then the add row.
+fn provider_rows(d: &Draft) -> Vec<SetRow> {
+    let mut rows: Vec<SetRow> = POPTS
+        .into_iter()
+        .filter(|o| d.pshown.contains(o))
+        .map(|o| {
+            let id = format!("pv-o:{}", o.key());
+            let text = o.text(&d.def);
+            let mut r = match o.kind() {
+                PKind::Toggle => {
+                    let mut r = row(&id, "toggle", o.label(), "");
+                    r.on = o.on(&d.def);
+                    r
+                }
+                PKind::Choice => row(&id, "open", o.label(), &text),
+                PKind::Number(unit) if !text.is_empty() => {
+                    row(&id, "value", o.label(), &format!("{text} {unit}"))
+                }
+                _ => row(
+                    &id,
+                    "value",
+                    o.label(),
+                    if text.is_empty() { "可选" } else { &text },
+                ),
+            };
+            r.lead = "remove".into();
+            r
+        })
+        .collect();
+    if POPTS.iter().any(|o| !d.pshown.contains(o)) {
+        let mut r = row("pv-add", "action", "添加设置项", "");
+        r.lead = "add".into();
+        rows.push(r);
+    }
+    rows
 }
 
 #[derive(Default)]
@@ -775,12 +836,13 @@ impl App {
         let data = self.group_data(&pid);
         let presets = self.filter_presets();
         let issue: SharedString = pg::issues_message(&d.issues(&data)).into();
-        let title: SharedString = if d.is_new {
-            "添加策略组"
-        } else {
-            "编辑策略组"
+        let title: SharedString = match &d.provider {
+            Some(n) => n.as_str(),
+            None if d.is_new => "添加策略组",
+            None => "编辑策略组",
         }
         .into();
+        let provider = d.provider.is_some();
         self.ui(move |ui| {
             let mut tail = form_sections(&d, &data);
             let head: Vec<SetSection> = tail.drain(..1).collect();
@@ -791,6 +853,7 @@ impl App {
             ))));
             ui.set_pg_tail(ModelRc::new(VecModel::from(tail)));
             ui.set_pg_issue(issue);
+            ui.set_pg_provider(provider);
         });
     }
 
@@ -866,6 +929,9 @@ impl App {
         let Some(d) = section_state().lock().unwrap().draft.clone() else {
             return;
         };
+        if d.provider.is_some() && id != "pg-members-add" {
+            return self.provider_form_clicked(&d, id);
+        }
         match id {
             "action" => self.spawn(|app| app.save_group()),
             "action2" => self.open_group_yaml(&d),
@@ -975,7 +1041,112 @@ impl App {
         }
     }
 
+    /// The provider options' rows and ✓.
+    fn provider_form_clicked(self: &Arc<Self>, d: &Draft, id: &str) {
+        if id == "action" {
+            return self.spawn(|app| app.save_provider());
+        }
+        if id == "pv-add" {
+            let mut last = "";
+            let items = POPTS
+                .into_iter()
+                .filter(|o| !d.pshown.contains(o))
+                .map(|o| {
+                    let heading = if last != o.section() { o.section() } else { "" };
+                    last = o.section();
+                    ActionItem {
+                        id: format!("pv-add:{}", o.key()).into(),
+                        heading: heading.into(),
+                        label: o.label().into(),
+                        enabled: true,
+                        ..Default::default()
+                    }
+                })
+                .collect();
+            return self.show_choice("添加设置项", items);
+        }
+        if let Some(o) = id.strip_prefix("remove:pv-o:").and_then(POpt::of) {
+            return self.edit_group_draft(move |d| {
+                pv::set(&mut d.def, o, None);
+                d.pshown.remove(&o);
+            });
+        }
+        let Some(o) = id.strip_prefix("pv-o:").and_then(POpt::of) else {
+            return;
+        };
+        match o.kind() {
+            PKind::Choice => {
+                let current = o.text(&d.def);
+                let items = pv::IP_VERSIONS
+                    .iter()
+                    .map(|v| check_item(format!("pv-ip:{v}"), v, *v == current))
+                    .collect();
+                self.show_choice(o.label(), items);
+            }
+            PKind::Toggle => {}
+            kind => {
+                self.open_input(
+                    &format!("pv-in:{}", o.key()),
+                    o.label(),
+                    "",
+                    &o.text(&d.def),
+                );
+                if matches!(kind, PKind::Number(_)) {
+                    self.ui(|ui| ui.set_input_number(true));
+                }
+            }
+        }
+    }
+
+    /// `_handleEdit`: the options kept for the provider, in the form the groups use.
+    pub(crate) fn open_provider_form(self: &Arc<Self>, name: &str) {
+        let Some(pid) = crate::custom_profile_app::page_id() else {
+            return;
+        };
+        let options = pv::options_of(&self.store.lock().unwrap().state, &pid, name);
+        {
+            let mut st = section_state().lock().unwrap();
+            st.draft = Some(Draft::open_provider(name, options));
+            st.yaml_open = false;
+        }
+        self.publish_group_form();
+        self.check_group_filters();
+        self.ui(|ui| ui.set_profiles_page("group".into()));
+    }
+
+    /// The provider's options saved once its filters pass the Core's check.
+    fn save_provider(self: &Arc<Self>) {
+        let Some(pid) = crate::custom_profile_app::page_id() else {
+            return;
+        };
+        let Some(d) = section_state().lock().unwrap().draft.clone() else {
+            return;
+        };
+        let Some(name) = d.provider.clone() else {
+            return;
+        };
+        let mut checked = d.clone();
+        if let Some(errors) = self.validate_filters(&d.filters()) {
+            checked.filter_errors = errors;
+        }
+        let blocking = checked.filter_issues();
+        let errors = checked.filter_errors.clone();
+        self.edit_group_draft(move |d| d.filter_errors = errors);
+        if !blocking.is_empty() {
+            return self.alert("无法保存", pg::issues_message(&blocking));
+        }
+        {
+            let mut store = self.store.lock().unwrap();
+            pv::put(&mut store.state, &pid, &name, &d.def);
+            store.save();
+        }
+        self.close_group_form();
+    }
+
     pub(crate) fn pg_toggled(self: &Arc<Self>, id: &str, on: bool) {
+        if let Some(o) = id.strip_prefix("pv-o:").and_then(POpt::of) {
+            return self.edit_group_draft(move |d| pv::set(&mut d.def, o, Some(on.into())));
+        }
         if let Some(o) = id.strip_prefix("pg-o:").and_then(Opt::of) {
             self.edit_group_draft(|d| d.set(o.key(), Some(o.toggled(on))));
         }
@@ -983,6 +1154,20 @@ impl App {
 
     pub(crate) fn groups_picked(self: &Arc<Self>, key: &str, value: &str) -> bool {
         match key {
+            "pv-add" => {
+                if let Some(o) = POpt::of(value) {
+                    self.edit_group_draft(move |d| {
+                        pv::set(&mut d.def, o, Some(o.reset_value()));
+                        d.pshown.insert(o);
+                    });
+                }
+            }
+            "pv-ip" => {
+                let v = value.to_string();
+                self.edit_group_draft(move |d| {
+                    pv::set(&mut d.def, POpt::IpVersion, Some(v.into()))
+                });
+            }
             "pg-type" => {
                 let v = value.to_string();
                 self.edit_group_draft(move |d| d.set("type", Some(v.into())));
@@ -1005,6 +1190,15 @@ impl App {
     }
 
     pub(crate) fn groups_check(&self, key: &str, v1: &str) -> Option<String> {
+        if let Some(o) = key.strip_prefix("pv-in:").and_then(POpt::of) {
+            let v = v1.trim();
+            let number = matches!(o.kind(), PKind::Number(_));
+            return Some(if number && !v.is_empty() && v.parse::<u32>().is_err() {
+                "请输入数字".into()
+            } else {
+                String::new()
+            });
+        }
         let target = key.strip_prefix("pg-in:")?;
         if target == "icon-url" {
             return Some(ip::url_issue(v1).unwrap_or_default().to_string());
@@ -1019,6 +1213,15 @@ impl App {
     }
 
     pub(crate) fn groups_input(self: &Arc<Self>, key: &str, v1: &str) -> bool {
+        if let Some(o) = key.strip_prefix("pv-in:").and_then(POpt::of) {
+            let v = v1.trim().to_string();
+            let value = match o.kind() {
+                PKind::Number(_) => v.parse::<u32>().ok().map(Value::from),
+                _ => (!v.is_empty()).then(|| v.into()),
+            };
+            self.edit_group_draft(move |d| pv::set(&mut d.def, o, value));
+            return true;
+        }
         let Some(target) = key.strip_prefix("pg-in:") else {
             return false;
         };
@@ -1111,7 +1314,15 @@ impl App {
     }
 
     pub(crate) fn pg_save_answer(self: &Arc<Self>, yes: bool) {
-        if yes {
+        let provider = section_state()
+            .lock()
+            .unwrap()
+            .draft
+            .as_ref()
+            .is_some_and(|d| d.provider.is_some());
+        if yes && provider {
+            self.spawn(|app| app.save_provider());
+        } else if yes {
             self.spawn(|app| app.save_group());
         } else {
             self.close_group_form();
@@ -1119,8 +1330,19 @@ impl App {
     }
 
     fn close_group_form(self: &Arc<Self>) {
-        section_state().lock().unwrap().draft = None;
-        self.ui(|ui| ui.set_profiles_page("custom".into()));
+        let provider = section_state()
+            .lock()
+            .unwrap()
+            .draft
+            .take()
+            .is_some_and(|d| d.provider.is_some());
+        if provider {
+            self.publish_pm();
+            self.publish_custom();
+            self.ui(|ui| ui.set_profiles_page("pmore".into()));
+        } else {
+            self.ui(|ui| ui.set_profiles_page("custom".into()));
+        }
     }
 
     /// `_handleQuickEdit`: the definition as YAML in the editor.
@@ -1239,19 +1461,24 @@ impl App {
         let Some(pid) = crate::custom_profile_app::page_id() else {
             return;
         };
-        let (p, id) = {
+        let (p, id, provider) = {
             let st = section_state().lock().unwrap();
             match (&st.picker, &st.draft) {
-                (Some(p), Some(d)) => (p.clone(), d.id),
+                (Some(p), Some(d)) => (p.clone(), d.id, d.provider.is_some()),
                 _ => return,
             }
         };
-        let cats = pg::picker_categories(
+        let mut cats = pg::picker_categories(
             id,
             &p.origin,
             &self.group_data(&pid),
             &self.filter_presets(),
         );
+        if provider {
+            cats.retain(|c| {
+                c.entries.iter().all(|e| e.member.kind.is_filter()) && !c.entries.is_empty()
+            });
+        }
         let searching = !p.query.trim().is_empty();
         self.ui(move |ui| {
             let (sections, searchable) = picker_sections(&p, cats);

@@ -4819,6 +4819,8 @@ component MemberList inherits VerticalLayout {
 component EditProxyGroupPage inherits Rectangle {
     in property <string> title;
     in property <string> issue;
+    // A proxy provider's options: the members are its filters, and there is no quick edit.
+    in property <bool> provider;
     in property <[SetSection]> head;
     in property <[MemberItem]> members;
     in property <[SetSection]> tail;
@@ -4831,7 +4833,7 @@ component EditProxyGroupPage inherits Rectangle {
             title: root.title;
             can-back: true;
             back => { root.back(); }
-            VerticalLayout { alignment: center; IconButton { glyph: Icons.compose; tint: Theme.s.on-surface; clicked => { root.clicked("action2"); } } }
+            if !root.provider: VerticalLayout { alignment: center; IconButton { glyph: Icons.compose; tint: Theme.s.on-surface; clicked => { root.clicked("action2"); } } }
             VerticalLayout { alignment: center; IconButton { glyph: Icons.check; tint: Theme.s.on-surface; clicked => { root.clicked("action"); } } }
         }
         Flickable {
@@ -4866,8 +4868,8 @@ component EditProxyGroupPage inherits Rectangle {
                     padding-left: 16px;
                     padding-right: 16px;
                     members := MemberList {
-                        title: "节点";
-                        add-label: "添加节点";
+                        title: root.provider ? "筛选" : "节点";
+                        add-label: root.provider ? "添加筛选" : "添加节点";
                         items: root.members;
                         clicked(a) => {
                             if (a == "add") { root.clicked("pg-members-add"); } else { root.member(a); }
@@ -4887,6 +4889,7 @@ component EditProxyGroupPage inherits Rectangle {
 // `_MemberPicker`: the categories folded, a tap picks or unpicks an entry (the form takes
 // it at once), a search once there are ten entries.
 component MemberPickerPage inherits Rectangle {
+    in property <string> title: "添加节点";
     in property <[MemberPickSection]> sections;
     in property <bool> searchable;
     in property <string> empty;
@@ -4897,7 +4900,7 @@ component MemberPickerPage inherits Rectangle {
     changed query => { root.pick("search:" + root.query); }
     VerticalLayout {
         if !root.searching: AppBar {
-            title: "添加节点";
+            title: root.title;
             can-back: true;
             back => { root.back(); }
             if root.searchable: VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
@@ -8432,6 +8435,7 @@ export component AppWindow inherits Window {
     in property <[MemberItem]> pg-members;
     in property <[SetSection]> pg-tail;
     in property <string> pg-issue;
+    in property <bool> pg-provider;
     callback pg-member(string);
     // The member picker as "group-members", the icon picker as "group-icon".
     in property <[MemberPickSection]> pg-pick-sections;
@@ -8471,6 +8475,15 @@ export component AppWindow inherits Window {
     in property <string> pr-form-action;
     callback pr-form(string);
     callback pr-form-toggled(string, bool);
+    // The profile's pages past the overview as "pmore": 外部资源, 更多, 拨号代理 and its
+    // DNS / NTP / sniffer / TUN settings, the one on top described by `pm-meta`.
+    in property <PageMeta> pm-meta;
+    in property <[SetSection]> pm-sections;
+    in property <string> pm-issue;
+    callback pm-clicked(string);
+    callback pm-toggled(string, bool);
+    callback pm-back();
+    callback custom-row(string);
     in-out property <string> editor-parent;
     in-out property <string> placeholder-title;
     // Where the placeholder page goes back to, when not the custom profile page.
@@ -8969,6 +8982,7 @@ export component AppWindow inherits Window {
                 if (root.tab == 2 && (root.profiles-page == "rule" || root.profiles-page == "rule-presets")) { root.pr-form("back"); return accept; }
                 if (root.tab == 2 && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
                 if (root.tab == 2 && root.profiles-page == "group") { root.pg-back(); return accept; }
+                if (root.tab == 2 && root.profiles-page == "pmore") { root.pm-back(); return accept; }
                 if (root.tab == 2 && root.profiles-page == "group-members" && root.pg-pick-searching) { root.pg-pick-query = ""; root.pg-pick-searching = false; return accept; }
                 if (root.tab == 2 && root.profiles-page == "group-members") { root.pg-pick("back"); return accept; }
                 if (root.tab == 2 && root.profiles-page == "group-icon" && root.gi-searching) { root.gi-query = ""; root.gi-searching = false; return accept; }
@@ -9251,8 +9265,7 @@ export component AppWindow inherits Window {
                             root.pr-act("open");
                             return;
                         }
-                        root.placeholder-title = r.title;
-                        root.profiles-page = "placeholder";
+                        root.custom-row(r.id);
                     }
                 }
                 if root.tab == 2 && root.profiles-page == "rules": ProfileRulesPage {
@@ -9296,14 +9309,45 @@ export component AppWindow inherits Window {
                     head: root.pg-head;
                     members: root.pg-members;
                     tail: root.pg-tail;
+                    provider: root.pg-provider;
                     back => { root.pg-back(); }
                     clicked(id) => { root.pg-clicked(id); }
                     toggled(id, on) => { root.pg-toggled(id, on); }
                     member(a) => { root.pg-member(a); }
                 }
+                if root.tab == 2 && root.profiles-page == "pmore": SettingsPage {
+                    width: parent.width;
+                    height: parent.height;
+                    title: root.pm-meta.title;
+                    action-glyph: Glyphs.of(root.pm-meta.action);
+                    sections: root.pm-sections;
+                    empty: root.pm-meta.empty;
+                    empty-desc: root.pm-meta.empty-desc;
+                    empty-action: root.pm-meta.empty-action;
+                    back => { root.pm-back(); }
+                    action => { root.pm-clicked("action"); }
+                    clicked(id) => { root.pm-clicked(id); }
+                    toggled(id, on) => { root.pm-toggled(id, on); }
+                    if root.pm-issue != "": HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 8px;
+                        Rectangle {
+                            border-radius: 16px;
+                            background: Theme.s.error.with-alpha(0.12);
+                            HorizontalLayout {
+                                padding: 14px;
+                                spacing: 12px;
+                                VerticalLayout { alignment: start; Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; } }
+                                Text { text: root.pm-issue; font-size: 14px * Type.scale; color: Theme.s.error; wrap: word-wrap; horizontal-stretch: 1; }
+                            }
+                        }
+                    }
+                }
                 if root.tab == 2 && root.profiles-page == "group-members": MemberPickerPage {
                     width: parent.width;
                     height: parent.height;
+                    title: root.pg-provider ? "添加筛选" : "添加节点";
                     sections: root.pg-pick-sections;
                     searchable: root.pg-pick-searchable;
                     empty: root.pg-pick-empty;

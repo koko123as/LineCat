@@ -377,16 +377,6 @@ pub fn overlay_for(
     }
     tun.insert("route-exclude-address".into(), Value::Array(excluded));
     set(&mut c, "tun", Value::Object(tun));
-    use crate::tun_sniffer_ntp::{apply_section, NTP, SNIFFER, TUN};
-    for (key, spec, state) in [
-        ("tun", &TUN, &settings.tun_override),
-        ("sniffer", &SNIFFER, &settings.sniffer_override),
-        ("ntp", &NTP, &settings.ntp_override),
-    ] {
-        if let Some(v) = apply_section(spec, state, c.get(key)) {
-            set(&mut c, key, v);
-        }
-    }
     set(&mut c, "geo-auto-update", settings.geo_auto_update.into());
     set(
         &mut c,
@@ -780,26 +770,23 @@ mod tests {
     }
 
     #[test]
-    fn tun_sniffer_and_ntp_overrides_reach_the_overlay() {
-        use crate::tun_sniffer_ntp::{NTP, SNIFFER, TUN};
+    fn a_profile_keeps_its_own_sniffer_and_ntp_and_old_app_pages_are_dropped() {
         let base = json!({"sniffer": {"enable": false, "skip-domain": ["a.com"]}});
-        let mut s = crate::store::Settings::default();
+        let s: crate::store::Settings = serde_json::from_value(json!({
+            "sniffer_override": {"keys": ["enable"], "model": {"enable": true}},
+            "ntp_override": {"keys": ["enable"]},
+            "tun_override": {"keys": ["dns-hijack"], "model": {"dns-hijack": ["any:5353"]}},
+            "mode": 1
+        }))
+        .unwrap();
+        assert_eq!(s.mode, 1);
         let o = overlay(&base, "rule", &s);
         assert!(o.get("ntp").is_none());
+        assert_eq!(o["sniffer"], base["sniffer"]);
         assert_eq!(o["tun"]["dns-hijack"], json!(["any:53"]));
-        TUN.add(&mut s.tun_override, "dns-hijack");
-        TUN.set(&mut s.tun_override, "dns-hijack", json!(["any:5353"]));
-        SNIFFER.add(&mut s.sniffer_override, "enable");
-        SNIFFER.set(&mut s.sniffer_override, "enable", true.into());
-        NTP.add(&mut s.ntp_override, "enable");
-        let o = overlay(&base, "rule", &s);
-        assert_eq!(o["tun"]["dns-hijack"], json!(["any:5353"]));
         assert_eq!(o["tun"]["auto-route"], true);
-        assert_eq!(
-            o["sniffer"],
-            json!({"enable": true, "skip-domain": ["a.com"]})
-        );
-        assert_eq!(o["ntp"], json!({"enable": false}));
+        let back = serde_json::to_value(&s).unwrap();
+        assert!(back.get("sniffer_override").is_none() && back.get("tun_override").is_none());
     }
 
     #[test]

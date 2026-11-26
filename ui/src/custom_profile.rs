@@ -210,6 +210,8 @@ pub struct Own {
     pub groups: Vec<Value>,
     pub overrides: Option<ProfileOverrides>,
     pub rule_providers: Map<String, Value>,
+    pub proxy_providers: Map<String, Value>,
+    pub dialers: BTreeMap<String, String>,
 }
 
 pub fn own(state: &State, profile: &Profile) -> Own {
@@ -224,6 +226,8 @@ pub fn own(state: &State, profile: &Profile) -> Own {
             .collect(),
         overrides: Some(profile.overrides.clone()),
         rule_providers: Map::new(),
+        proxy_providers: Map::new(),
+        dialers: crate::dialers::by_name(state, &profile.id),
     }
 }
 
@@ -232,7 +236,8 @@ pub fn rule_sets_used(state: &State, profile: &Profile) -> Vec<crate::rule_sets:
     if !profile.is_custom() {
         return Vec::new();
     }
-    crate::profile_rules::referenced_rule_sets(state, &profile.id)
+    crate::providers::referenced(state, &profile.id)
+        .1
         .into_iter()
         .filter_map(|n| {
             state
@@ -245,11 +250,13 @@ pub fn rule_sets_used(state: &State, profile: &Profile) -> Vec<crate::rule_sets:
         .collect()
 }
 
-/// `appProxiesPayload`: the custom proxies the groups name, in the custom proxies' order.
+/// `appProxiesPayload`: the custom proxies the groups name, with their dialers that do not loop.
 pub fn proxies_payload(
     proxies: &[crate::custom_proxies::CustomProxy],
     groups: &[Value],
+    dialers: &BTreeMap<String, String>,
 ) -> Vec<Value> {
+    let kept = crate::dialers::payload_dialers(groups, dialers);
     let named: Vec<&str> = groups
         .iter()
         .filter_map(|g| g.get("proxies").and_then(Value::as_array))
@@ -267,7 +274,10 @@ pub fn proxies_payload(
         .map(|p| {
             let mut definition = p.definition.clone();
             if let Some(map) = definition.as_object_mut() {
-                map.remove("dialer-proxy");
+                match kept.get(&p.name()) {
+                    Some(d) => map.insert("dialer-proxy".into(), d.as_str().into()),
+                    None => map.remove("dialer-proxy"),
+                };
             }
             definition
         })
@@ -277,7 +287,7 @@ pub fn proxies_payload(
 /// The file a custom profile is applied from: no config of its own but the proxies its
 /// groups use (`clashConfig` is `const ClashConfig()` for a custom profile).
 pub fn base_file(proxies: &[crate::custom_proxies::CustomProxy], own: &Own) -> Value {
-    json!({"proxies": proxies_payload(proxies, &own.groups)})
+    json!({"proxies": proxies_payload(proxies, &own.groups, &own.dialers)})
 }
 
 /// `DnsView.profile`: a custom profile may set any DNS key.
@@ -287,9 +297,9 @@ pub static PROFILE_DNS: Spec = Spec {
     keys: &crate::overrides::DNS_KEYS,
     allowed: &[],
     defaults: crate::overrides::dns_defaults,
-    description: "",
-    entries: "覆写项",
-    add: "添加覆写项",
+    description: crate::tun_sniffer_ntp::PROFILE_DESC,
+    entries: "设置项",
+    add: "添加设置项",
 };
 
 /// `customDnsEnabled`: on unless the profile's own `enable` turns it off.
@@ -332,6 +342,12 @@ pub fn apply_own(c: &mut Map<String, Value>, own: &Own, added: Vec<String>) {
     if !own.groups.is_empty() {
         c.insert("proxy-groups".into(), Value::Array(own.groups.clone()));
     }
+    if !own.proxy_providers.is_empty() {
+        c.insert(
+            "proxy-providers".into(),
+            Value::Object(own.proxy_providers.clone()),
+        );
+    }
     if !own.rule_providers.is_empty() {
         c.insert(
             "rule-providers".into(),
@@ -373,15 +389,7 @@ fn count_row(
 /// `customReferencedProviders`: the providers the profile names, and how many the app lacks.
 pub fn referenced_providers(state: &State, profile_id: &str) -> (usize, usize) {
     let data = crate::proxy_groups::data(state, profile_id);
-    let mut proxy: Vec<String> = Vec::new();
-    for (_, g) in &data.groups {
-        for n in crate::proxy_groups::names(g, "use") {
-            if !proxy.contains(&n) {
-                proxy.push(n);
-            }
-        }
-    }
-    let rule = crate::profile_rules::referenced_rule_sets(state, profile_id);
+    let (proxy, rule) = crate::providers::referenced(state, profile_id);
     let missing = proxy
         .iter()
         .filter(|n| !data.proxy_providers.contains(*n))
@@ -393,6 +401,97 @@ pub fn referenced_providers(state: &State, profile_id: &str) -> (usize, usize) {
     (proxy.len() + rule.len(), missing)
 }
 
+/// `showsTun`: a profile's own TUN settings take effect on the desktop only.
+pub fn shows_tun() -> bool {
+    !cfg!(target_os = "android")
+}
+
+pub fn dns_issues(state: &State, profile: &Profile) -> Vec<crate::proxy_groups::Issue> {
+    if !dns_enabled(&profile.overrides) {
+        return Vec::new();
+    }
+    let data = crate::proxy_groups::data(state, &profile.id);
+    let missing: Vec<String> = crate::profile_refs::dns_proxies(&profile.overrides)
+        .into_iter()
+        .filter(|n| !data.is_rule_target(n))
+        .collect();
+    if missing.is_empty() {
+        Vec::new()
+    } else {
+        vec![crate::proxy_groups::Issue::MissingProxies(missing)]
+    }
+}
+
+pub fn ntp_issues(state: &State, profile: &Profile) -> Vec<crate::proxy_groups::Issue> {
+    let o = &profile.overrides;
+    match crate::profile_refs::ntp_proxy(o).filter(|_| ntp_enabled(o)) {
+        Some(n) if !crate::proxy_groups::data(state, &profile.id).is_rule_target(&n) => {
+            vec![crate::proxy_groups::Issue::MissingDialer(n)]
+        }
+        _ => Vec::new(),
+    }
+}
+
+pub fn other_issue_count(state: &State, profile: &Profile) -> usize {
+    crate::dialers::profile_issues(state, &profile.id).len()
+        + dns_issues(state, profile).len()
+        + ntp_issues(state, profile).len()
+}
+
+pub fn more_rows(
+    state: &State,
+    profile: &Profile,
+) -> Vec<(&'static str, &'static str, &'static str, String, i32)> {
+    let o = &profile.overrides;
+    let dialers = crate::dialers::count(state, &profile.id);
+    let dialer_issues = !crate::dialers::profile_issues(state, &profile.id).is_empty();
+    let on = |b: bool| if b { "已开启" } else { "已关闭" }.to_string();
+    let mut rows = vec![
+        (
+            "dialers",
+            "link",
+            "拨号代理",
+            if dialers > 0 {
+                format!("{dialers} 个代理")
+            } else {
+                "无".into()
+            },
+            if dialer_issues { 2 } else { 0 },
+        ),
+        (
+            "ntp",
+            "clock",
+            "NTP",
+            on(ntp_enabled(o)),
+            if ntp_issues(state, profile).is_empty() {
+                0
+            } else {
+                2
+            },
+        ),
+        ("sniffer", "eye", "域名嗅探", on(sniffer_enabled(o)), 0),
+    ];
+    if shows_tun() {
+        let n = tun_settings(o);
+        rows.push((
+            "tun",
+            "shield",
+            "虚拟网卡",
+            if n > 0 {
+                format!("{n} 项设置")
+            } else {
+                "默认".into()
+            },
+            0,
+        ));
+    }
+    rows
+}
+
+pub fn tun_settings(o: &ProfileOverrides) -> usize {
+    crate::tun_sniffer_ntp::TUN.picked(&o.tun).count()
+}
+
 /// `_Overview`'s rows: (id, glyph, title, state, tone), tone 0 plain, 1 in effect, 2 invalid.
 pub fn overview(
     state: &State,
@@ -402,16 +501,20 @@ pub fn overview(
     let rule_count = rules(state, &profile.id).len();
     let rule_issues = crate::profile_rules::profile_issues(state, &profile.id).len();
     let (providers, missing) = referenced_providers(state, &profile.id);
-    let dialers = state
-        .proxy_dialers
-        .iter()
-        .filter(|d| d.profile_id == profile.id)
-        .count();
-    let more = [dialers > 0, ntp_enabled(o), sniffer_enabled(o)]
-        .iter()
-        .filter(|on| **on)
-        .count();
+    let dialers = crate::dialers::count(state, &profile.id);
+    let more = [
+        dialers > 0,
+        ntp_enabled(o),
+        sniffer_enabled(o),
+        shows_tun() && tun_settings(o) > 0,
+    ]
+    .iter()
+    .filter(|on| **on)
+    .count();
+    let more_invalid = !crate::dialers::profile_issues(state, &profile.id).is_empty()
+        || !ntp_issues(state, profile).is_empty();
     let dns = dns_enabled(o);
+    let dns_invalid = !dns_issues(state, profile).is_empty();
     vec![
         count_row("rules", "rules", "规则", rule_count, rule_issues),
         count_row("providers", "resources", "外部资源", providers, missing),
@@ -420,7 +523,13 @@ pub fn overview(
             "dns",
             "DNS",
             if dns { "已开启" } else { "已关闭" }.into(),
-            if dns { 1 } else { 0 },
+            if dns_invalid {
+                2
+            } else if dns {
+                1
+            } else {
+                0
+            },
         ),
         (
             "more",
@@ -431,7 +540,13 @@ pub fn overview(
             } else {
                 "默认".into()
             },
-            if more > 0 { 1 } else { 0 },
+            if more_invalid {
+                2
+            } else if more > 0 {
+                1
+            } else {
+                0
+            },
         ),
     ]
 }
@@ -673,9 +788,18 @@ mod tests {
             .insert("enable".into(), json!(true));
         s.proxy_dialers.push(ProxyDialer {
             profile_id: p.id.clone(),
-            ..Default::default()
+            proxy_id: "7".into(),
+            target: "DIRECT".into(),
         });
         let p = s.profiles[0].clone();
+        assert_eq!(overview(&s, &p)[3].3, "1 项生效");
+        s.settings
+            .custom_proxies
+            .push(crate::custom_proxies::CustomProxy {
+                id: "7".into(),
+                definition: json!({"name": "a", "type": "ss"}),
+            });
+        s.proxy_groups.push(group(1, &p.id, "g", None));
         assert_eq!(overview(&s, &p)[3].3, "2 项生效");
     }
 

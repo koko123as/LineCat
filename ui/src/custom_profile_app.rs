@@ -44,6 +44,10 @@ impl App {
         let a = self.clone();
         ui.on_rename_profile(move |id| a.ask_rename(&id));
         let a = self.clone();
+        ui.on_custom_row(move |id| {
+            a.open_overview_row(&id);
+        });
+        let a = self.clone();
         ui.on_custom_group(move |action| a.custom_group(&action));
         let a = self.clone();
         ui.on_pg_clicked(move |id| a.pg_clicked(&id));
@@ -85,6 +89,7 @@ impl App {
         *PAGE.lock().unwrap() = Some(page);
         self.reset_groups_section();
         self.reset_rules_page();
+        self.reset_pm();
         self.publish_custom();
         self.ui(|ui| {
             ui.set_custom_open(true);
@@ -96,7 +101,17 @@ impl App {
         let Some(id) = PAGE.lock().unwrap().as_ref().map(|p| p.id.clone()) else {
             return;
         };
-        let issues = (self.publish_custom_groups(&id) + self.profile_rule_issues(&id)) as i32;
+        let others = {
+            let store = self.store.lock().unwrap();
+            store
+                .state
+                .profiles
+                .iter()
+                .find(|p| p.id == id)
+                .map_or(0, |p| cp::other_issue_count(&store.state, p))
+        };
+        let issues =
+            (self.publish_custom_groups(&id) + self.profile_rule_issues(&id) + others) as i32;
         let (title, rows, groups) = {
             let store = self.store.lock().unwrap();
             let Some(p) = store.state.profiles.iter().find(|p| p.id == id) else {
@@ -131,13 +146,21 @@ impl App {
         };
         self.reset_groups_section();
         self.reset_rules_page();
+        self.reset_pm();
         self.ui(|ui| {
             ui.set_custom_open(false);
             ui.set_custom_menu_open(false);
             let page = ui.get_profiles_page();
             if matches!(
                 page.as_str(),
-                "custom" | "group" | "placeholder" | "rules" | "rule" | "rule-presets"
+                "custom"
+                    | "group"
+                    | "group-members"
+                    | "placeholder"
+                    | "rules"
+                    | "rule"
+                    | "rule-presets"
+                    | "pmore"
             ) || (page == "editor"
                 && matches!(ui.get_editor_parent().as_str(), "group" | "rules"))
             {

@@ -97,7 +97,7 @@ fn flag(def: &Value, key: &str) -> Option<bool> {
 }
 
 /// `_readIncludeAll`: `include-all` stands for both.
-fn includes_all(def: &Value, key: &str) -> bool {
+pub(crate) fn includes_all(def: &Value, key: &str) -> bool {
     flag(def, key).or_else(|| flag(def, "include-all")) == Some(true)
 }
 
@@ -386,6 +386,7 @@ pub struct Data {
     pub proxy_types: BTreeMap<String, String>,
     /// `_providerTypes`: URL or 文件 by provider name.
     pub provider_types: BTreeMap<String, String>,
+    pub dialers: BTreeMap<String, String>,
 }
 
 impl Data {
@@ -447,6 +448,7 @@ pub fn data(state: &State, profile_id: &str) -> Data {
                 )
             })
             .collect(),
+        dialers: crate::dialers::by_name(state, profile_id),
     }
 }
 
@@ -461,6 +463,8 @@ pub enum Issue {
     GroupLoop(Vec<String>),
     InvalidEmptyFallback(String),
     InvalidFilter(String, String),
+    MissingDialer(String),
+    DialerLoop(String, String),
 }
 
 impl Issue {
@@ -477,6 +481,10 @@ impl Issue {
                 format!("空组兜底只能是代理，{n} 不存在或是策略组")
             }
             Issue::InvalidFilter(t, m) => format!("{t}不是有效的正则：{m}"),
+            Issue::MissingDialer(n) => format!("拨号代理 {n} 不存在"),
+            Issue::DialerLoop(p, t) => {
+                format!("{p} 经 {t} 拨号，而 {t} 又会回到 {p}，形成环路")
+            }
         }
     }
 
@@ -487,7 +495,10 @@ impl Issue {
 
     /// `_blocksSave`: a missing member is left to the list, since a profile update brings it.
     pub fn blocks_save(&self) -> bool {
-        !matches!(self, Issue::MissingProxies(_) | Issue::MissingProviders(_))
+        !matches!(
+            self,
+            Issue::MissingProxies(_) | Issue::MissingProviders(_) | Issue::MissingDialer(_)
+        )
     }
 
     pub fn is_name(&self) -> bool {
@@ -635,12 +646,13 @@ pub fn issues(id: u64, def: &Value, data: &Data) -> Vec<Issue> {
     issues_with(id, def, data, None)
 }
 
-fn issues_with(
-    id: u64,
-    def: &Value,
-    data: &Data,
-    looping: Option<&BTreeSet<String>>,
-) -> Vec<Issue> {
+/// The groups on a loop and the dials passing each group, read once for a whole profile.
+struct Stored {
+    looping: BTreeSet<String>,
+    through: BTreeMap<String, Vec<(String, String)>>,
+}
+
+fn issues_with(id: u64, def: &Value, data: &Data, stored: Option<&Stored>) -> Vec<Issue> {
     let n = name(def);
     let proxies = names(def, "proxies");
     let used = names(def, "use");
@@ -671,9 +683,25 @@ fn issues_with(
         .collect();
     let taken =
         data.proxies.contains(&n) || data.groups.iter().any(|(i, g)| *i != id && name(g) == n);
-    let lp = match looping {
-        Some(set) if !set.contains(&n) => None,
+    let lp = match stored {
+        Some(st) if !st.looping.contains(&n) => None,
         _ => group_loop(id, def, &data.groups),
+    };
+    let dials = match stored {
+        Some(st) => st.through.get(&n).cloned().unwrap_or_default(),
+        None => {
+            let mut groups: Vec<Value> = data
+                .groups
+                .iter()
+                .filter(|(i, _)| *i != id)
+                .map(|(_, g)| g.clone())
+                .collect();
+            groups.push(def.clone());
+            crate::dialers::dial_loops(&groups, &data.dialers)
+                .through
+                .remove(&n)
+                .unwrap_or_default()
+        }
     };
     let mut out = Vec::new();
     if n.is_empty() {
@@ -695,6 +723,7 @@ fn issues_with(
     if let Some(lp) = lp {
         out.push(Issue::GroupLoop(lp));
     }
+    out.extend(dials.into_iter().map(|(p, t)| Issue::DialerLoop(p, t)));
     if invalid_fallback {
         out.push(Issue::InvalidEmptyFallback(fallback));
     }
@@ -715,55 +744,19 @@ pub fn profile_issues(data: &Data) -> BTreeMap<u64, Vec<Issue>> {
             None => members.push((n, names(g, "proxies"))),
         }
     }
-    let looping = names_on_loops(&members);
+    let groups: Vec<Value> = data.groups.iter().map(|(_, g)| g.clone()).collect();
+    let stored = Stored {
+        looping: names_on_loops(&members),
+        through: crate::dialers::dial_loops(&groups, &data.dialers).through,
+    };
     data.groups
         .iter()
         .filter_map(|(id, g)| {
             let unique = counts.get(&name(g)) == Some(&1);
-            let found = issues_with(*id, g, data, unique.then_some(&looping));
+            let found = issues_with(*id, g, data, unique.then_some(&stored));
             (!found.is_empty()).then_some((*id, found))
         })
         .collect()
-}
-
-/// Every server the DNS keys list, for `dnsProxies`.
-fn dns_servers(state: &State, profile_id: &str) -> Vec<String> {
-    let Some(p) = state.profiles.iter().find(|p| p.id == profile_id) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    let mut take = |v: &Value| match v {
-        Value::String(s) => out.extend(s.split(',').map(|s| s.trim().to_string())),
-        Value::Array(a) => out.extend(a.iter().filter_map(Value::as_str).map(str::to_string)),
-        _ => {}
-    };
-    for key in [
-        "default-nameserver",
-        "nameserver",
-        "fallback",
-        "proxy-server-nameserver",
-        "direct-nameserver",
-    ] {
-        if let Some(v) = cp::PROFILE_DNS.picked_value(&p.overrides.dns, key) {
-            take(&v);
-        }
-    }
-    for key in ["nameserver-policy", "proxy-server-nameserver-policy"] {
-        if let Some(Value::Object(m)) = cp::PROFILE_DNS.picked_value(&p.overrides.dns, key) {
-            m.values().for_each(&mut take);
-        }
-    }
-    out
-}
-
-/// The proxy a DNS server dials through: its `#` part that is not a `key=value`.
-fn dns_dialer(server: &str) -> Option<String> {
-    let (_, tail) = server.split_once('#')?;
-    tail.split('&')
-        .filter(|p| !p.contains('='))
-        .last()
-        .filter(|p| !p.is_empty())
-        .map(str::to_string)
 }
 
 /// `groupsInUse` with `proxyNamesInUse`: the names of `ids` that the profile's other groups,
@@ -795,17 +788,9 @@ pub fn in_use(state: &State, profile_id: &str, ids: &BTreeSet<u64>) -> Vec<Strin
             .filter(|d| d.profile_id == profile_id)
             .map(|d| d.target.clone()),
     );
-    referenced.extend(
-        dns_servers(state, profile_id)
-            .iter()
-            .filter_map(|s| dns_dialer(s)),
-    );
     if let Some(p) = state.profiles.iter().find(|p| p.id == profile_id) {
-        if let Some(Value::String(d)) =
-            crate::tun_sniffer_ntp::NTP.picked_value(&p.overrides.ntp, "dialer-proxy")
-        {
-            referenced.insert(d);
-        }
+        referenced.extend(crate::profile_refs::dns_proxies(&p.overrides));
+        referenced.extend(crate::profile_refs::ntp_proxy(&p.overrides));
     }
     let mut out: Vec<String> = Vec::new();
     for n in names_of {
@@ -902,6 +887,7 @@ pub fn put(state: &mut State, profile_id: &str, id: u64, def: Value) -> bool {
             g.definition = def;
             if !old.is_empty() && old != n {
                 crate::profile_rules::rename_target(state, profile_id, &old, &n);
+                rename_elsewhere(state, profile_id, &old, &n);
             }
         }
         None => {
@@ -917,6 +903,20 @@ pub fn put(state: &mut State, profile_id: &str, id: u64, def: Value) -> bool {
         }
     }
     true
+}
+
+fn rename_elsewhere(state: &mut State, profile_id: &str, old: &str, new: &str) {
+    for d in state
+        .proxy_dialers
+        .iter_mut()
+        .filter(|d| d.profile_id == profile_id && d.target == old)
+    {
+        d.target = new.into();
+    }
+    if let Some(p) = state.profiles.iter_mut().find(|p| p.id == profile_id) {
+        let names = [(old.to_string(), new.to_string())].into();
+        crate::profile_refs::rename_proxies(&mut p.overrides, &names);
+    }
 }
 
 pub fn delete(state: &mut State, profile_id: &str, ids: &BTreeSet<u64>) {
@@ -1875,8 +1875,9 @@ mod tests {
             json!(["https://1.1.1.1/dns-query#e&h3=true"]),
         );
         assert_eq!(in_use(&s, "p", &[5].into()), ["e"]);
-        assert_eq!(dns_dialer("8.8.8.8#a&b=1"), Some("a".into()));
-        assert_eq!(dns_dialer("8.8.8.8"), None);
+        let dns = &mut s.profiles[0].overrides.dns;
+        dns.model.insert("nameserver".into(), json!(["ts://e/dns"]));
+        assert_eq!(in_use(&s, "p", &[5].into()), ["e"]);
     }
 
     fn m(kind: MemberKind, n: &str) -> Member {
@@ -1964,6 +1965,7 @@ mod tests {
             proxy_types: [("hk".into(), "ss".into()), ("jp".into(), "vmess".into())].into(),
             proxy_providers: ["sub".into()].into(),
             provider_types: [("sub".into(), "URL".into())].into(),
+            dialers: Default::default(),
         };
         let presets = vec![
             ("(?i)hk".to_string(), "香港".to_string()),

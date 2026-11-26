@@ -1,6 +1,4 @@
-//! The TUN, sniffer and NTP overrides (lib/views/config/tun.dart, sniffer.dart, ntp.dart).
-//! FlClash keeps them per custom profile; with no profile editor yet they are written over
-//! every profile, as the network page's TUN overrides are (`appTunOverrideSpec`).
+//! A custom profile's TUN, sniffer and NTP settings (`ProfileOverrideTarget`).
 
 use crate::overrides::{key, Check, Key, Kind, OverrideState, Spec, OPTIONS};
 use crate::{SetRow, SetSection};
@@ -8,6 +6,8 @@ use serde_json::{json, Map, Value};
 use slint::{ModelRc, VecModel};
 
 const NUM_MAX: i64 = 0x7fff_ffff;
+
+pub const PROFILE_DESC: &str = "仅作用于当前配置，未添加的项使用默认值。";
 const PROTOCOLS: &str = "协议";
 
 /// `TunOverrideKey`, in its order.
@@ -139,18 +139,15 @@ fn tun_defaults() -> Value {
     })
 }
 
-/// `appTunOverrideSpec` on Android, inline in the network page's 虚拟网卡 section. Of the
-/// keys `_isRead` keeps off Linux and Windows, MTU, congestion control and the route lists
-/// are already that section's own rows, so they are left out here.
 pub static TUN: Spec = Spec {
     id: "tun",
     title: "虚拟网卡",
     keys: &TUN_KEYS,
-    allowed: &["dns-hijack", "udp-timeout", "disable-icmp-forwarding"],
+    allowed: &[],
     defaults: tun_defaults,
-    description: "添加的项会覆写所有配置的虚拟网卡设置，未添加的项沿用配置自身的设置。",
-    entries: "覆写项",
-    add: "添加覆写项",
+    description: "仅作用于当前配置，优先于网络设置中的覆写项。",
+    entries: "设置项",
+    add: "添加设置项",
 };
 
 /// `SnifferOverrideKey`, in its order.
@@ -220,9 +217,9 @@ pub static SNIFFER: Spec = Spec {
     keys: &SNIFFER_KEYS,
     allowed: &[],
     defaults: sniffer_defaults,
-    description: "添加的项会覆写所有配置的域名嗅探设置，未添加的项沿用配置自身的设置。",
-    entries: "覆写项",
-    add: "添加覆写项",
+    description: PROFILE_DESC,
+    entries: "设置项",
+    add: "添加设置项",
 };
 
 /// `NtpOverrideKey`, in its order.
@@ -264,9 +261,9 @@ pub static NTP: Spec = Spec {
     keys: &NTP_KEYS,
     allowed: &[],
     defaults: ntp_defaults,
-    description: "添加的项会覆写所有配置的 NTP 设置，未添加的项沿用配置自身的设置。",
-    entries: "覆写项",
-    add: "添加覆写项",
+    description: PROFILE_DESC,
+    entries: "设置项",
+    add: "添加设置项",
 };
 
 /// Writes a spec's picked keys over a profile's section; None while nothing is picked.
@@ -449,15 +446,9 @@ mod tests {
     use slint::Model;
 
     #[test]
-    fn tun_keys_follow_android_and_apply_over_the_tun() {
-        let ids: Vec<&str> = TUN.values().map(|k| k.path).collect();
-        assert_eq!(
-            ids,
-            ["dns-hijack", "udp-timeout", "disable-icmp-forwarding"]
-        );
+    fn tun_settings_apply_over_the_tun() {
+        assert_eq!(TUN.values().count(), 15);
         let mut s = OverrideState::default();
-        TUN.add(&mut s, "mtu");
-        assert!(s.keys.is_empty());
         let base = json!({"stack": "mixed", "dns-hijack": ["any:53"]});
         assert_eq!(apply_section(&TUN, &s, Some(&base)), None);
         TUN.add(&mut s, "udp-timeout");
@@ -467,11 +458,11 @@ mod tests {
         assert_eq!(tun["udp-timeout"], 300);
         assert_eq!(tun["dns-hijack"], json!(["tcp://any:53"]));
         assert_eq!(tun["stack"], "mixed");
-        let (rows, footer) = TUN.inline(&s, vec![]);
-        assert_eq!(rows.len(), 3);
-        assert_eq!(rows[0].subtitle, "1 项");
-        assert!(footer.starts_with(TUN.description));
+        let secs = TUN.sections(&s);
+        assert_eq!(secs[0].rows.row_data(0).unwrap().subtitle, "1 项");
+        assert_eq!(secs.last().unwrap().footer, TUN.description);
         assert!(TUN.check("udp-timeout", "0").is_err());
+        assert!(TUN.check("mtu", "1000").is_err());
     }
 
     #[test]

@@ -53,13 +53,17 @@ pub mod store;
 pub mod theme;
 mod theme_app;
 pub mod tun_sniffer_ntp;
-mod tun_sniffer_ntp_app;
 pub use theme_app::{apply as apply_theme, show_color_page};
 pub mod colors;
 pub mod custom_profile;
 mod custom_profile_app;
+pub mod dialers;
+mod profile_more_app;
+pub use profile_more_app::view as profile_more_view;
+pub mod profile_refs;
 pub mod profile_rules;
 mod profile_rules_app;
+pub mod providers;
 pub use profile_rules_app::{
     form_sections as rule_form_sections, preset_sections as rule_preset_sections, rule_rows,
     Draft as RuleDraft,
@@ -639,12 +643,13 @@ impl App {
     /// The file and overlay `config.apply` and `profile.build` take for a profile. A custom
     /// profile's file is written first, from its groups' proxies.
     fn profile_params(&self, bridge: &Bridge, id: &str) -> Result<(PathBuf, Value), String> {
-        let (path, settings, mut own, base, rule_sets) = {
+        let (path, settings, mut own, base, rule_sets, custom) = {
             let store = self.store.lock().unwrap();
             let Some(p) = store.state.profiles.iter().find(|p| p.id == id) else {
                 return Err("添加一个配置文件后即可开始使用".into());
             };
             let own = custom_profile::own(&store.state, p);
+            let custom = p.is_custom().then(|| p.clone());
             let rule_sets = custom_profile::rule_sets_used(&store.state, p);
             let base = p
                 .is_custom()
@@ -655,9 +660,16 @@ impl App {
                 own,
                 base,
                 rule_sets,
+                custom,
             )
         };
         own.rule_providers = self.rule_providers(rule_sets);
+        if let Some(p) = custom {
+            let store = self.store.lock().unwrap();
+            own.proxy_providers = providers::injected(&store.state, &p, |id| {
+                store.profile_path(id).to_string_lossy().into_owned()
+            });
+        }
         if let Some(base) = &base {
             std::fs::write(&path, serde_json::to_vec(base).unwrap_or_default())
                 .map_err(|e| e.to_string())?;
@@ -2577,6 +2589,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     app.bind_settings(&ui);
     app.bind_access(&ui);
     app.bind_custom_profile(&ui);
+    app.bind_profile_more(&ui);
     app.bind_backup(&ui);
     let ticker = slint::Timer::default();
     let a = app.clone();

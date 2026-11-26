@@ -342,51 +342,7 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             seasoncat_ui::overrides::DNS.sections(&s.dns_override)
         }
         "advanced" => settings_view::advanced(&s),
-        "network" => {
-            if overlay == "tun" {
-                use seasoncat_ui::tun_sniffer_ntp::TUN;
-                for k in ["dns-hijack", "udp-timeout", "disable-icmp-forwarding"] {
-                    TUN.add(&mut s.tun_override, k);
-                }
-            }
-            settings_view::network(&s)
-        }
-        "sniffer" => {
-            use seasoncat_ui::tun_sniffer_ntp::{with_ports, SNIFFER};
-            if overlay != "empty" {
-                for k in [
-                    "enable",
-                    "force-dns-mapping",
-                    "force-domain",
-                    "skip-dst-address",
-                    "sniff.HTTP",
-                    "sniff.TLS",
-                    "sniff.QUIC",
-                ] {
-                    SNIFFER.add(&mut s.sniffer_override, k);
-                }
-                SNIFFER.set(&mut s.sniffer_override, "enable", true.into());
-                let tls = with_ports(&serde_json::json!({}), vec!["443".into(), "8443".into()]);
-                SNIFFER.set(&mut s.sniffer_override, "sniff.TLS", tls);
-            }
-            SNIFFER.sections(&s.sniffer_override)
-        }
-        "sniff" => {
-            use seasoncat_ui::tun_sniffer_ntp::{sniff_sections, with_destination, with_ports};
-            let tls = with_ports(&serde_json::json!({}), vec!["443".into(), "8443".into()]);
-            sniff_sections(&with_destination(&tls, Some(false)))
-        }
-        "ntp" => {
-            use seasoncat_ui::tun_sniffer_ntp::NTP;
-            if overlay != "empty" {
-                for k in seasoncat_ui::tun_sniffer_ntp::NTP_KEYS.iter() {
-                    NTP.add(&mut s.ntp_override, k.path);
-                }
-                NTP.set(&mut s.ntp_override, "enable", true.into());
-                NTP.set(&mut s.ntp_override, "server", "ntp.aliyun.com".into());
-            }
-            NTP.sections(&s.ntp_override)
-        }
+        "network" => settings_view::network(&s),
         "user-agents" => {
             s.general.global_ua = s.general.user_agents.first().cloned();
             settings_view::user_agents(&s)
@@ -639,9 +595,6 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
     }
     if page == "mitm-module" {
         meta.title = "去广告合集".into();
-    }
-    if page == "sniff" {
-        meta.title = "TLS".into();
     }
     if page == "mitm-lines" {
         meta.title = "URL 重写".into();
@@ -934,6 +887,7 @@ fn snapshot_groups(ui: &AppWindow, overlay: &str, w: u32) {
         .into(),
         proxy_providers: ["机场订阅".to_string()].into(),
         provider_types: [("机场订阅".to_string(), "URL".to_string())].into(),
+        dialers: Default::default(),
     };
     let listed = matches!(
         overlay,
@@ -1094,6 +1048,208 @@ fn snapshot_groups(ui: &AppWindow, overlay: &str, w: u32) {
 
 /// The custom profile's rules, the rule form, the presets and the rules' quick edit, by
 /// overlay.
+/// The custom profile's pages past the overview ("pm:<page>[:empty]") and a proxy
+/// provider's options ("pform", its filter picker "pfpick").
+fn snapshot_more(ui: &AppWindow, overlay: &str) {
+    use seasoncat_ui::custom_profile as cp;
+    use serde_json::json;
+    let pm = overlay.strip_prefix("pm:");
+    if pm.is_none() && overlay != "pform" && overlay != "pfpick" {
+        ui.set_pg_provider(false);
+        return;
+    }
+    let empty = pm.is_some_and(|p| p.ends_with(":empty"));
+    let page = pm.map(|p| p.trim_end_matches(":empty")).unwrap_or("");
+    let mut s = store::State::default();
+    let mut p = cp::new_profile("c".into(), "自定义分流", 1);
+    for (id, name, url) in [
+        ("1", "机场订阅", "https://example.com/sub"),
+        (
+            "2",
+            "备用线路很长很长很长的订阅名称用来检查省略",
+            "https://example.com/b",
+        ),
+    ] {
+        s.profiles.push(store::Profile {
+            id: id.into(),
+            name: name.into(),
+            url: url.into(),
+            updated: 1,
+            ..Default::default()
+        });
+    }
+    s.settings.custom_proxies = sample_custom_proxies();
+    let names: Vec<String> = s.settings.custom_proxies.iter().map(|c| c.name()).collect();
+    if !empty {
+        let mut proxies: Vec<serde_json::Value> = names
+            .iter()
+            .filter(|n| !n.is_empty())
+            .map(|n| json!(n))
+            .collect();
+        proxies.push(json!("DIRECT"));
+        for (id, def) in [
+            (
+                1,
+                json!({"name": "节点选择", "type": "select", "proxies": proxies, "use": ["机场订阅", "备用线路很长很长很长的订阅名称用来检查省略", "已删除订阅"]}),
+            ),
+            (
+                2,
+                json!({"name": "落地", "type": "select", "proxies": [names[0]]}),
+            ),
+        ] {
+            s.proxy_groups.push(cp::ProxyGroupRow {
+                id,
+                profile_id: "c".into(),
+                definition: def,
+                order: None,
+            });
+        }
+        s.settings.rule_sets.push(seasoncat_ui::rule_sets::RuleSet {
+            id: "r".into(),
+            label: "广告拦截".into(),
+            url: "https://example.com/reject.yaml".into(),
+            behavior: "domain".into(),
+            format: "yaml".into(),
+        });
+        for (i, line) in ["RULE-SET,广告拦截,REJECT", "RULE-SET,流媒体,节点选择"]
+            .iter()
+            .enumerate()
+        {
+            s.profile_rules
+                .push(seasoncat_ui::profile_rules::parse(line, i as u64 + 1, "c"));
+        }
+        let ids: Vec<String> = s
+            .settings
+            .custom_proxies
+            .iter()
+            .map(|c| c.id.clone())
+            .collect();
+        s.proxy_dialers.push(cp::ProxyDialer {
+            profile_id: "c".into(),
+            proxy_id: ids[1].clone(),
+            target: "落地".into(),
+        });
+        s.proxy_dialers.push(cp::ProxyDialer {
+            profile_id: "c".into(),
+            proxy_id: ids[0].clone(),
+            target: "节点选择".into(),
+        });
+        use seasoncat_ui::tun_sniffer_ntp::{with_ports, NTP, SNIFFER, TUN};
+        let o = &mut p.overrides;
+        for k in [
+            "enable",
+            "server",
+            "interval",
+            "dialer-proxy",
+            "write-to-system",
+        ] {
+            NTP.add(&mut o.ntp, k);
+        }
+        NTP.set(&mut o.ntp, "enable", true.into());
+        NTP.set(&mut o.ntp, "dialer-proxy", "已删除策略组".into());
+        for k in [
+            "enable",
+            "force-dns-mapping",
+            "skip-domain",
+            "sniff.HTTP",
+            "sniff.TLS",
+        ] {
+            SNIFFER.add(&mut o.sniffer, k);
+        }
+        SNIFFER.set(&mut o.sniffer, "enable", true.into());
+        SNIFFER.set(
+            &mut o.sniffer,
+            "skip-domain",
+            json!(["rule-set:广告拦截", "+.apple.com"]),
+        );
+        SNIFFER.set(
+            &mut o.sniffer,
+            "sniff.TLS",
+            with_ports(&json!({}), vec!["443".into(), "8443".into()]),
+        );
+        for k in [
+            "enable",
+            "enhanced-mode",
+            "nameserver",
+            "nameserver-policy",
+            "fake-ip-filter",
+        ] {
+            cp::PROFILE_DNS.add(&mut o.dns, k);
+        }
+        cp::PROFILE_DNS.set(&mut o.dns, "enable", true.into());
+        cp::PROFILE_DNS.set(
+            &mut o.dns,
+            "nameserver",
+            json!([
+                "https://dns.google/dns-query#节点选择",
+                "tls://1.1.1.1#缺失代理",
+                "223.5.5.5"
+            ]),
+        );
+        cp::PROFILE_DNS.set(
+            &mut o.dns,
+            "nameserver-policy",
+            json!({"rule-set:广告拦截": "rcode://success"}),
+        );
+        for k in ["mtu", "strict-route", "dns-hijack"] {
+            TUN.add(&mut o.tun, k);
+        }
+        o.proxy_providers.insert("机场订阅".into(), json!({"override": {"ip-version": "ipv4-prefer", "udp": true}, "health-check": {"interval": 600}, "filter": "(?i)港|hk`(?i)日本|jp", "exclude-filter": "过期"}));
+    }
+    s.profiles.insert(0, p);
+    s.settings.filters.push(seasoncat_ui::items::Filter {
+        label: "香港节点".into(),
+        regex: "(?i)港|hk".into(),
+    });
+    s.settings.filters.push(seasoncat_ui::items::Filter {
+        label: "美国节点".into(),
+        regex: "(?i)美|us".into(),
+    });
+    if !page.is_empty() {
+        let (meta, sections, issue) =
+            seasoncat_ui::profile_more_view(&s, "c", page, std::path::Path::new("/nonexistent"));
+        ui.set_pm_meta(meta);
+        ui.set_pm_sections(ModelRc::new(VecModel::from(sections)));
+        ui.set_pm_issue(issue.into());
+        return;
+    }
+    let data = proxy_groups::data(&s, "c");
+    let presets: Vec<(String, String)> = s
+        .settings
+        .filters
+        .iter()
+        .map(|f| (f.regex.clone(), f.label.clone()))
+        .collect();
+    let options = seasoncat_ui::providers::options_of(&s, "c", "机场订阅");
+    let draft = GroupDraft::open_provider("机场订阅", options.clone());
+    let mut tail = group_form_sections(&draft, &data);
+    let head: Vec<SetSection> = tail.drain(..1).collect();
+    ui.set_pg_title("机场订阅".into());
+    ui.set_pg_provider(true);
+    ui.set_pg_head(ModelRc::new(VecModel::from(head)));
+    ui.set_pg_members(ModelRc::new(VecModel::from(member_items(
+        &draft, &data, &presets,
+    ))));
+    ui.set_pg_tail(ModelRc::new(VecModel::from(tail)));
+    ui.set_pg_issue("".into());
+    if overlay == "pfpick" {
+        let (mut sections, searchable) = member_picker_sections(
+            0,
+            &options,
+            &data,
+            &presets,
+            &[],
+            "",
+            &["筛选".to_string(), "排除筛选".to_string()].into(),
+        );
+        sections.retain(|c| c.label == "筛选" || c.label == "排除筛选");
+        ui.set_pg_pick_sections(ModelRc::new(VecModel::from(sections)));
+        ui.set_pg_pick_searchable(searchable);
+        ui.set_pg_pick_searching(false);
+        ui.set_pg_pick_empty("暂无数据".into());
+    }
+}
+
 fn snapshot_rules(ui: &AppWindow, overlay: &str, w: u32) {
     use seasoncat_ui::profile_rules::{self as pr, Targets};
     if !overlay.starts_with("r-") {
@@ -1920,6 +2076,54 @@ fn main() {
         ("custom-groups-menu", 2, "", "custom", 1, "gmenu"),
         ("custom-groups-delete", 2, "", "custom", 1, "gdelete"),
         ("group-form", 2, "", "group", 1, "gform"),
+        ("pm-providers", 2, "", "pmore", 1, "pm:providers"),
+        ("pm-providers-small", 2, "", "pmore", 1, "pm:providers"),
+        ("pm-providers-wide", 2, "", "pmore", 1, "pm:providers"),
+        ("pm-providers-tablet", 2, "", "pmore", 1, "pm:providers"),
+        ("pm-more", 2, "", "pmore", 1, "pm:more"),
+        ("pm-more-small", 2, "", "pmore", 1, "pm:more"),
+        ("pm-more-wide", 2, "", "pmore", 1, "pm:more"),
+        ("pm-more-tablet", 2, "", "pmore", 1, "pm:more"),
+        ("pm-dialers", 2, "", "pmore", 1, "pm:dialers"),
+        ("pm-dialers-small", 2, "", "pmore", 1, "pm:dialers"),
+        ("pm-dialers-wide", 2, "", "pmore", 1, "pm:dialers"),
+        ("pm-dialers-tablet", 2, "", "pmore", 1, "pm:dialers"),
+        ("pm-dns", 2, "", "pmore", 1, "pm:dns"),
+        ("pm-dns-small", 2, "", "pmore", 1, "pm:dns"),
+        ("pm-dns-wide", 2, "", "pmore", 1, "pm:dns"),
+        ("pm-dns-tablet", 2, "", "pmore", 1, "pm:dns"),
+        ("pm-ntp", 2, "", "pmore", 1, "pm:ntp"),
+        ("pm-ntp-small", 2, "", "pmore", 1, "pm:ntp"),
+        ("pm-ntp-wide", 2, "", "pmore", 1, "pm:ntp"),
+        ("pm-ntp-tablet", 2, "", "pmore", 1, "pm:ntp"),
+        ("pm-sniffer", 2, "", "pmore", 1, "pm:sniffer"),
+        ("pm-sniffer-small", 2, "", "pmore", 1, "pm:sniffer"),
+        ("pm-sniffer-wide", 2, "", "pmore", 1, "pm:sniffer"),
+        ("pm-sniffer-tablet", 2, "", "pmore", 1, "pm:sniffer"),
+        ("pm-tun", 2, "", "pmore", 1, "pm:tun"),
+        ("pm-tun-small", 2, "", "pmore", 1, "pm:tun"),
+        ("pm-tun-wide", 2, "", "pmore", 1, "pm:tun"),
+        ("pm-tun-tablet", 2, "", "pmore", 1, "pm:tun"),
+        ("pform", 2, "", "group", 1, "pform"),
+        ("pform-small", 2, "", "group", 1, "pform"),
+        ("pform-wide", 2, "", "group", 1, "pform"),
+        ("pform-tablet", 2, "", "group", 1, "pform"),
+        ("pm-sniff", 2, "", "pmore", 1, "pm:sniff:sniff.TLS"),
+        ("pm-sniff-small", 2, "", "pmore", 1, "pm:sniff:sniff.TLS"),
+        ("pm-list", 2, "", "pmore", 1, "pm:list:dns:nameserver"),
+        ("pm-list-small", 2, "", "pmore", 1, "pm:list:dns:nameserver"),
+        ("pm-ntp-empty", 2, "", "pmore", 1, "pm:ntp:empty"),
+        ("pm-ntp-empty-small", 2, "", "pmore", 1, "pm:ntp:empty"),
+        (
+            "pm-providers-empty",
+            2,
+            "",
+            "pmore",
+            1,
+            "pm:providers:empty",
+        ),
+        ("pform-pick", 2, "", "group-members", 1, "pfpick"),
+        ("pform-pick-small", 2, "", "group-members", 1, "pfpick"),
         ("group-form-small", 2, "", "group", 1, "gform"),
         ("group-form-wide", 2, "", "group", 1, "gform"),
         ("group-form-tablet", 2, "", "group", 1, "gform"),
@@ -2204,24 +2408,6 @@ fn main() {
         ("set-network-small", 3, "", "network", 1, ""),
         ("set-network-wide", 3, "", "network", 1, ""),
         ("set-network-tablet", 3, "", "network", 1, ""),
-        ("set-network-tun", 3, "", "network", 1, "tun"),
-        ("set-network-tun-small", 3, "", "network", 1, "tun"),
-        ("set-network-tun-wide", 3, "", "network", 1, "tun"),
-        ("set-network-tun-tablet", 3, "", "network", 1, "tun"),
-        ("set-sniffer", 3, "", "sniffer", 1, ""),
-        ("set-sniffer-small", 3, "", "sniffer", 1, ""),
-        ("set-sniffer-wide", 3, "", "sniffer", 1, ""),
-        ("set-sniffer-tablet", 3, "", "sniffer", 1, ""),
-        ("set-sniffer-empty", 3, "", "sniffer", 1, "empty"),
-        ("set-sniff", 3, "", "sniff", 1, ""),
-        ("set-sniff-small", 3, "", "sniff", 1, ""),
-        ("set-sniff-wide", 3, "", "sniff", 1, ""),
-        ("set-sniff-tablet", 3, "", "sniff", 1, ""),
-        ("set-ntp", 3, "", "ntp", 1, ""),
-        ("set-ntp-small", 3, "", "ntp", 1, ""),
-        ("set-ntp-wide", 3, "", "ntp", 1, ""),
-        ("set-ntp-tablet", 3, "", "ntp", 1, ""),
-        ("set-ntp-empty", 3, "", "ntp", 1, "empty"),
         ("set-list", 3, "", "list", 1, ""),
         ("set-list-small", 3, "", "list", 1, ""),
         ("set-ondemand", 3, "", "on-demand", 1, ""),
@@ -2635,6 +2821,7 @@ fn main() {
         }
         snapshot_groups(&ui, overlay, w);
         snapshot_rules(&ui, overlay, w);
+        snapshot_more(&ui, overlay);
         if matches!(*overlay, "groupmenu" | "tabs" | "tabs-list") {
             let mut many: Vec<ProxyGroup> = base_groups.iter().collect();
             for (i, name) in [

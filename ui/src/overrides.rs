@@ -393,9 +393,6 @@ pub fn spec(id: &str) -> Option<&'static Spec> {
     match id {
         "dns" => Some(&DNS),
         "general" => Some(&GENERAL),
-        "tun" => Some(&crate::tun_sniffer_ntp::TUN),
-        "sniffer" => Some(&crate::tun_sniffer_ntp::SNIFFER),
-        "ntp" => Some(&crate::tun_sniffer_ntp::NTP),
         _ => None,
     }
 }
