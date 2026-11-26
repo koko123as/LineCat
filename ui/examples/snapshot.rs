@@ -3,7 +3,7 @@
 use seasoncat_ui::*;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Platform, WindowAdapter};
-use slint::{Model, ModelRc, Rgb8Pixel, VecModel};
+use slint::{Model, ModelRc, Rgb8Pixel, SharedString, VecModel};
 use std::rc::Rc;
 
 struct Headless(Rc<MinimalSoftwareWindow>);
@@ -185,7 +185,19 @@ fn requests_shot(
     ui.set_req_rows(model(st.rows(&cx)));
     ui.set_req_segment(st.segment);
     ui.set_req_shows_http(true);
-    ui.set_req_statuses(ModelRc::new(VecModel::from(st.status_labels())));
+    let names = seasoncat_ui::requests_view::status_names(st.segment);
+    ui.set_req_statuses(ModelRc::new(VecModel::from(
+        names
+            .iter()
+            .map(|n| SharedString::from(*n))
+            .collect::<Vec<_>>(),
+    )));
+    ui.set_req_counts(ModelRc::new(VecModel::from(
+        st.status_counts()
+            .iter()
+            .map(SharedString::from)
+            .collect::<Vec<_>>(),
+    )));
     ui.set_req_status(st.filters().status);
     ui.set_req_conditions(ModelRc::new(VecModel::from(st.condition_lines())));
     let (empty, desc) = st.empty(false);
@@ -1500,7 +1512,7 @@ fn snapshot_rules(ui: &AppWindow, overlay: &str, w: u32) {
     let shown: Vec<&seasoncat_ui::custom_profile::ProfileRule> = if overlay == "r-search" {
         rules
             .iter()
-            .filter(|r| pr::matches(r, "rule_set"))
+            .filter(|r| pr::matches(r, "rule-set"))
             .collect()
     } else if overlay == "r-empty" {
         Vec::new()
@@ -2098,6 +2110,7 @@ fn main() {
     });
     let shots: &[(&str, i32, &str, &str, i32, &str)] = &[
         ("requests", 3, "", "requests", 1, "req:0:0:0"),
+        ("requests-dock", 4, "", "", 1, "req:1:0:0"),
         ("requests-filter", 3, "", "requests", 1, "req:0:0:0:filter"),
         (
             "requests-filter-small",
@@ -3072,6 +3085,7 @@ fn main() {
         if !only.is_empty() && !only.split(',').any(|p| name.contains(p)) {
             continue;
         }
+        ui.set_captures_http(name.contains("dock"));
         let sized = name
             .rsplit('-')
             .next()

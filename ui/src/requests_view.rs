@@ -171,6 +171,14 @@ impl ReqState {
         self.tab_view = Some(v);
     }
 
+    /// `openDashboardFeed`: live connections open on the active ones.
+    pub fn open_feed(&mut self, feed: i32) {
+        self.open_sheet(if feed == 2 { DNS } else { CONNECTIONS });
+        if feed == 0 {
+            self.filters_mut().status = 1;
+        }
+    }
+
     pub fn close_sheet(&mut self) {
         if let Some(mut v) = self.tab_view.take() {
             self.swap_view(&mut v);
@@ -185,16 +193,31 @@ impl ReqState {
         &mut self.filters[self.segment.clamp(0, 2) as usize]
     }
 
-    pub fn status_labels(&self) -> Vec<SharedString> {
+    pub fn status_counts(&self) -> [String; 3] {
         let counts = match self.segment {
             HTTP => self.http.status_counts(),
             DNS => self.dns.status_counts(),
             _ => self.conns.status_counts(),
         };
+        counts.map(grouped)
+    }
+
+    /// `_StatusMenuButton`'s menu.
+    pub fn status_actions(&self) -> Vec<ActionItem> {
+        let status = self.filters().status;
         status_names(self.segment)
             .iter()
-            .zip(counts)
-            .map(|(name, n)| s(format!("{name} {}", grouped(n))))
+            .zip(self.status_counts())
+            .enumerate()
+            .map(|(i, (name, n))| ActionItem {
+                id: s(format!("status:{i}")),
+                label: s(name),
+                subtitle: s(n),
+                check: true,
+                checked: i as i32 == status,
+                enabled: true,
+                ..Default::default()
+            })
             .collect()
     }
 
@@ -231,8 +254,21 @@ impl ReqState {
 
     /// The list's null status: its label and description.
     pub fn empty(&self, no_host: bool) -> (String, String) {
-        if self.is_searching() {
+        if !self.query.trim().is_empty() || !self.filters().conditions.is_empty() {
             return ("没有匹配的结果".into(), String::new());
+        }
+        let status = self.filters().status;
+        let named = match (self.segment, status) {
+            (HTTP, 1) => "暂无失败的 HTTP 请求",
+            (HTTP, 2) => "暂无改写过的 HTTP 请求",
+            (DNS, 1) => "暂无失败的DNS查询",
+            (DNS, 2) => "暂无命中缓存的DNS查询",
+            (CONNECTIONS, 1) => "暂无活动连接",
+            (CONNECTIONS, 2) => "暂无失败的连接",
+            _ => "",
+        };
+        if !named.is_empty() {
+            return (named.into(), String::new());
         }
         match self.segment {
             HTTP => (
@@ -1465,6 +1501,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn live_connections_open_on_the_active_ones_and_name_an_empty_status() {
+        let mut st = ReqState::default();
+        st.open_feed(0);
+        assert_eq!((st.segment, st.filters[0].status), (CONNECTIONS, 1));
+        assert_eq!(st.empty(false).0, "暂无活动连接");
+        st.open_feed(1);
+        assert_eq!(st.filters[0].status, 0);
+        assert_eq!(st.empty(false).0, "暂无连接");
+        st.open_feed(2);
+        st.filters[2].status = 2;
+        assert_eq!(st.empty(false).0, "暂无命中缓存的DNS查询");
+        st.query = "a".into();
+        assert_eq!(st.empty(false).0, "没有匹配的结果");
+    }
+
+    #[test]
     fn the_dashboard_sheet_keeps_its_own_view() {
         let mut st = ReqState {
             segment: HTTP,
@@ -1533,7 +1585,8 @@ mod tests {
         assert!(rows[1].first && rows[1].last && rows[1].selected && !rows[3].selected);
         assert_eq!(rows[1].well, "C");
         assert_eq!(monogram("com.google.android.youtube"), "Y");
-        assert_eq!(st.status_labels()[1], "活动 2");
+        assert_eq!(st.status_counts()[1], "2");
+        assert_eq!(st.status_actions()[1].label, "活动");
         assert_eq!(rows[1].time, rows[0].time);
         assert!(rows[1].time.starts_with("1970-01-01 00:02:"));
         assert_eq!(row_y(rows.iter().cloned(), 1), Some(40.0 + 64.0 + 40.0));

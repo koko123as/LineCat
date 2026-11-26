@@ -73,7 +73,8 @@ fn section(title: &str, footer: &str, rows: Vec<SetRow>) -> SetSection {
 /// settings pages there are.
 pub fn tools(settings: &Settings, mobile: bool, pages: &[&str]) -> Vec<SetSection> {
     let mut more = Vec::new();
-    if mobile {
+    // `NavigationItemMode.moreFull`: while HTTP is captured 请求 is in the phone bar instead.
+    if mobile && !crate::http_capture::capturing(&settings.mitm) {
         more.push(open("requests", "requests", "请求"));
     }
     more.push(open("resources", "resources", "资源"));

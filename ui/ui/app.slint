@@ -7549,37 +7549,47 @@ component ColorPage inherits Rectangle {
 // ---------------------------------------------------------------- Requests
 
 // `SegmentedControl` (compact): a tray with the chosen segment raised.
+// `_StatusMenuButton`: the status shown with its count, opening a menu of the statuses.
 component StatusBar inherits Rectangle {
     in property <[string]> items;
+    in property <[string]> counts;
     in property <int> value;
-    callback picked(int);
-    height: 32px;
-    Flickable {
-        content-width: max(tray.preferred-width, 0px);
-        interactive: tray.preferred-width > self.width;
-        tray := Rectangle {
-            width: row.preferred-width;
-            height: 32px;
-            border-radius: 16px;
-            background: Theme.s.block;
+    callback open-menu();
+    height: 36px;
+    min-width: 0px;
+    Rectangle {
+            x: 0;
+            width: min(row.preferred-width, root.width);
+            height: root.height;
+            border-radius: 18px;
+            background: ta.pressed ? Theme.s.inset : Theme.s.card;
             row := HorizontalLayout {
-                padding: 2px;
-                for label[i] in root.items: Rectangle {
-                    width: status-text.preferred-width * 1.12 + 24px;
-                    border-radius: 14px;
-                    background: i == root.value ? Theme.s.card : transparent;
-                    status-text := Text {
-                        text: label;
-                        font-size: 13px * Type.scale;
-                        font-weight: i == root.value ? 600 : 400;
-                        color: i == root.value ? Theme.s.on-surface : Theme.s.on-surface-variant;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                    TouchArea { clicked => { root.picked(i); } }
+                padding-left: 14px;
+                padding-right: 10px;
+                spacing: 6px;
+                Text {
+                    text: root.value < root.items.length ? root.items[root.value] : "";
+                    font-size: 15px * Type.scale;
+                    font-weight: 600;
+                    color: Theme.s.on-surface;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.value < root.counts.length ? root.counts[root.value] : "";
+                    min-width: self.preferred-width * 1.08;
+                    font-size: 15px * Type.scale;
+                    color: Theme.s.on-surface-variant;
+                    vertical-alignment: center;
+                }
+                VerticalLayout { alignment: center; Icon { glyph: Icons.updown; size: 16px; tint: Theme.s.on-surface-variant; } }
+            }
+            ta := TouchArea {
+                clicked => {
+                    MenuAnchor.at(self.absolute-position.x, self.absolute-position.y, 0px, self.height);
+                    root.open-menu();
                 }
             }
-        }
     }
 }
 
@@ -7726,7 +7736,7 @@ component RecordRowView inherits Rectangle {
             VerticalLayout { alignment: center; Well { text: root.rec.well; label: root.rec.well-label; app: root.rec.app; } }
             VerticalLayout {
                 alignment: center;
-                spacing: 3px;
+                spacing: 4px;
                 horizontal-stretch: 1;
                 Text { text: root.rec.title; font-size: 15px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
                 HorizontalLayout {
@@ -7834,7 +7844,7 @@ component DetailRowView inherits Rectangle {
             height: 48px;
             padding-left: 16px;
             padding-right: 16px;
-            spacing: 12px;
+            spacing: 24px;
             Text { text: root.item.title; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; min-width: min(self.preferred-width, 72px); }
             if root.item.value != "": Text {
                 text: root.item.value;
@@ -7886,7 +7896,7 @@ component DetailRowView inherits Rectangle {
                 spacing: 2px;
                 horizontal-stretch: 1;
                 Text { text: root.item.title; font-size: 15px * Type.scale; font-weight: root.item.mark == 1 && root.item.kind == "rail" ? 600 : 400; color: Theme.s.on-surface; overflow: elide; }
-                if root.item.note != "": Text { text: root.item.note; font-size: 12px * Type.scale; color: root.item.kind == "link" && root.item.tone == 1 ? Theme.s.error : root.muted; overflow: elide; }
+                if root.item.note != "": Text { text: root.item.note; font-size: 13px * Type.scale; color: root.item.kind == "link" && root.item.tone == 1 ? Theme.s.error : root.muted; overflow: elide; }
             }
             if root.item.trailing != "": Text {
                 text: root.item.trailing;
@@ -7917,7 +7927,7 @@ component DetailRowView inherits Rectangle {
                         Icon { glyph: cell.glyph; size: 16px; tint: Theme.s.primary; }
                         Text { text: cell.label; font-size: 13px * Type.scale; color: root.muted; vertical-alignment: center; }
                     }
-                    Text { text: cell.figure; font-size: 20px * Type.scale; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 20px * 0.62) * 1.1; }
+                    Text { text: cell.figure; font-size: 17px * Type.scale; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 17px * 0.62) * 1.1; }
                     if cell.speed != "": Text { text: cell.speed + "/s"; font-size: 12px * Type.scale; color: root.muted; }
                 }
             }
@@ -7943,12 +7953,12 @@ component DetailView inherits Rectangle {
         HorizontalLayout {
             padding-left: 16px;
             padding-right: 8px;
-            padding-bottom: root.detail.tabs.length > 1 ? 12px : 8px;
+            padding-bottom: 16px;
             spacing: 12px;
-            if root.detail.well != "": VerticalLayout { alignment: center; Well { text: root.detail.well; label: root.detail.well-label; app: root.detail.app; size: 48px; } }
+            if root.detail.well != "": VerticalLayout { alignment: center; Well { text: root.detail.well; label: root.detail.well-label; app: root.detail.app; size: 40px; } }
             VerticalLayout {
                 alignment: center;
-                spacing: 2px;
+                spacing: 4px;
                 horizontal-stretch: 1;
                 Text { text: root.detail.title; font-size: 17px * Type.scale; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
                 if root.detail.subtitle != "": Text { text: root.detail.subtitle; font-size: 13px * Type.scale; color: root.detail.subtitle-error ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
@@ -7983,7 +7993,7 @@ component DetailView inherits Rectangle {
                 for sec in root.detail.sections: VerticalLayout {
                     if sec.title != "": HorizontalLayout {
                         padding-left: 14px;
-                        Text { text: sec.title; height: 40px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: bottom; }
+                        Text { text: sec.title; height: 40px; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; vertical-alignment: bottom; }
                     }
                     if sec.title != "": Rectangle { height: 6px; }
                     if sec.title == "": Rectangle { height: 12px; }
@@ -8019,10 +8029,11 @@ component ReqHeader inherits VerticalLayout {
     in property <int> segment;
     in property <bool> shows-http;
     in property <[string]> statuses;
+    in property <[string]> counts;
     in property <int> status;
     in property <[ConditionLine]> conditions;
     callback set-segment(int);
-    callback set-status(int);
+    callback status-menu();
     callback add-condition();
     callback edit-condition(int);
     callback remove-condition(int);
@@ -8048,13 +8059,14 @@ component ReqHeader inherits VerticalLayout {
             StatusBar {
                 horizontal-stretch: 1;
                 items: root.statuses;
+                counts: root.counts;
                 value: root.status;
-                picked(i) => { root.set-status(i); }
+                open-menu => { root.status-menu(); }
             }
             Rectangle {
-                width: 32px;
-                height: 32px;
-                border-radius: 16px;
+                width: 36px;
+                height: 36px;
+                border-radius: 18px;
                 background: add-ta.pressed ? Theme.s.inset : Theme.s.block;
                 Icon { glyph: Icons.plus; size: 18px; tint: Theme.s.on-surface; }
                 add-ta := TouchArea { clicked => { root.add-condition(); } }
@@ -8317,6 +8329,7 @@ component RequestsPage inherits Rectangle {
     in property <length> shift;
     in property <int> shift-seq;
     in property <[string]> statuses;
+    in property <[string]> counts;
     in property <int> status;
     in property <[ConditionLine]> conditions;
     in property <string> empty;
@@ -8339,7 +8352,7 @@ component RequestsPage inherits Rectangle {
     callback search(string);
     callback open-menu();
     callback set-segment(int);
-    callback set-status(int);
+    callback status-menu();
     callback add-condition();
     callback edit-condition(int);
     callback remove-condition(int);
@@ -8405,10 +8418,11 @@ component RequestsPage inherits Rectangle {
             segment: root.segment;
             shows-http: root.shows-http;
             statuses: root.statuses;
+            counts: root.counts;
             status: root.status;
             conditions: root.conditions;
             set-segment(s) => { root.set-segment(s); }
-            set-status(s) => { root.set-status(s); }
+            status-menu => { root.status-menu(); }
             add-condition => { root.add-condition(); }
             edit-condition(i) => { root.edit-condition(i); }
             remove-condition(i) => { root.remove-condition(i); }
@@ -8434,10 +8448,11 @@ component RequestsPage inherits Rectangle {
                     segment: root.segment;
                     shows-http: root.shows-http;
                     statuses: root.statuses;
+                    counts: root.counts;
                     status: root.status;
                     conditions: root.conditions;
                     set-segment(s) => { root.set-segment(s); }
-                    set-status(s) => { root.set-status(s); }
+                    status-menu => { root.status-menu(); }
                     add-condition => { root.add-condition(); }
                     edit-condition(i) => { root.edit-condition(i); }
                     remove-condition(i) => { root.remove-condition(i); }
@@ -9392,6 +9407,7 @@ export component AppWindow inherits Window {
     in property <length> req-shift;
     in property <int> req-shift-seq;
     in property <[string]> req-statuses;
+    in property <[string]> req-counts;
     in property <int> req-status;
     in property <[ConditionLine]> req-conditions;
     in property <string> req-empty;
@@ -9425,6 +9441,7 @@ export component AppWindow inherits Window {
     callback req-open-menu();
     callback req-set-segment(int);
     callback req-set-status(int);
+    callback req-status-menu();
     callback req-add-condition();
     callback req-edit-condition(int);
     callback req-remove-condition(int);
@@ -9643,13 +9660,14 @@ export component AppWindow inherits Window {
         root.go(t);
     }
 
-    public function open-feed(segment: int) {
+    // `DashboardFeed`: 0 live connections (on the active ones), 1 recent requests, 2 DNS.
+    public function open-feed(feed: int) {
         root.feed-tall = false;
         root.feed-searching = false;
         root.feed-query = "";
         root.req-sheet-open = false;
         root.feed-open = true;
-        root.req-feed(true, segment);
+        root.req-feed(true, feed);
     }
     public function close-feed() {
         root.req-sheet-open = false;
@@ -9751,11 +9769,14 @@ export component AppWindow inherits Window {
     in property <bool> groups-loaded;
     property <bool> has-proxies: root.groups-loaded ? root.proxy-groups.length > 0 : root.profiles.length > 0;
     changed has-proxies => { if (!root.has-proxies && root.tab == 1) { root.go(0); } }
-    // `shownPageLabelOf`: 请求 has no phone item, so a window narrowed on it shows the
-    // first item, and widening again returns to 请求.
+    // `capturesHttp`: while HTTP is captured 请求 is a phone destination too.
+    in property <bool> captures-http;
+    changed captures-http => { if (!root.captures-http && !root.wide && root.tab == 4) { root.go(0); } }
+    // `shownPageLabelOf`: without capture 请求 has no phone item, so a window narrowed on it
+    // shows the first item, and widening again returns to 请求.
     property <bool> narrowed-from-requests;
     changed wide => {
-        if (!root.wide && root.tab == 4) {
+        if (!root.wide && root.tab == 4 && !root.captures-http) {
             root.go(0);
             root.narrowed-from-requests = true;
         } else if (root.wide && root.narrowed-from-requests && root.tab == 0) {
@@ -9956,7 +9977,7 @@ export component AppWindow inherits Window {
                     retry-services => { root.dash-probe-services(); }
                     services-checking: root.dash-services-checking;
                     open-services => { root.svc-sheet-page = ""; root.svc-sheet-open = true; }
-                    open-stats(i) => { root.open-feed(i == 2 ? 2 : 0); }
+                    open-stats(i) => { root.open-feed(i); }
                     edit(a, w) => { root.edit-dashboard(a, w); }
                     move(f, t) => { root.dash-move(f, t); }
                     card-height(i, h) => { root.dash-card-height(i, h); }
@@ -10513,6 +10534,7 @@ export component AppWindow inherits Window {
                     shift: root.req-shift;
                     shift-seq: root.req-shift-seq;
                     statuses: root.req-statuses;
+                    counts: root.req-counts;
                     status: root.req-status;
                     conditions: root.req-conditions;
                     empty: root.req-empty;
@@ -10525,7 +10547,7 @@ export component AppWindow inherits Window {
                     search(q) => { root.req-search(q); }
                     open-menu => { root.req-open-menu(); }
                     set-segment(s) => { root.req-set-segment(s); }
-                    set-status(s) => { root.req-set-status(s); }
+                    status-menu => { root.req-status-menu(); }
                     add-condition => { root.req-add-condition(); }
                     edit-condition(i) => { root.req-edit-condition(i); }
                     remove-condition(i) => { root.req-remove-condition(i); }
@@ -10696,6 +10718,7 @@ export component AppWindow inherits Window {
                     height: 64px;
                     NavItem { label: "仪表盘"; glyph: Icons.dashboard; active: root.tab == 0; clicked => { root.nav(0); } }
                     if root.has-proxies: NavItem { label: "代理"; glyph: Icons.proxies; active: root.tab == 1; clicked => { root.nav(1); } }
+                    if root.captures-http: NavItem { label: "请求"; glyph: Icons.requests; active: root.tab == 4; clicked => { root.nav(4); } }
                     NavItem { label: "配置"; glyph: Icons.profiles; active: root.tab == 2; clicked => { root.nav(2); } }
                     NavItem { label: "工具"; glyph: Icons.tools; active: root.tab == 3; clicked => { root.nav(3); } }
                 }
@@ -10712,6 +10735,7 @@ export component AppWindow inherits Window {
                     height: 80px;
                     BarItem { label: "仪表盘"; glyph: Icons.dashboard; active: root.tab == 0; clicked => { root.nav(0); } }
                     if root.has-proxies: BarItem { label: "代理"; glyph: Icons.proxies; active: root.tab == 1; clicked => { root.nav(1); } }
+                    if root.captures-http: BarItem { label: "请求"; glyph: Icons.requests; active: root.tab == 4; clicked => { root.nav(4); } }
                     BarItem { label: "配置"; glyph: Icons.profiles; active: root.tab == 2; clicked => { root.nav(2); } }
                     BarItem { label: "工具"; glyph: Icons.tools; active: root.tab == 3; clicked => { root.nav(3); } }
                 }
@@ -10735,6 +10759,7 @@ export component AppWindow inherits Window {
                 shift: root.req-shift;
                 shift-seq: root.req-shift-seq;
                 statuses: root.req-statuses;
+                counts: root.req-counts;
                 status: root.req-status;
                 conditions: root.req-conditions;
                 empty: root.req-empty;
@@ -10746,7 +10771,7 @@ export component AppWindow inherits Window {
                 search(q) => { root.req-search(q); }
                 open-menu => { root.req-open-menu(); }
                 set-segment(s) => { root.req-set-segment(s); }
-                set-status(s) => { root.req-set-status(s); }
+                status-menu => { root.req-status-menu(); }
                 add-condition => { root.req-add-condition(); }
                 edit-condition(i) => { root.req-edit-condition(i); }
                 remove-condition(i) => { root.req-remove-condition(i); }

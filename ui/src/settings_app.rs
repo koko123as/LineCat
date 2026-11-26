@@ -406,6 +406,7 @@ impl App {
             let width = window.size().width as f32 / window.scale_factor().max(0.1);
             let mobile = width <= 600.0;
             ui.set_tools_sections(models(settings_view::tools(&settings, mobile, PAGES)));
+            ui.set_captures_http(crate::http_capture::capturing(&settings.mitm));
             ui.set_pure_black(settings.pure_black);
             let page = ui.get_tools_page();
             let sections = match page.as_str() {

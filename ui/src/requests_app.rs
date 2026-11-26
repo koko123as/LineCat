@@ -218,7 +218,15 @@ impl App {
         }
         ui.set_req_segment(req.segment);
         ui.set_req_shows_http(shows_http);
-        ui.set_req_statuses(model(req.status_labels()));
+        ui.set_req_statuses(model(
+            requests_view::status_names(req.segment)
+                .iter()
+                .map(|n| SharedString::from(*n))
+                .collect(),
+        ));
+        ui.set_req_counts(model(
+            req.status_counts().iter().map(SharedString::from).collect(),
+        ));
         ui.set_req_status(req.filters().status);
         ui.set_req_conditions(model(req.condition_lines()));
         let (empty, desc) = req.empty(http_capture::has_no_host(&mitm));
@@ -396,6 +404,9 @@ impl App {
         let (name, arg) = id.split_once(':').unwrap_or((id, ""));
         let num: i64 = arg.parse().unwrap_or(0);
         match name {
+            "status" => {
+                self.req.lock().unwrap().filters_mut().status = (num as i32).clamp(0, 2);
+            }
             "capture-on" | "capture-off" => {
                 let on = name == "capture-on";
                 self.store.lock().unwrap().state.settings.mitm.capture = on;
@@ -404,6 +415,7 @@ impl App {
                 self.patch(
                     json!({"options": profile::options(&settings, on && self.mitm().enable)}),
                 );
+                self.publish_settings();
             }
             "capture-limit" => {
                 let items = {
@@ -934,6 +946,11 @@ impl App {
             a.republish();
         });
         let a = self.clone();
+        ui.on_req_status_menu(move || {
+            let items = a.req.lock().unwrap().status_actions();
+            a.show_actions(String::new(), items);
+        });
+        let a = self.clone();
         ui.on_req_add_condition(move || {
             a.req.lock().unwrap().open_draft(None);
             a.publish_draft(true);
@@ -1036,10 +1053,10 @@ impl App {
             a.republish();
         });
         let a = self.clone();
-        ui.on_req_feed(move |open, segment| {
+        ui.on_req_feed(move |open, feed| {
             let mut req = a.req.lock().unwrap();
             if open {
-                req.open_sheet(segment);
+                req.open_feed(feed);
             } else {
                 req.close_sheet();
             }
