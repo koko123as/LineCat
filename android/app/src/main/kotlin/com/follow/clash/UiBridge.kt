@@ -484,7 +484,8 @@ object UiBridge {
         // AppPlugin.installPackage: the PackageInstaller status, once the session ends.
         "update.install" -> {
             val apk = File(request.get("path")?.asString ?: error("path missing"))
-            ok { addProperty("status", installPackage(apk)) }
+            val status = installPackage(apk)
+            ok { addProperty("status", status) }
         }
 
         else -> error("unknown op")
