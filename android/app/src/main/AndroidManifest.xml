@@ -148,5 +148,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <provider
+            android:name=".UiCaptureProvider"
+            android:authorities="${applicationId}.ui.capture"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/ui_capture_paths" />
+        </provider>
     </application>
 </manifest>

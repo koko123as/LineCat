@@ -584,7 +584,7 @@ global Glyphs {
             : k == "photos" ? Icons.photos : k == "sliders" ? Icons.sliders : k == "shield" ? Icons.shield
             : k == "pin" ? Icons.pin : k == "check-circle" ? Icons.check-circle : k == "edit" ? Icons.edit
             : k == "copy" ? Icons.copy : k == "sync" ? Icons.sync : k == "export" ? Icons.export : k == "eye" ? Icons.eye
-            : k == "qr" ? Icons.qr : k == "sort" ? Icons.sort : k == "file" ? Icons.file
+            : k == "qr" ? Icons.qr : k == "devices" ? Icons.devices : k == "sort" ? Icons.sort : k == "file" ? Icons.file
             : k == "import-file" ? Icons.import-file : k == "cloud" ? Icons.cloud : k == "more-circle" ? Icons.more-circle
             : k == "lock-open" ? Icons.lock-open : k == "clock" ? Icons.clock : k == "link" ? Icons.link : k == "play" ? Icons.play : k == "puzzle" ? Icons.puzzle
             : k == "customize" ? Icons.customize : k == "text-short" ? Icons.text-short : k == "compose" ? Icons.compose : "";
@@ -8700,6 +8700,13 @@ export component AppWindow inherits Window {
     in-out property <bool> qr-open;
     in-out property <string> qr-title;
     in-out property <image> qr-image;
+    // "send" while the TV serves its send page: qr-text in place of the share tip.
+    in-out property <string> qr-kind;
+    in-out property <string> qr-text;
+    in property <bool> is-tv;
+    callback add-from-qr();
+    callback send-from-phone();
+    callback qr-closed();
     // Alert and confirm dialogs
     in-out property <bool> alert-open;
     in-out property <string> alert-title;
@@ -9136,7 +9143,7 @@ export component AppWindow inherits Window {
                     root.confirm-answer(root.confirm-action, root.confirm-arg, false);
                     return accept;
                 }
-                if (root.qr-open) { root.qr-open = false; return accept; }
+                if (root.qr-open) { root.qr-open = false; root.qr-closed(); return accept; }
                 if (root.age-open) { root.age-open = false; root.age-submit(""); return accept; }
                 if (root.menu-open) { root.menu-open = false; return accept; }
                 if (root.custom-menu-open) { root.custom-menu-open = false; return accept; }
@@ -10021,10 +10028,16 @@ export component AppWindow inherits Window {
             }
         }
 
-        // AddProfileMenu: 文件, 链接 and 自定义 (the scan entry is still to come), anchored at
-        // the button that opened it.
+        // AddProfileMenu, anchored at the button that opened it; 从手机发送 only on a TV.
         if root.add-menu-open: AnchorMenu {
-            items: [
+            items: root.is-tv ? [
+                { id: "qr", glyph: "qr", label: "二维码", enabled: true },
+                { id: "file", glyph: "import-file", label: "文件", enabled: true },
+                { id: "link", glyph: "cloud", label: "链接", enabled: true },
+                { id: "phone", glyph: "devices", label: "从手机发送", enabled: true },
+                { id: "custom", glyph: "customize", label: "自定义", enabled: true },
+            ] : [
+                { id: "qr", glyph: "qr", label: "二维码", enabled: true },
                 { id: "file", glyph: "import-file", label: "文件", enabled: true },
                 { id: "link", glyph: "cloud", label: "链接", enabled: true },
                 { id: "custom", glyph: "customize", label: "自定义", enabled: true },
@@ -10038,6 +10051,10 @@ export component AppWindow inherits Window {
                 root.add-menu-open = false;
                 if (id == "file") {
                     root.add-file();
+                } else if (id == "qr") {
+                    root.add-from-qr();
+                } else if (id == "phone") {
+                    root.send-from-phone();
                 } else if (id == "custom") {
                     root.add-custom();
                 } else {
@@ -10195,15 +10212,15 @@ export component AppWindow inherits Window {
         if root.qr-open: Dialog {
             title: root.qr-title;
             top: root.top-inset;
-            dismiss => { root.qr-open = false; }
-            HorizontalLayout {
+            dismiss => { root.qr-open = false; root.qr-closed(); }
+            if root.qr-kind != "send" || root.qr-image.width > 0: HorizontalLayout {
                 alignment: center;
-                Image { source: root.qr-image; width: 240px; height: 240px; image-rendering: pixelated; }
+                Image { source: root.qr-image; width: root.qr-kind == "send" ? 200px : 240px; height: self.width; image-rendering: pixelated; }
             }
-            Text { text: "在另一台设备上用 FlClash 扫码即可导入此配置。"; wrap: word-wrap; color: Theme.s.on-surface-variant; horizontal-alignment: center; }
+            Text { text: root.qr-kind == "send" ? root.qr-text : "在另一台设备上用 FlClash 扫码即可导入此配置。"; wrap: word-wrap; color: Theme.s.on-surface-variant; horizontal-alignment: center; }
             HorizontalLayout {
                 alignment: end;
-                TextButton { text: "确定"; clicked => { root.qr-open = false; } }
+                TextButton { text: root.qr-kind == "send" ? "取消" : "确定"; clicked => { root.qr-open = false; root.qr-closed(); } }
             }
         }
 

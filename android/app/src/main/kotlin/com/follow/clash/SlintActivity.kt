@@ -26,6 +26,7 @@ class SlintActivity : NativeActivity() {
     private var permissionCallback: ((Boolean) -> Unit)? = null
     private var permissionsCallback: (() -> Unit)? = null
     private var settingsCallback: ((Boolean) -> Unit)? = null
+    private var captureCallback: ((Boolean) -> Unit)? = null
     private val layoutListener = ViewTreeObserver.OnGlobalLayoutListener { reportEdges() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,6 +101,8 @@ class SlintActivity : NativeActivity() {
         permissionsCallback = null
         settingsCallback?.invoke(false)
         settingsCallback = null
+        captureCallback?.invoke(false)
+        captureCallback = null
         val exit = isFinishing && UiBridge.isStopped
         super.onDestroy()
         // Nothing runs once the UI is closed and the VPN is off, so the process goes with it
@@ -130,6 +133,17 @@ class SlintActivity : NativeActivity() {
             .onFailure {
                 documentCallback = null
                 callback(null)
+            }
+    }
+
+    /** A camera capture into the intent's EXTRA_OUTPUT; [callback] gets whether a photo was taken. */
+    fun startCapture(intent: Intent, callback: (Boolean) -> Unit) {
+        captureCallback?.invoke(false)
+        captureCallback = callback
+        runCatching { startActivityForResult(intent, CAPTURE_REQUEST) }
+            .onFailure {
+                captureCallback = null
+                callback(false)
             }
     }
 
@@ -202,6 +216,12 @@ class SlintActivity : NativeActivity() {
             callback?.invoke(true)
             return
         }
+        if (requestCode == CAPTURE_REQUEST) {
+            val callback = captureCallback
+            captureCallback = null
+            callback?.invoke(resultCode == RESULT_OK)
+            return
+        }
         if (requestCode == DOCUMENT_REQUEST) {
             val callback = documentCallback
             documentCallback = null
@@ -218,6 +238,7 @@ class SlintActivity : NativeActivity() {
         const val PERMISSION_REQUEST = 0x5052
         const val PERMISSIONS_REQUEST = 0x5053
         const val SETTINGS_REQUEST = 0x5354
+        const val CAPTURE_REQUEST = 0x5143
         const val PREFERENCES = "seasoncat_shell"
         const val NOTIFICATION_ASKED = "notification_asked"
     }

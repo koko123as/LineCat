@@ -100,6 +100,10 @@ pub use custom_proxies_app::{
     list_sections as custom_proxies_sections,
 };
 pub mod hct;
+pub mod link_receiver;
+pub mod qr_decode;
+pub mod qr_import;
+mod qr_import_app;
 pub mod update;
 mod update_app;
 
@@ -584,6 +588,8 @@ impl App {
         if let Some(scale) = hello.get("fontScale").and_then(Value::as_f64) {
             self.set_system_font_scale(scale as f32);
         }
+        let tv = hello.get("isTelevision").and_then(Value::as_bool) == Some(true);
+        self.ui(move |ui| ui.set_is_tv(tv));
         let greeting = bridge.call(
             "core.hello",
             json!({"protocol": {"min": 1, "max": 1}, "client": {"name": "seasoncat-ui", "version": VERSION}}),
@@ -2028,35 +2034,14 @@ impl App {
         else {
             return;
         };
-        let Ok(code) = qrcode::QrCode::new(p.url.as_bytes()) else {
+        let Some(image) = qr_import_app::qr_picture(&p.url) else {
             return self.alert("二维码", "链接过长，无法生成二维码，请改用“复制链接”。");
         };
-        let modules = code.width();
-        let quiet = 2;
-        let scale = 8;
-        let side = (modules + quiet * 2) * scale;
-        let mut buffer =
-            slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(side as u32, side as u32);
-        let colors = code.to_colors();
-        for (i, px) in buffer.make_mut_slice().iter_mut().enumerate() {
-            let (x, y) = (i % side / scale, i / side / scale);
-            let dark = x >= quiet
-                && y >= quiet
-                && x < modules + quiet
-                && y < modules + quiet
-                && colors[(y - quiet) * modules + (x - quiet)] == qrcode::Color::Dark;
-            let v = if dark { 0 } else { 255 };
-            *px = slint::Rgba8Pixel {
-                r: v,
-                g: v,
-                b: v,
-                a: 255,
-            };
-        }
         let title = p.label();
         self.ui(move |ui| {
             ui.set_qr_title(title.into());
-            ui.set_qr_image(slint::Image::from_rgba8(buffer));
+            ui.set_qr_image(slint::Image::from_rgba8(image));
+            ui.set_qr_kind("".into());
             ui.set_qr_open(true);
         });
     }
@@ -2173,6 +2158,7 @@ impl App {
             ("ua-delete", true) => self.delete_user_agent(&arg),
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings" | "location-settings", true) => self.open_app_settings(),
+            ("send-import", true) => self.import_sent_link(arg),
             ("edit-save", _) => self.save_edit(form, yes),
             ("color-reset" | "color-delete", true) => self.theme_confirmed(&action, &arg),
             _ => {}
@@ -2560,6 +2546,12 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     });
     let a = app.clone();
     ui.on_add_file(move || a.add_file());
+    let a = app.clone();
+    ui.on_add_from_qr(move || a.add_from_qr());
+    let a = app.clone();
+    ui.on_send_from_phone(move || a.send_from_phone());
+    let a = app.clone();
+    ui.on_qr_closed(move || a.qr_closed());
     let a = app.clone();
     ui.on_age_submit(move |key| a.age_key_given(key.into()));
     let a = app.clone();

@@ -2280,6 +2280,11 @@ fn main() {
         ("proxies-search", 1, "节点选择", "", 1, "search"),
         ("profiles", 2, "", "", 1, ""),
         ("profiles-add-menu", 2, "", "", 1, "add-menu"),
+        ("profiles-add-menu-tv", 2, "", "", 1, "add-menu-tv"),
+        ("profiles-send-phone", 2, "", "", 1, "send-phone"),
+        ("profiles-send-phone-small", 2, "", "", 1, "send-phone"),
+        ("profiles-send-phone-tablet", 2, "", "", 1, "send-phone"),
+        ("profiles-send-phone-wide", 2, "", "", 1, "send-phone"),
         ("profiles-small", 2, "", "", 1, ""),
         ("profiles-menu-custom", 2, "", "", 1, "menu-custom"),
         ("profiles-menu-custom-small", 2, "", "", 1, "menu-custom"),
@@ -3161,8 +3166,29 @@ fn main() {
         ui.set_proxy_options_open(overlay.starts_with("options"));
         ui.set_proxy_sub(overlay.strip_prefix("options-").unwrap_or("").into());
         ui.set_proxy_searching(*overlay == "search");
-        ui.set_add_menu_open(*overlay == "add-menu");
-        if matches!(*overlay, "add-menu" | "menu") {
+        ui.set_add_menu_open(matches!(*overlay, "add-menu" | "add-menu-tv"));
+        ui.set_is_tv(*overlay == "add-menu-tv");
+        ui.set_qr_open(*overlay == "send-phone");
+        if *overlay == "send-phone" {
+            let address = "http://192.168.1.20:41234/q7Yc0bW1mF8pLr2xKa9TgA";
+            let code = qrcode::QrCode::new(address.as_bytes()).unwrap();
+            let n = code.width();
+            let colors = code.to_colors();
+            let mut p = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(n as u32, n as u32);
+            for (i, px) in p.make_mut_slice().iter_mut().enumerate() {
+                let v = if colors[i] == qrcode::Color::Dark {
+                    0
+                } else {
+                    255
+                };
+                *px = slint::Rgba8Pixel::new(v, v, v, 255);
+            }
+            ui.set_qr_title("从手机发送".into());
+            ui.set_qr_image(slint::Image::from_rgba8(p));
+            ui.set_qr_kind("send".into());
+            ui.set_qr_text(format!("{address}\n\n用手机相机扫描二维码，在打开的页面里粘贴链接。两台设备需要连在同一个网络。").into());
+        }
+        if matches!(*overlay, "add-menu" | "add-menu-tv" | "menu") {
             // The add button in the bar, or the first card.
             let menu = *overlay == "menu";
             ui.set_ctx_x(if menu { 16.0 } else { w as f32 - 48.0 });
