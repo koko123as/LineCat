@@ -2536,6 +2536,34 @@ fn locate_offset(ui: &AppWindow, group: &str) -> f32 {
 /// Builds the window, starts the shell connection and runs the event loop until the
 /// activity goes away.
 pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
+    let (ui, app) = wire(home)?;
+    let a = app.clone();
+    std::thread::Builder::new()
+        .name("ui-connect".into())
+        .spawn(move || a.connect_loop())
+        .map_err(|e| slint::PlatformError::Other(e.to_string()))?;
+
+    let a = app.clone();
+    std::thread::Builder::new()
+        .name("ui-auto-update".into())
+        .spawn(move || a.auto_update_loop())
+        .map_err(|e| slint::PlatformError::Other(e.to_string()))?;
+
+    let result = ui.run();
+    app.alive.store(false, Ordering::SeqCst);
+    if let Some(b) = app.bridge.lock().unwrap().take() {
+        b.close();
+    }
+    result
+}
+
+/// The window wired over the store in [home] with no shell connection, for tests.
+#[doc(hidden)]
+pub fn headless(home: PathBuf) -> Result<AppWindow, slint::PlatformError> {
+    wire(home).map(|(ui, _)| ui)
+}
+
+fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
     let ui = AppWindow::new()?;
     let store = Store::open(&home);
     let settings = store.state.settings.clone();
@@ -2762,24 +2790,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         }
     });
 
-    let a = app.clone();
-    std::thread::Builder::new()
-        .name("ui-connect".into())
-        .spawn(move || a.connect_loop())
-        .map_err(|e| slint::PlatformError::Other(e.to_string()))?;
-
-    let a = app.clone();
-    std::thread::Builder::new()
-        .name("ui-auto-update".into())
-        .spawn(move || a.auto_update_loop())
-        .map_err(|e| slint::PlatformError::Other(e.to_string()))?;
-
-    let result = ui.run();
-    app.alive.store(false, Ordering::SeqCst);
-    if let Some(b) = app.bridge.lock().unwrap().take() {
-        b.close();
-    }
-    result
+    Ok((ui, app))
 }
 
 #[cfg(test)]
