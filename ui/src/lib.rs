@@ -561,6 +561,7 @@ impl App {
                     }
                 }
                 Some("insets") => app.set_edges(event),
+                Some("link") => app.on_link(event["url"].as_str().unwrap_or_default()),
                 Some("network") => app.on_network(event["wifi"].as_bool() == Some(true)),
                 Some("resume") => {
                     if let Some(scale) = event.get("fontScale").and_then(Value::as_f64) {
@@ -592,6 +593,11 @@ impl App {
             self.set_system_font_scale(scale as f32);
         }
         let tv = hello.get("isTelevision").and_then(Value::as_bool) == Some(true);
+        let labels = json!({"start": "启动", "stop": "暂停", "toggle": "切换"});
+        let _ = bridge.shell("shortcuts.init", labels, CALL);
+        for link in hello["links"].as_array().into_iter().flatten() {
+            self.on_link(link.as_str().unwrap_or_default());
+        }
         self.ui(move |ui| ui.set_is_tv(tv));
         let greeting = bridge.call(
             "core.hello",
@@ -1156,6 +1162,19 @@ impl App {
             ui.set_alert_text(text);
             ui.set_alert_open(true);
         });
+    }
+
+    /// `LinkManager._handle` and `_initLink`: an install-config link asks before adding.
+    fn on_link(self: &Arc<Self>, link: &str) {
+        let Some(url) = qr_import::install_config_url(link) else {
+            return;
+        };
+        self.confirm(
+            "添加配置",
+            format!("是否要通过 {url} 创建配置？"),
+            "install-config",
+            url,
+        );
     }
 
     fn confirm(self: &Arc<Self>, title: &str, text: String, action: &str, arg: String) {
@@ -2188,6 +2207,13 @@ impl App {
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings" | "location-settings", true) => self.open_app_settings(),
             ("send-import", true) => self.import_sent_link(arg),
+            ("install-config", true) => self.spawn(move |app| {
+                app.ui(|ui| ui.set_adding(true));
+                if let Err(e) = app.add_from_link(String::new(), arg, String::new()) {
+                    app.alert("添加配置", e);
+                }
+                app.ui(|ui| ui.set_adding(false));
+            }),
             ("edit-save", _) => self.save_edit(form, yes),
             ("color-reset" | "color-delete", true) => self.theme_confirmed(&action, &arg),
             _ => {}

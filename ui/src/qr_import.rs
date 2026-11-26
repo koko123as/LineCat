@@ -21,7 +21,7 @@ pub fn profile_url_from_qr_codes<'a>(values: impl IntoIterator<Item = &'a str>) 
 }
 
 /// `_installConfigUrl`, with the query decoded as `Uri.queryParameters` decodes it.
-fn install_config_url(text: &str) -> Option<String> {
+pub(crate) fn install_config_url(text: &str) -> Option<String> {
     let (scheme, rest) = text.split_once("://")?;
     if !PROTOCOL_SCHEMES.contains(&scheme.to_ascii_lowercase().as_str()) {
         return None;

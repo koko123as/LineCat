@@ -59,6 +59,23 @@ class SlintActivity : NativeActivity() {
         surface.holder.addCallback(this)
         addContentView(surface, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         window.decorView.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
+        if (savedInstanceState == null) receiveLink(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receiveLink(intent)
+    }
+
+    // Recents relaunches an activity with the intent that first opened it.
+    private fun receiveLink(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW ||
+            intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        ) {
+            return
+        }
+        intent.dataString?.let(UiBridge::link)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

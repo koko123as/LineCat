@@ -13,6 +13,7 @@ import androidx.core.graphics.drawable.toBitmap
 import com.follow.clash.common.GlobalState
 import com.follow.clash.common.PendingCallback
 import com.follow.clash.common.registerReceiverCompat
+import com.follow.clash.common.shortcutId
 import com.follow.clash.core.Core
 import com.follow.clash.core.NativeCore
 import com.follow.clash.models.SharedState
@@ -63,6 +64,33 @@ object UiBridge {
 
     @Volatile
     var activity: SlintActivity? = null
+
+    private val pendingLinks = mutableListOf<String>()
+
+    @Volatile
+    private var greeted = false
+
+    /** Held until the UI's hello takes them, as LinkPlugin's `takeLinks`. */
+    fun link(url: String) {
+        synchronized(pendingLinks) {
+            if (!greeted) {
+                pendingLinks.add(url)
+                return
+            }
+        }
+        broadcast(JsonObject().apply {
+            addProperty("ev", "link")
+            addProperty("url", url)
+        })
+    }
+
+    private fun takeLinks(): JsonArray = synchronized(pendingLinks) {
+        greeted = true
+        JsonArray().also { links ->
+            pendingLinks.forEach(links::add)
+            pendingLinks.clear()
+        }
+    }
 
     @Synchronized
     fun start(context: Context) {
@@ -251,7 +279,16 @@ object UiBridge {
                 systemSeeds()?.let { add("seeds", it) }
                 addProperty("fontScale", fontScale())
                 addProperty("isTelevision", isTelevision)
+                add("links", takeLinks())
             }
+        }
+
+        "shortcuts.init" -> {
+            val labels = com.follow.clash.common.QuickAction.entries.associateWith { action ->
+                request.get(action.shortcutId)?.asString ?: error("${action.shortcutId} missing")
+            }
+            initQuickShortcuts(labels)
+            ok()
         }
 
         "vpn.state" -> ok { addProperty("state", ServiceState.runState.value.name) }

@@ -28,9 +28,6 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.getSystemService
 import androidx.core.content.IntentCompat
-import androidx.core.content.pm.ShortcutInfoCompat
-import androidx.core.content.pm.ShortcutManagerCompat
-import androidx.core.graphics.drawable.IconCompat
 import androidx.core.net.toUri
 import androidx.core.view.OnApplyWindowInsetsListener
 import androidx.core.view.ViewCompat
@@ -41,10 +38,10 @@ import com.follow.clash.common.Components
 import com.follow.clash.common.GlobalState
 import com.follow.clash.common.PendingCallback
 import com.follow.clash.common.QuickAction
-import com.follow.clash.common.quickIntent
 import com.follow.clash.common.registerReceiverCompat
 import com.follow.clash.common.shortcutId
 import com.follow.clash.getPackageIconPath
+import com.follow.clash.initQuickShortcuts
 import com.follow.clash.packages.PackageResolver
 import com.follow.clash.showToast
 import com.google.gson.Gson
@@ -572,27 +569,7 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
         }
     }
 
-    private fun initShortcuts(labels: Map<QuickAction, String>) {
-        val shortcuts = SHORTCUT_ORDER.mapIndexed { rank, action ->
-            with(ShortcutInfoCompat.Builder(GlobalState.application, action.shortcutId)) {
-                setShortLabel(labels.getValue(action))
-                setIcon(IconCompat.createWithResource(GlobalState.application, action.shortcutIcon))
-                setIntent(action.quickIntent)
-                setRank(rank)
-                build()
-            }
-        }
-        ShortcutManagerCompat.setDynamicShortcuts(GlobalState.application, shortcuts)
-    }
-
-    // Plain circles, not adaptive icons: an adaptive shortcut icon takes the
-    // launcher's own mask, which is a square on many devices.
-    private val QuickAction.shortcutIcon: Int
-        get() = when (this) {
-            QuickAction.START -> R.drawable.ic_shortcut_start
-            QuickAction.STOP -> R.drawable.ic_shortcut_stop
-            QuickAction.TOGGLE -> R.drawable.ic_shortcut_toggle
-        }
+    private fun initShortcuts(labels: Map<QuickAction, String>) = initQuickShortcuts(labels)
 
     private fun openAppSettings(): Boolean {
         val activity = activity ?: return false
@@ -887,7 +864,6 @@ class AppPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware 
     }
 
     private companion object {
-        val SHORTCUT_ORDER = listOf(QuickAction.START, QuickAction.STOP, QuickAction.TOGGLE)
         const val VPN_PERMISSION_REQUEST_CODE = 1001
         const val NOTIFICATION_PERMISSION_REQUEST_CODE = 1002
         const val INSTALLED_APPS_PERMISSION_REQUEST_CODE = 1003
