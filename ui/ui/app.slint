@@ -445,6 +445,8 @@ export struct PageMeta {
     long-press: bool,
     // `AppBarSearchState`: a search in the bar, sent as `search:<query>`.
     search: bool,
+    // The bar action stays while the page is empty (an add menu with more than 添加).
+    action-empty: bool,
 }
 
 // An installed app on the access control page (`PackageListItem`).
@@ -4537,6 +4539,7 @@ component SettingsPage inherits Rectangle {
     in property <string> empty;
     in property <string> empty-desc;
     in property <string> empty-action;
+    in property <bool> action-empty;
     property <bool> is-empty: root.empty != "" && root.sections.length == 0;
     // The Scaffold's sort mode: the rows below as a reorderable list, ✓ to leave.
     in property <bool> sorting;
@@ -4567,7 +4570,20 @@ component SettingsPage inherits Rectangle {
             if !root.sorting && root.searchable && !root.is-empty: VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
             if root.sorting: VerticalLayout { alignment: center; IconButton { glyph: Icons.check; tint: Theme.s.on-surface; clicked => { root.sort-done(); } } }
             if !root.sorting && root.action2-glyph != "": VerticalLayout { alignment: center; IconButton { glyph: root.action2-glyph; tint: Theme.s.on-surface; clicked => { root.action2(); } } }
-            if !root.sorting && root.action-glyph != "" && !root.is-empty: VerticalLayout { alignment: center; IconButton { glyph: root.action-glyph; tint: Theme.s.on-surface; clicked => { root.action(); } } }
+            if !root.sorting && root.action-glyph != "" && (!root.is-empty || root.action-empty): VerticalLayout {
+                alignment: center;
+                IconButton {
+                    glyph: root.action-glyph;
+                    tint: Theme.s.on-surface;
+                    clicked => {
+                        Anchor.x = self.absolute-position.x;
+                        Anchor.y = self.absolute-position.y;
+                        Anchor.w = self.width;
+                        Anchor.h = self.height;
+                        root.action();
+                    }
+                }
+            }
         }
         Rectangle {
             vertical-stretch: 1;
@@ -4608,7 +4624,13 @@ component SettingsPage inherits Rectangle {
         label: root.empty;
         description: root.empty-desc;
         action: root.empty-action;
-        act => { root.action(); }
+        act => {
+            if (root.action-empty) {
+                root.clicked("empty-action");
+            } else {
+                root.action();
+            }
+        }
     }
 }
 
@@ -9532,6 +9554,7 @@ export component AppWindow inherits Window {
                 if root.tab == 3 && root.meta.known: SettingsPage {
                     locked: od-body.dragging;
                     action-glyph: Glyphs.of(root.meta.action);
+                    action-empty: root.meta.action-empty;
                     action2-glyph: Glyphs.of(root.meta.action2);
                     long-press: root.meta.long-press;
                     sorting: root.set-sorting;
@@ -10738,7 +10761,7 @@ export component AppWindow inherits Window {
                 TextButton { text: root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save" ? "不保存" : "取消"; clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, false); } }
                 TextButton {
                     text: root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save" ? "保存" : root.confirm-action == "app-settings" ? "设置" : root.confirm-action == "delete" || root.confirm-action == "color-delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "pr-delete" || root.confirm-action == "icon-record-delete" ? "删除" : root.confirm-action == "close-active" ? "关闭" : root.confirm-action == "color-reset" ? "重置" : root.confirm-action == "ci-replace" ? "替换" : "确定";
-                    danger: root.confirm-action == "delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "pr-delete" || root.confirm-action == "icon-record-delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset" || root.confirm-action == "ci-replace";
+                    danger: root.confirm-action == "delete" || root.confirm-action == "ua-delete" || root.confirm-action == "pg-delete" || root.confirm-action == "pr-delete" || root.confirm-action == "icon-record-delete" || root.confirm-action == "close-active" || root.confirm-action == "color-delete" || root.confirm-action == "color-reset" || root.confirm-action == "ci-replace" || root.confirm-action == "cp-links-replace";
                     clicked => { root.confirm-open = false; root.confirm-answer(root.confirm-action, root.confirm-arg, true); }
                 }
             }

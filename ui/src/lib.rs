@@ -88,6 +88,8 @@ pub use mitm_app::{
     module_sections as mitm_module_sections, modules_sections as mitm_modules_sections,
 };
 mod custom_proxies_app;
+pub mod share_links;
+mod share_links_app;
 pub use custom_proxies_app::{
     editor_issue as custom_proxy_issue, editor_sections as custom_proxy_sections,
     list_sections as custom_proxies_sections,
@@ -2127,6 +2129,7 @@ impl App {
             ("rs-delete", true) => self.delete_rule_set(&arg),
             ("is-delete", true) => self.delete_icon_set(&arg),
             ("cp-delete", true) => self.delete_custom_proxy(&arg),
+            ("cp-links-replace", _) => self.links_replace_answer(yes),
             ("pg-delete", true) => self.delete_groups(&arg),
             ("pg-save", _) => self.pg_save_answer(yes),
             ("pr-delete", true) => self.delete_profile_rules(&arg),

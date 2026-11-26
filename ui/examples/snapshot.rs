@@ -2447,6 +2447,54 @@ fn main() {
         ("set-cproxies-tablet", 3, "", "custom-proxies", 1, ""),
         ("set-cproxies-empty", 3, "", "custom-proxies", 1, "empty"),
         ("set-cproxies-search", 3, "", "custom-proxies", 1, "search"),
+        ("set-cproxies-addmenu", 3, "", "custom-proxies", 1, "cp-add"),
+        (
+            "set-cproxies-addmenu-small",
+            3,
+            "",
+            "custom-proxies",
+            1,
+            "cp-add",
+        ),
+        (
+            "set-cproxies-addmenu-wide",
+            3,
+            "",
+            "custom-proxies",
+            1,
+            "cp-add",
+        ),
+        (
+            "set-cproxies-addmenu-tablet",
+            3,
+            "",
+            "custom-proxies",
+            1,
+            "cp-add",
+        ),
+        (
+            "set-cproxies-empty-small",
+            3,
+            "",
+            "custom-proxies",
+            1,
+            "empty",
+        ),
+        ("set-cproxies-links", 3, "", "editor", 1, "cp-links"),
+        ("set-cproxies-links-small", 3, "", "editor", 1, "cp-links"),
+        ("set-cproxies-links-wide", 3, "", "editor", 1, "cp-links"),
+        ("set-cproxies-links-tablet", 3, "", "editor", 1, "cp-links"),
+        ("set-cproxy-link", 3, "", "custom-proxy", 1, "cp-link"),
+        ("set-cproxy-link-small", 3, "", "custom-proxy", 1, "cp-link"),
+        ("set-cproxy-link-wide", 3, "", "custom-proxy", 1, "cp-link"),
+        (
+            "set-cproxy-link-tablet",
+            3,
+            "",
+            "custom-proxy",
+            1,
+            "cp-link",
+        ),
         ("set-cproxy", 3, "", "custom-proxy", 1, ""),
         ("set-cproxy-small", 3, "", "custom-proxy", 1, ""),
         ("set-cproxy-wide", 3, "", "custom-proxy", 1, ""),
@@ -2841,6 +2889,52 @@ fn main() {
             ui.set_tools_page((*page).into());
             ui.set_profiles_page("".into());
         }
+        if *overlay == "cp-add" {
+            ui.set_ctx_names(ModelRc::default());
+            ui.set_ctx_items(ModelRc::new(VecModel::from(
+                [
+                    ("add", "plus", "添加"),
+                    ("quick-edit", "compose", "快速编辑"),
+                ]
+                .iter()
+                .map(|(id, glyph, label)| ActionItem {
+                    id: (*id).into(),
+                    glyph: (*glyph).into(),
+                    label: (*label).into(),
+                    enabled: true,
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>(),
+            )));
+            ui.set_ctx_x(w as f32 - 48.0);
+            ui.set_ctx_y(8.0);
+            ui.set_ctx_w(40.0);
+            ui.set_ctx_h(40.0);
+            ui.set_ctx_kind("cp-add".into());
+        }
+        if *overlay == "cp-links" {
+            ui.set_tools_editor_title("代理".into());
+            ui.set_tools_editor_text("ss://YWVzLTEyOC1nY206cGFzcw@hk.example.com:8388#%E9%A6%99%E6%B8%AF%2001\nvless://0b5d1c2e-7f0a-4c55-9d1e-2c8f7a6b3e11@jp.example.com:443?security=tls&sni=jp.example.com&type=ws&path=%2Fws#%E6%97%A5%E6%9C%AC%2003\ntrojan://secret@sg.example.com:443?sni=sg.example.com#Singapore".into());
+            ui.set_tools_editor_parent("custom-proxies".into());
+            ui.set_tools_editor_readonly(false);
+        }
+        if *overlay == "cp-link" {
+            ui.set_input_key("cp-link".into());
+            ui.set_input_title("快速编辑".into());
+            ui.set_input_label("vless://…".into());
+            ui.set_input_value("vless://not-a-link".into());
+            ui.set_input_label2("".into());
+            ui.set_input_removable(false);
+            ui.on_input_check(|_, _, _| "无法从链接中读取代理".into());
+            ui.set_input_open(true);
+        } else {
+            ui.on_input_check(|key, value, _| {
+                settings_view::check_input(&key, &value)
+                    .err()
+                    .unwrap_or_default()
+                    .into()
+            });
+        }
         if *overlay == "dashpreview" {
             ui.set_editor_title("我的机场".into());
             ui.set_editor_text("mixed-port: 7890\nmode: rule\nlog-level: error\nproxies:\n  - name: 香港 01\n    type: ss\n".into());
@@ -2968,7 +3062,7 @@ fn main() {
         ui.set_dash_traffic(traffic);
         // "nodemenu" / "groupmenu": the anchored menus of a node's long press and the tab
         // bar's ▾, over many groups so the tabs overflow.
-        if *overlay != "ua-menu" {
+        if !matches!(*overlay, "ua-menu" | "cp-add") {
             ui.set_ctx_kind("".into());
         }
         snapshot_groups(&ui, overlay, w);

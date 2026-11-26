@@ -63,6 +63,7 @@ pub fn page_meta(proxies: &[CustomProxy], page: &str) -> Option<PageMeta> {
             empty_action: if searching { "" } else { "添加" }.into(),
             long_press: true,
             search: true,
+            action_empty: !searching,
             ..Default::default()
         }),
         FORM => Some(PageMeta {
@@ -74,6 +75,7 @@ pub fn page_meta(proxies: &[CustomProxy], page: &str) -> Option<PageMeta> {
             .into(),
             parent: LIST.into(),
             action: "check".into(),
+            action2: "compose".into(),
             ..Default::default()
         }),
         _ => None,
@@ -276,7 +278,7 @@ pub(crate) fn parse_verdicts(r: &Value, n: usize) -> Vec<Option<String>> {
     out
 }
 
-fn new_id() -> String {
+pub(crate) fn new_id() -> String {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_micros().to_string())
@@ -288,7 +290,7 @@ fn field_of(id: &str) -> Option<&'static cp::Field> {
 }
 
 impl App {
-    fn custom_proxies(&self) -> Vec<CustomProxy> {
+    pub(crate) fn custom_proxies(&self) -> Vec<CustomProxy> {
         self.store
             .lock()
             .unwrap()
@@ -298,7 +300,7 @@ impl App {
             .clone()
     }
 
-    fn update_custom_proxies(self: &Arc<Self>, f: impl FnOnce(&mut Vec<CustomProxy>)) {
+    pub(crate) fn update_custom_proxies(self: &Arc<Self>, f: impl FnOnce(&mut Vec<CustomProxy>)) {
         {
             let mut store = self.store.lock().unwrap();
             f(&mut store.state.settings.custom_proxies);
@@ -318,7 +320,10 @@ impl App {
         self.ui(|ui| ui.set_meta_rev(ui.get_meta_rev() + 1));
     }
 
-    fn validate_proxies(&self, definitions: &[Value]) -> Result<Vec<Option<String>>, String> {
+    pub(crate) fn validate_proxies(
+        &self,
+        definitions: &[Value],
+    ) -> Result<Vec<Option<String>>, String> {
         let r = self
             .bridge()?
             .call("validate.proxies", json!({ "proxies": definitions }), CALL)?;
@@ -343,7 +348,7 @@ impl App {
     }
 
     /// Changes the form, then asks the Core about it once the edits pause (`_scheduleValidate`).
-    fn edit_draft(self: &Arc<Self>, f: impl FnOnce(&mut Draft)) {
+    pub(crate) fn edit_draft(self: &Arc<Self>, f: impl FnOnce(&mut Draft)) {
         let rev = {
             let mut st = state().lock().unwrap();
             let Some(d) = st.draft.as_mut() else {
@@ -380,7 +385,7 @@ impl App {
         });
     }
 
-    fn open_custom_proxy(self: &Arc<Self>, id: Option<&str>) {
+    pub(crate) fn open_custom_proxy(self: &Arc<Self>, id: Option<&str>) {
         let existing = id.and_then(|id| self.custom_proxies().into_iter().find(|p| p.id == id));
         let draft = match existing {
             Some(p) => Draft::open(p, false),
@@ -411,6 +416,7 @@ impl App {
                 });
             }
         }
+        self.share_links_page_shown(page);
         if page == LIST {
             self.spawn(|app| app.check_custom_proxies());
         }
@@ -496,6 +502,8 @@ impl App {
 
     fn custom_proxies_list_clicked(self: &Arc<Self>, id: &str) {
         if id == "action" {
+            self.custom_proxies_add_menu();
+        } else if id == "empty-action" {
             self.open_custom_proxy(None);
         } else if id == "action2" {
             let titles = self.custom_proxy_titles();
@@ -565,7 +573,7 @@ impl App {
         self.update_custom_proxies(move |s| s.retain(|p| p.id != id));
     }
 
-    fn draft(&self) -> Option<Draft> {
+    pub(crate) fn draft(&self) -> Option<Draft> {
         state().lock().unwrap().draft.clone()
     }
 
@@ -576,6 +584,7 @@ impl App {
         let p = &d.proxy;
         match id {
             "action" => self.spawn(|app| app.save_custom_proxy()),
+            "action2" => self.open_link_dialog(),
             "cp-add" => self.open_option_sheet(&d),
             "cp-f:name" => self.open_input("cp-in:name", "名称", "", &p.name()),
             "cp-f:server" => self.open_input(

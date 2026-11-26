@@ -271,6 +271,9 @@ impl App {
             if let Some(e) = a.icon_sets_check(&key, &v1, &v2) {
                 return e.into();
             }
+            if let Some(e) = a.share_links_check(&key, &v1) {
+                return e.into();
+            }
             if let Some(e) = a.custom_proxies_check(&key, &v1) {
                 return e.into();
             }
@@ -359,6 +362,7 @@ impl App {
                 ("rs", id) => a.rule_set_menu_picked(i, id),
                 ("is", id) => a.icon_set_menu_picked(i, id),
                 ("cp", id) => a.custom_proxy_menu_picked(i, id),
+                ("cp-add", id) => a.custom_proxies_add_picked(id),
                 (k @ ("mh" | "mm" | "ml"), id) => a.mitm_menu_picked(k, i, id),
                 ("ua", "edit") => a.set_clicked("user-agents", &format!("edit:ua:{i}")),
                 ("ua", "delete") => a.confirm(
@@ -920,6 +924,7 @@ impl App {
         if self.items_input(key, v1, v2)
             || self.rule_sets_input(key, v1, v2)
             || self.icon_sets_input(key, v1, v2)
+            || self.share_links_input(key, v1)
             || self.custom_proxies_input(key, v1)
             || self.mitm_input(key, v1)
             || self.on_demand_input(key, v1)
