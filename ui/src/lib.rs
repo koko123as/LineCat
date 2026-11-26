@@ -2269,6 +2269,12 @@ impl App {
                 })
                 .collect();
             ui.set_dash_groups(ModelRc::new(VecModel::from(dash)));
+            let timed_out = groups
+                .visible(mode)
+                .iter()
+                .filter(|g| matches!(delays.get(&groups.real(&g.name)), Some(-1 | -2)))
+                .count();
+            ui.set_dash_groups_timed_out(timed_out as i32);
             ui.set_proxies_hint(hint.into());
             ui.set_proxy_group_names(ModelRc::new(VecModel::from(
                 list.iter()
