@@ -288,7 +288,6 @@ export struct LogItem {
     source: string,
 }
 
-// A row of the requests lists: a minute's header, or a record under it.
 // `RecordLabel`: a tonal chip after a record's line; tone 0 neutral, 1 error, 2 success,
 // 3 warning.
 export struct RecordLabel {
@@ -306,6 +305,7 @@ export struct LineLayout {
     before-last: length,
 }
 
+// A row of the requests lists: a minute's header, or a record under it.
 export struct RecordRow {
     header: bool,
     label: string,
@@ -3169,11 +3169,11 @@ component GroupHeader inherits Card {
                 height: 40px;
                 border-radius: 20px;
                 background: fold-ta.pressed ? Theme.s.inset : transparent;
-                FilledIcon {
-                    size: 20px;
-                    glyph: Icons.caret-down;
-                    tint: Theme.s.on-surface-variant;
+                Rectangle {
+                    width: 20px;
+                    height: 20px;
                     transform-rotation: -90deg * (1 - root.unfold);
+                    FilledIcon { size: 20px; glyph: Icons.caret-down; tint: Theme.s.on-surface-variant; }
                 }
                 fold-ta := TouchArea { clicked => { root.toggle(); } }
             }
@@ -7859,7 +7859,7 @@ export global RecordLine {
             text-w: text-shown ? min(text, max(0px, text-room)) : 0px,
             last-shown: last-shown,
             last-w: last-w,
-            before-last: before-last,
+            before-last: before-last
         };
     }
 }
@@ -7888,12 +7888,12 @@ component RecordLabelLine inherits Rectangle {
     in property <string> text;
     in property <[RecordLabel]> labels;
     in property <length> font-size: 12px * Type.scale;
-    in property <color> color: Theme.s.on-surface-variant;
+    in property <color> tint: Theme.s.on-surface-variant;
     property <length> label-h: 20px;
     property <int> n: min(root.labels.length, 5);
     property <[length]> natural: [
         m0.preferred-width + 12px, m1.preferred-width + 12px, m2.preferred-width + 12px,
-        m3.preferred-width + 12px, m4.preferred-width + 12px,
+        m3.preferred-width + 12px, m4.preferred-width + 12px
     ];
     property <LineLayout> line: RecordLine.layout(self.width, root.text == "" ? 0px : mt.preferred-width, mt.preferred-height, root.label-h, root.natural, root.n);
     property <length> start: root.line.text-shown ? root.line.text-w + RecordLine.gap : 0px;
@@ -7913,7 +7913,7 @@ component RecordLabelLine inherits Rectangle {
         width: root.line.text-w;
         text: root.text;
         font-size: root.font-size;
-        color: root.color;
+        color: root.tint;
         vertical-alignment: center;
         overflow: elide;
     }
