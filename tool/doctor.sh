@@ -28,13 +28,11 @@ required rustup 'the toolchains pinned in ui/ and concord/rust-toolchain.toml'
 required gradle 'the APK (android/), the version in android/gradle/wrapper/gradle-wrapper.properties'
 optional cargo-ndk 'builds libseasoncat_ui.so for the APK'
 
-for module in concord plugins/prism_ui; do
-  if [ -n "$(ls -A "$root/$module" 2>/dev/null)" ]; then
-    ok "submodule $module"
-  else
-    need "submodule $module is empty: make submodules"
-  fi
-done
+if [ -n "$(ls -A "$root/concord" 2>/dev/null)" ]; then
+  ok 'submodule concord'
+else
+  need 'submodule concord is empty: make submodules'
+fi
 
 toolchain_file="$root/concord/rust-toolchain.toml"
 if [ -f "$toolchain_file" ] && has rustup; then
@@ -71,7 +69,7 @@ ndk_version="$(sed -n 's/^ndkVersion = "\(.*\)"/\1/p' "$root/android/gradle/libs
 if [ -d "$sdk/ndk/$ndk_version" ]; then
   ok "NDK $ndk_version"
 else
-  note "NDK $ndk_version not in $sdk/ndk: needed for package-android and Gradle builds"
+  note "NDK $ndk_version not in $sdk/ndk: needed for Gradle builds"
 fi
 is_jdk17() { [ -x "$1/bin/java" ] && "$1/bin/java" -version 2>&1 | grep -q 'version "17'; }
 if [ -n "${JAVA_HOME:-}" ] && is_jdk17 "$JAVA_HOME"; then
@@ -85,19 +83,16 @@ fi
 echo
 echo 'Optional'
 optional pre-commit 'make hooks'
-optional dart 'the packaging, release and icon scripts in tool/'
+optional dart 'the icon scripts in tool/ and ui/tools/gen_theme.dart'
 optional rsvg-convert 'make icons, make status-icons'
 optional cwebp 'make icons'
 optional node 'make site'
 optional gh 'release metadata in make site'
-case "$(uname -s)" in
-  Darwin) optional appdmg 'package-macos installs it through npm when missing' ;;
-  Linux)
-    for tool in rpm patchelf; do
-      optional "$tool" 'package-linux installs it through apt when missing'
-    done
-    ;;
-esac
+if [ -n "$(ls -A "$root/plugins/prism_ui" 2>/dev/null)" ]; then
+  ok 'submodule plugins/prism_ui (ui/tools/gen_theme.dart)'
+else
+  note 'submodule plugins/prism_ui is empty: only ui/tools/gen_theme.dart reads it'
+fi
 
 echo
 if [ "$missing" -gt 0 ]; then

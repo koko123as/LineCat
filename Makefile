@@ -1,33 +1,21 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-##> ARGS=...       package: extra tool arguments
 ##> FILES=paths    comment-density: files to measure instead of the uncommitted changes
-##> ARCH=a,b       package: arm64, armv7, amd64 or universal; another desktop arch only with DRY=1
-##> FORM=a,b       package: exe, zip, dmg, deb, rpm, appimage or apk
-##> DRY=1          package: print artifact names and steps, build nothing
-##> APP_ENV=name   package: dev, pre (default) or stable
-##> TAG=vX.Y.Z     package: release tag to name the build after
-##> KIND=name      release-plan: pre, rs (default) or stable
 
 CARGO := env -u all_proxy -u ALL_PROXY CARGO_INCREMENTAL=0 cargo
 CORE_MAX_BYTES ?= 30000000
 # concord/.agents/commands.md lists the same crates: the members that declare default features.
 CORE_FEATURE_CRATES := concord-common concord-engine concord-mitm
-KIND ?= rs
 
-PACKAGE := dart tool/package.dart
-PACKAGE_FLAGS = $(if $(ARCH),--arch $(ARCH)) $(if $(FORM),--targets $(FORM)) \
-	$(if $(filter 1,$(DRY)),--dry-run) $(if $(APP_ENV),--env $(APP_ENV)) $(if $(TAG),--tag $(TAG)) $(ARGS)
 COMMENT_FILES = $(or $(FILES),$(shell git diff HEAD --name-only --diff-filter=d; git ls-files --others --exclude-standard))
 
 .PHONY: help setup submodules doctor hooks worktrees \
 	icons status-icons site \
-	fmt fmt-check test apk hooks-test comment-density plugins-check \
-	rust-check changelog-verify check \
-	core-build core-fmt core-check core-test core-sent-config core-gate core-schema \
-	package package-android package-windows package-macos package-linux package-dry manifest \
-	release-plan clean
+	fmt fmt-check test apk hooks-test comment-density \
+	rust-check check \
+	core-build core-fmt core-check core-test core-gate core-schema \
+	clean
 
 help: ## List every target and variable
 	@awk 'BEGIN { FS = ":.*## " } \
@@ -44,7 +32,7 @@ submodules: ## Update git submodules (Concord core, prism_ui)
 	git submodule update --init --recursive
 
 
-doctor: ## Report missing toolchains: cargo, the pinned Rust, Gradle, NDK, JDK, packaging tools
+doctor: ## Report missing toolchains: cargo, the pinned Rust, Gradle, NDK, JDK
 	bash tool/doctor.sh
 
 hooks: ## Install the pre-commit, pre-push and commit-msg git hooks
@@ -72,7 +60,7 @@ site: ## Build the website into build/site
 
 fmt: ## Format the UI crate and the Dart scripts in place
 	cd ui && $(CARGO) fmt
-	dart format tool plugins
+	dart format tool
 
 fmt-check: ## Fail on an unformatted UI crate
 	cd ui && $(CARGO) fmt --check
@@ -94,17 +82,11 @@ comment-density: ## Hold uncommitted changes, or FILES=paths, to the comment cap
 	if [ -z "$$files" ]; then echo 'comment-density: nothing to measure'; \
 	else tool/hooks/comment_density.sh $$files; fi
 
-plugins-check: ## Analyze and test every plugin package, as CI does
-	bash tool/check_plugins.sh
-
 
 rust-check: ## Format check and test the Helper crate and the Core's JNI glue format
 	$(CARGO) fmt --manifest-path services/helper/Cargo.toml -- --check
 	$(CARGO) fmt --manifest-path android/core/jni/Cargo.toml -- --check
 	$(CARGO) test --manifest-path services/helper/Cargo.toml
-
-changelog-verify: ## Check changelog.json and CHANGELOG.md against the commits
-	dart run tool/changelog.dart verify
 
 check: hooks-test fmt-check test ## Hooks, the UI crate's format and tests
 
@@ -129,10 +111,7 @@ core-test: ## cargo test --workspace, with the app-tree contract tests required,
 	cd concord && for crate in $(CORE_FEATURE_CRATES); do \
 		$(CARGO) test -p $$crate --no-default-features || exit 1; done
 
-core-sent-config: ## Load the config each platform sends with concord -t
-	env -u all_proxy dart tool/check_sent_config.dart
-
-core-gate: core-check core-test core-sent-config ## The full Concord gate: also deny, fuzz, release build and size budget
+core-gate: core-check core-test ## The full Concord gate: also deny, fuzz, release build and size budget
 	cd concord && $(CARGO) deny check
 	cd concord && $(CARGO) check --manifest-path fuzz/Cargo.toml
 	cd concord && $(CARGO) build --release -p concord-desktop
@@ -141,36 +120,8 @@ core-gate: core-check core-test core-sent-config ## The full Concord gate: also 
 core-schema: ## Rewrite concord/schema/ after an API or config change
 	cd concord && $(CARGO) xtask schema
 
-##@ Package
-
-package: ## Package this host into dist/; ARCH=, FORM=, DRY=1, APP_ENV=, TAG=
-	$(PACKAGE) $(PACKAGE_FLAGS)
-
-package-android: ## Package the Android APKs
-	$(PACKAGE) android $(PACKAGE_FLAGS)
-
-package-windows: ## Package Windows exe and zip (on Windows, elsewhere with DRY=1)
-	$(PACKAGE) windows $(PACKAGE_FLAGS)
-
-package-macos: ## Package the macOS dmg (on macOS, elsewhere with DRY=1)
-	$(PACKAGE) macos $(PACKAGE_FLAGS)
-
-package-linux: ## Package Linux deb, rpm and AppImage (on Linux, elsewhere with DRY=1)
-	$(PACKAGE) linux $(PACKAGE_FLAGS)
-
-package-dry: ## Print what package would build for this host
-	$(PACKAGE) --dry-run $(PACKAGE_FLAGS)
-
-manifest: ## Print dist/manifest.json
-	@cat dist/manifest.json 2>/dev/null || { echo 'no dist/manifest.json: run a package target first' >&2; exit 1; }
-
-##@ Release
-
-release-plan: ## Print the next release tag and its notes without changing anything; KIND=pre|rs|stable
-	bash tool/release.sh $(KIND) --dry-run
-
 ##@ Clean
 
-clean: ## Remove the Gradle outputs and dist/
-	rm -rf android/build android/*/build dist
+clean: ## Remove the Gradle outputs
+	rm -rf android/build android/*/build
 

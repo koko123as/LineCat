@@ -6,8 +6,12 @@ one-line form, and its explanation lives in the linked `.agents/` file.
 ## Start Here
 
 The app is the Slint UI in `ui/` (Rust, `libseasoncat_ui.so`) inside the Kotlin shell in `android/`, built with Gradle
-alone; the Flutter UI (`lib/`) is gone. Where the `.agents/` files describe `lib/`, they describe FlClash's Flutter UI,
-which `ui/` ports page for page. `linecat-status.md` lists what each batch landed.
+alone. Flutter is gone for good: the Flutter UI (`lib/`), the desktop runners and the Dart packaging, release and
+changelog scripts were removed. Where the `.agents/` files describe `lib/`, the Flutter desktop runners or those
+scripts, they describe FlClash, which `ui/` ports page for page. What a later desktop client can reuse stays:
+`services/helper`, the packaging metadata in `linux/packaging`, `macos/packaging` and `windows/packaging`, the macOS
+app icons, `Info.plist` and entitlements in `macos/Runner`, `windows/EnableLoopback.exe` and the Windows app icon.
+`linecat-status.md` lists what each batch landed.
 
 Read these files before making changes:
 
@@ -27,8 +31,6 @@ Read these only when the task touches their area:
   follow, and the deliberate deviations from them.
 - [.agents/agent-config.md](.agents/agent-config.md): where agent guidance belongs, the repo skills in
   `.agents/skills/`, and worktree hygiene.
-- [.agents/flutter-upgrade.md](.agents/flutter-upgrade.md): SDK-pinned workarounds to recheck before changing the
-  Flutter version.
 - [concord/AGENTS.md](concord/AGENTS.md): the Rust core's own rules, for any change inside `concord/`.
 
 ## Highest Priority Rules

@@ -106,8 +106,8 @@ gradle :app:assembleRelease -Ptarget-platform=android-arm64
 ```
 
 APK 输出到 `android/app/build/outputs/apk/release/`，内核在 Gradle 构建中用 cargo 一并编译。完整的参考构建（包括界面库需要的
-环境变量）见 `.github/workflows/slint-android.yaml`。Flutter 桌面端（`linux/`、`macos/`、`windows/`）已无法构建，因为它们运行的
-Flutter 界面已被移除。
+环境变量）见 `.github/workflows/slint-android.yaml`。目前没有桌面端构建：Flutter 桌面端已随 Flutter 界面一起移除，`linux/`、
+`macos/`、`windows/` 只保留以后桌面客户端可复用的打包元数据和图标。
 
 ## 支持
 

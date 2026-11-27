@@ -114,7 +114,8 @@ gradle :app:assembleRelease -Ptarget-platform=android-arm64
 
 The APK lands in `android/app/build/outputs/apk/release/`; the core is compiled with cargo as part of the Gradle
 build. `.github/workflows/slint-android.yaml` is the reference build, including the environment the UI library needs.
-The Flutter desktop runners (`linux/`, `macos/`, `windows/`) no longer build, since the Flutter UI they ran was removed.
+There is no desktop build any more: the Flutter desktop runners were removed with the Flutter UI. `linux/`, `macos/`
+and `windows/` keep only the packaging metadata and icons a later desktop client can reuse.
 
 ## Support
 
