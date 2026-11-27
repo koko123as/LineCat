@@ -71,6 +71,9 @@ pub struct Settings {
     pub sidebar_expanded: bool,
     pub font_family: Option<String>,
     pub text_scale: TextScale,
+    pub editor_line_wrap: bool,
+    /// `editorFontSize`, an index of `editor::FONT_SIZES`.
+    pub editor_font_size: i32,
     /// `ClashProvider`s, in the page's order.
     pub rule_sets: Vec<crate::rule_sets::RuleSet>,
     /// `IconSet`s, in the page's order.
@@ -271,6 +274,8 @@ impl Default for Settings {
             sidebar_expanded: true,
             font_family: None,
             text_scale: TextScale::default(),
+            editor_line_wrap: false,
+            editor_font_size: 0,
             rule_sets: Vec::new(),
             icon_sets: Vec::new(),
             custom_proxies: Vec::new(),

@@ -112,6 +112,51 @@ pub fn hit_label(query: &str, hit: Option<Hit>) -> String {
     }
 }
 
+/// `EditorFontSize`: 标准, 大, 超大.
+pub const FONT_SIZES: [(f32, &str); 3] = [(16.0, "标准"), (18.0, "大"), (20.0, "超大")];
+
+pub fn font_level(level: i32) -> usize {
+    level.clamp(0, FONT_SIZES.len() as i32 - 1) as usize
+}
+
+/// The ⋯ menu of `EditorPage`, with 大小's sizes unfolded under it while `sizes_open`.
+pub fn menu(
+    undo: bool,
+    redo: bool,
+    wrap: bool,
+    level: i32,
+    sizes_open: bool,
+) -> Vec<crate::ActionItem> {
+    let item = |id: &str, glyph: &str, label: &str, enabled: bool| crate::ActionItem {
+        id: id.into(),
+        glyph: glyph.into(),
+        label: label.into(),
+        enabled,
+        ..Default::default()
+    };
+    let mut items = vec![
+        item("undo", "undo", "撤销", undo),
+        item("redo", "redo", "重做", redo),
+    ];
+    let mut sizes = item("font", "text-size", "大小", true);
+    sizes.heading = "more".into();
+    items.push(sizes);
+    if sizes_open {
+        for (i, (_, label)) in FONT_SIZES.iter().enumerate() {
+            let mut size = item(&format!("font:{i}"), "", label, true);
+            size.sub = true;
+            size.check = true;
+            size.checked = i == font_level(level);
+            items.push(size);
+        }
+    }
+    let mut wrapping = item("wrap", "wrap", "自动换行", true);
+    wrapping.check = true;
+    wrapping.checked = wrap;
+    items.push(wrapping);
+    items
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +225,33 @@ mod tests {
             count: 4,
         };
         assert_eq!(hit_label("x", Some(hit)), "2/4");
+    }
+
+    #[test]
+    fn the_menu_unfolds_the_sizes() {
+        let ids = |items: Vec<crate::ActionItem>| -> Vec<String> {
+            items.iter().map(|i| i.id.to_string()).collect()
+        };
+        assert_eq!(
+            ids(menu(true, false, false, 0, false)),
+            ["undo", "redo", "font", "wrap"]
+        );
+        let open = menu(false, true, true, 2, true);
+        assert_eq!(
+            ids(open.clone()),
+            ["undo", "redo", "font", "font:0", "font:1", "font:2", "wrap"]
+        );
+        assert!(!open[0].enabled && open[1].enabled);
+        assert_eq!(open[2].heading, "more");
+        assert!(open[5].checked && !open[3].checked && open[4].sub);
+        assert!(open[6].check && open[6].checked);
+    }
+
+    #[test]
+    fn font_levels_stay_in_range() {
+        assert_eq!(font_level(-3), 0);
+        assert_eq!(font_level(1), 1);
+        assert_eq!(font_level(9), 2);
+        assert_eq!(FONT_SIZES[font_level(0)].0, 16.0);
     }
 }

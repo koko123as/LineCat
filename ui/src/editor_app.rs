@@ -3,8 +3,9 @@
 
 use crate::editor;
 use crate::editor_history::History;
-use crate::{App, AppWindow, EditorEdit, EditorKit, EditorMatch, EditorState};
-use slint::{ComponentHandle, SharedString};
+use crate::settings_app::Effect;
+use crate::{App, AppWindow, EditorEdit, EditorKit, EditorMatch};
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -63,6 +64,38 @@ fn replaced(key: &str, before: &str, after: String, caret: usize) -> EditorEdit 
 impl App {
     pub(crate) fn bind_editor(self: &Arc<Self>, ui: &AppWindow) {
         let kit = ui.global::<EditorKit>();
+        {
+            let store = self.store.lock().unwrap();
+            let s = &store.state.settings;
+            kit.set_wrap(s.editor_line_wrap);
+            kit.set_size(editor::font_level(s.editor_font_size) as i32);
+            kit.set_font_px(editor::FONT_SIZES[editor::font_level(s.editor_font_size)].0);
+        }
+        let w = ui.as_weak();
+        kit.on_menu(move |key, text, sizes_open| {
+            let Some(ui) = w.upgrade() else {
+                return ModelRc::default();
+            };
+            let kit = ui.global::<EditorKit>();
+            let (undo, redo) = with_history(&key, |h| (h.can_undo(&text), h.can_redo(&text)));
+            let items = editor::menu(undo, redo, kit.get_wrap(), kit.get_size(), sizes_open);
+            ModelRc::new(VecModel::from(items))
+        });
+        let a = self.clone();
+        let w = ui.as_weak();
+        kit.on_style(move |wrap, size| {
+            let level = editor::font_level(size);
+            if let Some(ui) = w.upgrade() {
+                let kit = ui.global::<EditorKit>();
+                kit.set_wrap(wrap);
+                kit.set_size(level as i32);
+                kit.set_font_px(editor::FONT_SIZES[level].0);
+            }
+            a.update_settings(Effect::None, |s| {
+                s.editor_line_wrap = wrap;
+                s.editor_font_size = level as i32;
+            });
+        });
         kit.on_opened(|key, text| {
             histories()
                 .lock()
@@ -76,12 +109,6 @@ impl App {
                 .or_insert_with(|| (History::default(), Instant::now()));
             history.typed(&text, last.elapsed() >= PAUSE);
             *last = Instant::now();
-        });
-        kit.on_history(|key, text| {
-            with_history(&key, |h| EditorState {
-                undo: h.can_undo(&text),
-                redo: h.can_redo(&text),
-            })
         });
         kit.on_undo(|key, text| match with_history(&key, |h| h.undo(&text)) {
             Some((text, caret)) => edit(text, caret),

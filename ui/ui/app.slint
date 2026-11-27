@@ -598,6 +598,7 @@ global Icons {
     out property <string> motion: "M14 5a7 7 0 1 1 0 14 7 7 0 0 1 0-14z M3 8h5 M2 12h4 M3 16h5";
     out property <string> font: "M4 20l6-16h1l6 16 M6.5 14h8 M17 20h4";
     out property <string> text-size: "M3 7V5h10v2 M8 5v14 M6 19h4 M13 12v-1h8v1 M17 11v8 M15.5 19h3";
+    out property <string> wrap: "M4 6h16 M4 12h13a3 3 0 0 1 0 6h-6 M13.8 15.2L11 18l2.8 2.8 M4 18h2.5";
     out property <string> lock-open: "M5 11h14v10H5z M8 11V7a4 4 0 0 1 7.7-1.5 M12 15v2";
     out property <string> link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1";
     out property <string> memory: "M6 6h12v12H6z M9 9h6v6H9z M9 3v3 M15 3v3 M9 18v3 M15 18v3 M3 9h3 M3 15h3 M18 9h3 M18 15h3";
@@ -623,7 +624,8 @@ global Glyphs {
             : k == "customize" ? Icons.customize : k == "text-short" ? Icons.text-short : k == "compose" ? Icons.compose
             : k == "block" ? Icons.block : k == "eye-off" ? Icons.eye-off : k == "toggle" ? Icons.toggle : k == "toggle-on" ? Icons.toggle-on
             : k == "sparkle" ? Icons.sparkle : k == "paste" ? Icons.paste
-            : k == "undo" ? Icons.undo : k == "redo" ? Icons.redo : "";
+            : k == "undo" ? Icons.undo : k == "redo" ? Icons.redo
+            : k == "text-size" ? Icons.text-size : k == "wrap" ? Icons.wrap : "";
     }
 }
 
@@ -656,16 +658,15 @@ export struct EditorEdit {
     ok: bool,
 }
 
-export struct EditorState {
-    undo: bool,
-    redo: bool,
-}
-
 // Each callback past `find` names the editor by its page's `key`, which owns one history.
 export global EditorKit {
+    in-out property <bool> wrap;
+    in-out property <int> size;
+    in-out property <length> font-px: 16px;
+    callback menu(string, string, bool) -> [ActionItem];
+    callback style(bool, int);
     callback opened(string, string);
     callback typed(string, string);
-    callback history(string, string) -> EditorState;
     callback undo(string, string) -> EditorEdit;
     callback redo(string, string) -> EditorEdit;
     pure callback find(string, string, bool, int, bool) -> EditorMatch;
@@ -9368,7 +9369,8 @@ component EditorPage inherits Rectangle {
     // The find bar and the ⋮ menu are open; the window's back closes them before the page.
     in-out property <bool> finding;
     in-out property <bool> menu-open;
-    property <EditorState> hist;
+    property <[ActionItem]> menu-items;
+    property <bool> sizes-open;
     property <bool> replacing;
     property <bool> match-case;
     property <string> query;
@@ -9429,8 +9431,17 @@ component EditorPage inherits Rectangle {
     // The text input scrolls itself only while it has the focus; a match selected from the
     // find field is brought into view here.
     function menu-picked(id: string) {
+        if (id == "font") {
+            root.sizes-open = !root.sizes-open;
+            root.menu-items = EditorKit.menu(root.key, root.text, root.sizes-open);
+            return;
+        }
         root.menu-open = false;
-        if (id == "undo") {
+        if (id == "wrap") {
+            EditorKit.style(!EditorKit.wrap, EditorKit.size);
+        } else if (id == "font:0" || id == "font:1" || id == "font:2") {
+            EditorKit.style(EditorKit.wrap, id == "font:0" ? 0 : id == "font:1" ? 1 : 2);
+        } else if (id == "undo") {
             let e = EditorKit.undo(root.key, root.text);
             if (e.ok) { root.apply(e); }
         } else if (id == "redo") {
@@ -9487,14 +9498,15 @@ component EditorPage inherits Rectangle {
                 alignment: center;
                 TextButton { text: "保存"; clicked => { root.save(root.text); } }
             }
-            if !root.readonly && root.ready: VerticalLayout {
+            if root.ready: VerticalLayout {
                 alignment: center;
                 IconButton {
                     glyph: Icons.more;
                     tint: Theme.s.on-surface;
                     clicked => {
                         MenuAnchor.at(self.absolute-position.x, self.absolute-position.y, self.width, self.height);
-                        root.hist = EditorKit.history(root.key, root.text);
+                        root.sizes-open = false;
+                        root.menu-items = EditorKit.menu(root.key, root.text, false);
                         root.menu-open = true;
                     }
                 }
@@ -9524,17 +9536,17 @@ component EditorPage inherits Rectangle {
                 background: Theme.s.card;
                 flick := Flickable {
                     content-height: max(editor.preferred-height + 24px, self.height) + Dock.pad;
-                    content-width: self.width;
+                    content-width: EditorKit.wrap ? self.width : max(self.width, editor.preferred-width + 24px);
                     editor := TextInput {
                         x: 12px;
                         y: 12px;
-                        width: parent.width - 24px;
+                        width: EditorKit.wrap ? parent.width - 24px : max(parent.width - 24px, self.preferred-width);
                         text <=> root.text;
                         read-only: root.readonly;
                         single-line: false;
-                        wrap: word-wrap;
+                        wrap: EditorKit.wrap ? TextWrap.word-wrap : TextWrap.no-wrap;
                         font-family: "monospace";
-                        font-size: 13px * Type.scale;
+                        font-size: EditorKit.font-px * Type.scale;
                         color: Theme.s.on-surface;
                         selection-background-color: Theme.s.primary-container;
                         edited => {
@@ -9557,10 +9569,7 @@ component EditorPage inherits Rectangle {
         aw: MenuAnchor.w;
         ah: MenuAnchor.h;
         dim-disabled: true;
-        items: [
-            { id: "undo", glyph: "undo", label: "撤销", enabled: root.hist.undo },
-            { id: "redo", glyph: "redo", label: "重做", enabled: root.hist.redo },
-        ];
+        items: root.menu-items;
         picked(id) => { root.menu-picked(id); }
         dismiss => { root.menu-open = false; }
     }
