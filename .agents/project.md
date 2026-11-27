@@ -1,118 +1,41 @@
 # Project Context
 
-FlClash is a multi-platform proxy client built with Flutter around Concord, a Rust core in `concord/` that reads
-Clash configuration. It supports Android, Windows, macOS, and Linux, drawing its own components in its `prism_ui` package (`chen08209/prism_ui`, not carried in this repository): a Material You color scheme with Apple's Human Interface interaction conventions.
+SeasonCat (application id `season.us.ci.cat`) is an Android proxy client derived from FlClash v0.9.5-rs.1. It has
+three parts:
 
-## Version Notes
+- `ui/`: the UI, a Rust crate on Slint (`seasoncat_ui`), built as the `cdylib` `libseasoncat_ui.so` and rendered into
+  the shell's `NativeActivity`. The pages follow FlClash's, page for page.
+- `android/`: the Kotlin shell, four Gradle modules (`:app`, `:service`, `:core`, `:common`) that own the VPN consent,
+  the VPN and proxy services, the quick settings tile, and the local socket the UI talks through.
+- `concord/`: the Core, Concord, a Rust submodule (`chen08209/concord`) that reads Clash configuration and speaks
+  JSON-RPC 2.0. `:core` builds it into `libconcord.so` with the JNI glue `libcore_jni.so` from `android/core/jni`.
 
-- Flutter stays on the 3.50.x line. Release CI pins 3.50.1 and is the source
-  of truth for release builds; `.fvmrc` and local SDKs may sit on another 3.50
-  patch. The pin never goes below 3.50.1: 3.50.0's Linux engine draws the window
-  shifted by half its size on drivers without `glBlitFramebuffer`, all NVIDIA
-  ones included ([flutter/flutter#195885](https://github.com/flutter/flutter/issues/195885)),
-  which `test/tool/flutter_pin_test.dart` guards. `pubspec.yaml` requires Flutter 3.50.0, because the app imports
-  `ScrollCacheExtent` through `package:flutter/widgets.dart`, which re-exports it
-  only from 3.50.
-- Before moving the pin, walk `flutter-upgrade.md`: it lists the workarounds tied to
-  the current SDK, such as Impeller disabled on the Intel macOS release build.
-- The Dart SDK lower bound in `pubspec.yaml` sets the package language
-  version. `flutter analyze` excludes `lib/**/generated/**`, so a raise is
-  proven by `flutter test`, which parses the generated code, not by analyze.
-  The root package stays at 3.10 while the SDK is 3.14: at 3.13 and above
-  `dart format` rewrites about 190 files and `final` parameters stop compiling,
-  and APIs marked `@Since("3.14")`, such as `rangeEquals` on typed data, fail
-  analysis with `sdk_version_since` until the bound moves.
+CI builds and releases only an arm64-v8a APK. There is no desktop client; `services/helper` and the packaging metadata
+under `linux/`, `macos/` and `windows/` are kept for one.
 
-## Build Dependencies
+## Versions
 
-Builds need Flutter and `cargo` with the toolchain pinned in `concord/rust-toolchain.toml`; they need no Go toolchain.
-
-## Forked Dependencies
-
-No `pubspec.yaml` dependency is pinned to a fork. The forks below, all under
-`chen08209`, were folded into the repository; each entry says where their
-behavior lives now.
-
-Each entry records what the fork changes and what has to be true before it can go
-back to the published package, so a future upgrade does not have to rediscover it.
-Re-verify a fork by diffing its pub cache checkout against the published version
-of the same number:
-
-```bash
-diff -ru ~/.pub-cache/hosted/pub.dev/<name>-<version> ~/.pub-cache/git/<name>-<sha>
-```
-
-The `window_manager` fork (`chen08209/window_manager`, tag `v0.5.1-flclash.3`)
-was replaced by an in-repo plugin, now rust_api's `window/` module; the behaviors
-it carried (work-area maximize with a hidden title bar on Windows, geometry
-restore on re-map on Linux, corner preference, terminate and activate events)
-live there, see Desktop Window in `architecture.md`.
-
-The `launch_at_startup` fork (`chen08209/launch_at_startup`) was replaced by the
-`launch` module of `plugins/rust_api`, which reads and writes the same entries; see
-"rust_api Crate Layout" in `architecture.md`.
-
-The `yaml_writer` fork (`chen08209/yaml_writer`) was replaced by
-`lib/common/yaml_writer.dart`. Its key quoting let keys such as `!a`, `'a` or
-`0x1F` reach the Core's YAML parser as a parse error or a non-string; a merge key
-`<<` stays plain on purpose, because `package:yaml` keeps it as an ordinary key
-and the Core applies the merge.
-
-The `code_forge` fork (`chen08209/code_forge`) is frozen: its Dart code now lives
-in the in-repo `plugins/code_forge` package and its Rust code in the `editor/`
-module of `plugins/rust_api`, both trimmed to what FlClash uses.
-`plugins/code_forge/README.md` records what was kept and what was removed;
-upstream's MIT notice stays in `plugins/code_forge/LICENSE`.
-
-## Dependency Ceilings
-
-`flutter pub outdated` lists only upstream-held entries, so treat them as
-resolved-until-the-ceiling-moves rather than as debt:
-
-- `intl` is intentionally unbounded (`any`), which is not a bound this repository
-  sets.
-
-The rest trail their latest releases only because the lock file was not
-refreshed, except for these:
-
-- `flutter_riverpod` 3.5.0 depends on `material_ui`, so a plain
-  `flutter pub upgrade` brings `material_ui` and `cupertino_ui` into the lock
-  file. Nothing fails when it does: `test/lint/design_package_test.dart` checks
-  imports, not the lock file.
-- `freezed` 4.0.3 needs `analyzer` 14; both resolve once the lock file is
-  refreshed.
-- `test` 1.33.0 needs `test_api` 0.7.15, and `flutter_test` on Flutter 3.50 pins
-  0.7.14. It moves with the SDK.
-- `android_file_picker` 2.1.5, the newest, from `file_picker` 13, still
-  configures AGP's legacy `LibraryExtension`, which the new DSL does not
-  register, so it keeps `android.newDsl=false` in `android/gradle.properties`.
-  It is the only plugin that does: with a copy configuring
-  `com.android.build.api.dsl.LibraryExtension`, the app builds with the new
-  DSL on. The plugin waits on Flutter's migration (flutter/flutter#180137).
-
-When an upgrade fails version solving, record the blocker here with
-what has to change upstream before the pin can move, so the next
-`flutter pub outdated` run does not rediscover it.
-
-`_initDynamicColor` in `lib/bootstrap.dart` takes the system's seeds and accent color from `DynamicColorPlugin`,
-in the plugin at `plugins/dynamic_color`, which keeps the native side out of the UI library's
-own tree. Everything downstream sees `DynamicColorSeeds`.
+- The UI crate pins Rust 1.100.0 (`ui/rust-toolchain.toml`) and Slint 1.19.1 with the `backend-android-activity-06`
+  backend (`ui/Cargo.toml`). Its release profile builds for size (`opt-level = "s"`, LTO, one codegen unit, stripped,
+  `panic = "abort"`).
+- Concord pins its own toolchain in `concord/rust-toolchain.toml`, and the JNI glue in
+  `android/core/jni/rust-toolchain.toml`.
+- Gradle 9.8.0 (`android/gradle/wrapper/gradle-wrapper.properties`), AGP 9.4.1 with its built-in Kotlin 2.4.20
+  (`android/settings.gradle.kts`), JDK 17. `android/gradle.properties` keeps `android.newDsl=false`, because the module
+  build files use the legacy DSL.
+- `android/gradle/libs.versions.toml` holds minSdk 24, compileSdk and targetSdk 37, and the NDK the Core is built with
+  (28.2.13676358, r28c). The UI library is built with NDK r30 instead: Slint's Skia binaries are compiled with r30's
+  clang, and only r30's `libc++_static.a` defines the symbols they need (see the `UI_NDK_VERSION` note in
+  `.github/workflows/slint-android.yaml`).
+- The app's version is `appVersionName` and `appVersionCode` in `android/app/build.gradle.kts`.
 
 ## Build Dependencies
 
-Linux:
+- `cargo` and `rustup` with the pinned toolchains, and the `aarch64-linux-android` target.
+- `cargo-ndk` (CI uses 4.1.2) for `libseasoncat_ui.so`; the Android SDK platform 36 and build tools 36.0.0, because
+  Slint's Android backend compiles a Java helper against `android.jar` and dexes it with `d8`; the NDK's libclang for
+  `rquickjs`' bindgen on Android.
+- Gradle and JDK 17 for the APK and the Kotlin unit tests.
+- `python3` with Pillow and numpy only to regenerate the app icons (`make icons`).
 
-```bash
-sudo apt-get install ninja-build libgtk-3-dev libsecret-1-dev
-```
-
-Windows:
-
-- Inno Setup, and on x64 NASM for BoringSSL's assembly (CI installs it with
-  `choco install nasm`).
-
-macOS:
-
-```bash
-npm install -g appdmg
-```
+`make doctor` (`tool/doctor.sh`) reports which of these are missing.

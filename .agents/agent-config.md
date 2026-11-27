@@ -5,7 +5,7 @@ Use the smallest durable surface that matches the job.
 ## Surfaces
 
 - `AGENTS.md`: repository entry point. Keep it small and reserve it for always-on rules, routing, and high-priority expectations.
-- No `CLAUDE.md`: Claude Code v2.1.277+ loads `AGENTS.md` at startup only while no `CLAUDE.md`, `.claude/CLAUDE.md`, or `CLAUDE.local.md` sits in the working directory or above it, so adding one silently replaces `AGENTS.md` for Claude. Sessions that cannot load `AGENTS.md` directly (third-party providers, telemetry disabled) need an uncommitted `CLAUDE.local.md` containing `@AGENTS.md`. The one nested `CLAUDE.md`, in `plugins/rust_api/`, imports the root `AGENTS.md` for the same reason.
+- No `CLAUDE.md`: Claude Code v2.1.277+ loads `AGENTS.md` at startup only while no `CLAUDE.md`, `.claude/CLAUDE.md`, or `CLAUDE.local.md` sits in the working directory or above it, so adding one silently replaces `AGENTS.md` for Claude. Sessions that cannot load `AGENTS.md` directly (third-party providers, telemetry disabled) need an uncommitted `CLAUDE.local.md` containing `@AGENTS.md`.
 - `.agents/*.md`: human- and agent-readable reference docs linked from `AGENTS.md`. Use these for detailed project context, commands, architecture, and conventions.
 - `.agents/skills/*/SKILL.md`: repo skills shared by Codex and Claude Code. Use these for repeatable workflows that should be discoverable by name and description; `.claude/skills/` holds one symlink per skill so Claude Code finds the same files.
 - `.codex/config.toml`: trusted project Codex settings such as MCP, hooks, sandbox, approval, or model defaults.
@@ -29,15 +29,13 @@ Repo skills live under `.agents/skills/*/SKILL.md`, where Codex discovers them d
 through the symlinks in `.claude/skills/`, one per skill, pointing back at the `.agents/skills/` directory. Both tools
 match a task against the skill `name` and `description`, then load the full instructions only when it matches.
 
-- `localization`: hardcoded UI text scans, ARB updates, locale generation, and localization verification.
-- `ui-work`: Flutter UI, widgets, color and surface styling, icons and glyphs, shapes and corner radii, navigation
-  surfaces, async feedback, and user-facing interactions.
-- `core-platform`: Core lifecycle/process ownership, Android services, Core event delivery, desktop IPC, platform
-  managers, build hooks, system proxy, tray, VPN/TUN, and the Windows and Linux Helper.
-- `ui-performance`: dropped frames, slow pages and transitions, UI-thread and raster load, isolate decisions, and the
-  probes that measure them.
-- `test-scope`: which checks a change runs and on which machine, across Dart, Concord, Rust, Android, desktop and CI
-  files; reading a `tool/test.dart` run, and Dart-only runs without the Concord build.
+- `ui-work`: the Slint UI in `ui/`: pages, sheets, menus, colours and theme, icons, navigation, async feedback, and
+  user-facing interactions.
+- `core-platform`: the UiBridge socket, the Core sessions and build, Android services and their lifecycle, VPN/TUN,
+  and the Windows and Linux Helper.
+- `ui-performance`: dropped frames, slow pages and transitions, UI-thread and idle load, and how to measure them.
+- `test-scope`: which checks a change runs and on which machine, across the UI crate, Android, Concord, the Helper and
+  CI files, and how to read a run.
 - `pre-commit-quality-review`: lightweight triage before every commit, with scoped structural review and decisions on
   concrete regressions by whoever authorized the commit.
 

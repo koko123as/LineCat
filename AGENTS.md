@@ -5,30 +5,23 @@ one-line form, and its explanation lives in the linked `.agents/` file.
 
 ## Start Here
 
-The app is the Slint UI in `ui/` (Rust, `libseasoncat_ui.so`) inside the Kotlin shell in `android/`, built with Gradle
-alone. Flutter is gone for good: the Flutter UI (`lib/`), the desktop runners and the Dart packaging, release and
-changelog scripts were removed. Where the `.agents/` files describe `lib/`, the Flutter desktop runners or those
-scripts, they describe FlClash, which `ui/` ports page for page. What a later desktop client can reuse stays:
-`services/helper`, the packaging metadata in `linux/packaging`, `macos/packaging` and `windows/packaging`, the macOS
-app icons, `Info.plist` and entitlements in `macos/Runner`, `windows/EnableLoopback.exe` and the Windows app icon.
-`linecat-status.md` lists what each batch landed.
+SeasonCat is an Android proxy client derived from FlClash. The UI is the Slint crate in `ui/` (Rust, built into
+`libseasoncat_ui.so`), hosted by the Kotlin shell in `android/` and built into an APK with Gradle alone. The Core is
+Concord, the Rust submodule in `concord/`, which the `:core` Gradle module builds. What a later desktop client can
+reuse is kept: `services/helper`, the packaging metadata in `linux/packaging`, `macos/packaging` and
+`windows/packaging`, the macOS app icons, `Info.plist`, `AppInfo.xcconfig` and release entitlements in `macos/Runner`,
+`windows/EnableLoopback.exe`, the Windows app icon and `assets/`. `linecat-status.md` lists what each batch landed.
 
 Read these files before making changes:
 
-- [.agents/project.md](.agents/project.md): project overview, versions, and build dependencies.
-- [.agents/commands.md](.agents/commands.md): build, development, code generation, and test commands.
-- [.agents/rules.md](.agents/rules.md): lint, testing, generated-code, and workflow rules.
+- [.agents/project.md](.agents/project.md): project overview, toolchain versions and build dependencies.
+- [.agents/commands.md](.agents/commands.md): build, test, CI and release commands.
+- [.agents/rules.md](.agents/rules.md): comment, lifecycle, testing and commit rules.
 
 Read these only when the task touches their area:
 
-- [.agents/architecture.md](.agents/architecture.md): core integration, providers, database, managers, build system, and
-  local plugins.
-- [.agents/setting-changes.md](.agents/setting-changes.md): whether a changed setting is patched live, re-applies the
-  profile, or asks for an Android VPN restart.
-- [.agents/surfaces.md](.agents/surfaces.md): fill levels, selection and status colors, and the few borders that
-  remain, for any change to how a surface is colored.
-- [.agents/ios-measurements.md](.agents/ios-measurements.md): measured iOS values the iOS-style surfaces and motion
-  follow, and the deliberate deviations from them.
+- [.agents/architecture.md](.agents/architecture.md): how the UI, the Kotlin shell and the Core fit together, the
+  Android service lifecycle, the Core build, and the desktop Helper.
 - [.agents/agent-config.md](.agents/agent-config.md): where agent guidance belongs, the repo skills in
   `.agents/skills/`, and worktree hygiene.
 - [concord/AGENTS.md](concord/AGENTS.md): the Rust core's own rules, for any change inside `concord/`.
@@ -43,8 +36,8 @@ Read these only when the task touches their area:
 - A comment carries only what the code cannot say; never restate, narrate the change, or keep commented-out code. The
   `comment-density` gate fails a file whose added lines exceed 5% standalone comments. See Comments in
   [rules.md](.agents/rules.md).
-- Start FlClash on the host only as a safe mode build, and end only processes you started, by recorded pid; never kill
-  by name. See Running the App Locally in [rules.md](.agents/rules.md).
+- The app runs on an Android device or emulator, never on a shared host; end only processes you started, by recorded
+  pid, and never kill by name. See Running the App in [rules.md](.agents/rules.md).
 - The Rust UI makes no JNI calls: Android capabilities go through the Kotlin `UiBridge` socket (`ui/src/bridge.rs`).
 - Android service intent arbitration belongs to `ServiceState`; the UI requests transitions, never owns them. Keep
   start/stop/restart latest-intent-safe. See Lifecycle Rules in [rules.md](.agents/rules.md).
@@ -62,5 +55,4 @@ Read these only when the task touches their area:
 ## Repo Skills
 
 Use the skills in `.agents/skills/` when a task matches their descriptions; `.claude/skills/` symlinks expose them to
-Claude Code. They cover localization, UI work, UI performance, core/platform changes, test scope, and pre-commit
-structural review.
+Claude Code. They cover UI work, UI performance, core/platform changes, test scope, and pre-commit structural review.
