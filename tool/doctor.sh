@@ -83,16 +83,11 @@ fi
 echo
 echo 'Optional'
 optional pre-commit 'make hooks'
-optional dart 'the icon scripts in tool/ and ui/tools/gen_theme.dart'
+optional dart 'the icon scripts in tool/'
 optional rsvg-convert 'make icons, make status-icons'
 optional cwebp 'make icons'
 optional node 'make site'
 optional gh 'release metadata in make site'
-if [ -n "$(ls -A "$root/plugins/prism_ui" 2>/dev/null)" ]; then
-  ok 'submodule plugins/prism_ui (ui/tools/gen_theme.dart)'
-else
-  note 'submodule plugins/prism_ui is empty: only ui/tools/gen_theme.dart reads it'
-fi
 
 echo
 if [ "$missing" -gt 0 ]; then
