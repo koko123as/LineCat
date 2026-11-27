@@ -11933,18 +11933,22 @@ export component AppWindow inherits Window {
         if root.req-sheet-open && root.req-visible: Rectangle {
             background: #00000066;
             TouchArea { clicked => { root.req-sheet-open = false; root.req-sheet-closed(); } }
+            // `showNestedSheet` → `showSheet`: a side sheet past the mobile width, with
+            // the phone's title actions.
             Rectangle {
-                y: root.top-inset + 24px;
+                width: root.wide ? SideSheet.width(parent.width) : parent.width;
+                x: root.wide ? parent.width - self.width : 0;
+                y: root.wide ? 0 : root.top-inset + 24px;
                 height: parent.height - self.y;
                 background: Theme.s.card;
-                border-top-left-radius: 24px;
-                border-top-right-radius: 24px;
+                border-top-left-radius: root.wide ? 0 : 24px;
+                border-top-right-radius: root.wide ? 0 : 24px;
                 clip: true;
                 TouchArea { }
                 VerticalLayout {
                     Rectangle {
-                        height: 16px;
-                        Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
+                        height: root.wide ? root.top-inset + 8px : 16px;
+                        if !root.wide: Rectangle { y: 8px; width: 36px; height: 4px; border-radius: 2px; background: Theme.s.outline-variant; }
                     }
                     HorizontalLayout {
                         height: 44px;
