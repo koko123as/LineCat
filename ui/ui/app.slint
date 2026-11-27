@@ -535,6 +535,7 @@ global Icons {
     out property <string> check-circle: "M12 3a9 9 0 1 0 0.01 0z M8 12.5l3 3 5-6";
     out property <string> unfold: "M6 9l6 6 6-6";
     out property <string> fold: "M6 15l6-6 6 6";
+    out property <string> caret-down: "M5.2 8H18.8L12 16z";
     out property <string> status: "M3 12h4l2-5 4 10 2-5h6";
     out property <string> rule: "M5 5h14v14H5z M8 9h8 M8 12h8 M8 15h5";
     out property <string> target: "M12 3a9 9 0 1 0 0.01 0z M12 8a4 4 0 1 0 0.01 0z";
@@ -1683,6 +1684,26 @@ export global SheetDrag {
         if (t - last-t <= 0ms) { return was; }
         let now = (y - last-y) / 1px * 1000 / ((t - last-t) / 1ms);
         return t - last-t < 40ms ? (was + now) / 2 : now;
+    }
+}
+
+// prism's `UnfoldMotion`: UIKit's outline disclosure spring (mass 1, stiffness 631.65, damping
+// 50.27, critically damped), run from where it stands at the speed it has, so a tap mid-motion
+// turns it around without a jolt. `t` is in seconds since the run started.
+export global UnfoldMotion {
+    public pure function at(from: float, to: float, v0: float, t: float) -> float {
+        let w = Math.sqrt(631.65);
+        let c1 = from - to;
+        return to + (c1 + (v0 + w * c1) * t) * Math.exp(-w * t);
+    }
+    public pure function velocity(from: float, to: float, v0: float, t: float) -> float {
+        let w = Math.sqrt(631.65);
+        let c2 = v0 + w * (from - to);
+        return (v0 - w * c2 * t) * Math.exp(-w * t);
+    }
+    // `Tolerance(distance: 1e-3, velocity: 0.03)`: 0.367 s from rest.
+    public pure function settled(from: float, to: float, v0: float, t: float) -> bool {
+        return abs(UnfoldMotion.at(from, to, v0, t) - to) < 0.001 && abs(UnfoldMotion.velocity(from, to, v0, t)) < 0.03;
     }
 }
 
@@ -3061,6 +3082,8 @@ component GroupHeader inherits Card {
     in property <ProxyGroup> group;
     // 0 filled, 1 plain, 2 hidden.
     in property <int> icon;
+    // How far the rows are out, 0 folded to 1 unfolded.
+    in property <float> unfold: root.group.expanded ? 1 : 0;
     callback toggle();
     callback test();
     callback locate();
@@ -3112,9 +3135,22 @@ component GroupHeader inherits Card {
             }
         }
         if !root.group.expanded: Text { text: root.group.kind; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        // `Glyphs.caretDown` turned from pointing at the label (-90°) to down with the rows.
         VerticalLayout {
             alignment: center;
-            IconButton { glyph: root.group.expanded ? Icons.fold : Icons.unfold; clicked => { root.toggle(); } }
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 20px;
+                background: fold-ta.pressed ? Theme.s.inset : transparent;
+                FilledIcon {
+                    size: 20px;
+                    glyph: Icons.caret-down;
+                    tint: Theme.s.on-surface-variant;
+                    transform-rotation: -90deg * (1 - root.unfold);
+                }
+                fold-ta := TouchArea { clicked => { root.toggle(); } }
+            }
         }
     }
 }
@@ -3156,6 +3192,53 @@ component Proxies inherits Rectangle {
 
     pure function pickable(kind: string) -> bool {
         return kind == "Selector" || kind == "URLTest" || kind == "Fallback" || kind == "Smart";
+    }
+
+    // The group whose rows are moving (`UnfoldMotion.run`); another tap on it turns the
+    // motion around, a tap on another group settles this one.
+    property <string> unfold-group;
+    property <float> unfold-from;
+    property <float> unfold-to;
+    property <float> unfold-v0;
+    property <duration> unfold-start;
+    property <bool> unfold-running;
+    property <float> unfold-t: root.unfold-running ? UnfoldMotion.at(root.unfold-from, root.unfold-to, root.unfold-v0, (animation-tick() - root.unfold-start) / 1s) : root.unfold-to;
+
+    pure function moving(group: string) -> bool {
+        return root.unfold-running && root.unfold-group == group;
+    }
+
+    pure function unfold-of(g: ProxyGroup) -> float {
+        return root.moving(g.name) ? clamp(root.unfold-t, 0, 1) : g.expanded ? 1 : 0;
+    }
+
+    function start-unfold(group: string, expanded: bool) {
+        let now = animation-tick();
+        if (root.moving(group)) {
+            let t = (now - root.unfold-start) / 1s;
+            let x = UnfoldMotion.at(root.unfold-from, root.unfold-to, root.unfold-v0, t);
+            let v = UnfoldMotion.velocity(root.unfold-from, root.unfold-to, root.unfold-v0, t);
+            root.unfold-from = x;
+            root.unfold-v0 = v;
+            root.unfold-to = 1 - root.unfold-to;
+        } else {
+            root.unfold-from = expanded ? 1 : 0;
+            root.unfold-v0 = 0;
+            root.unfold-to = expanded ? 0 : 1;
+        }
+        root.unfold-group = group;
+        root.unfold-start = now;
+        root.unfold-running = true;
+    }
+
+    unfold-timer := Timer {
+        interval: 16ms;
+        running: root.unfold-running;
+        triggered => {
+            if (UnfoldMotion.settled(root.unfold-from, root.unfold-to, root.unfold-v0, (animation-tick() - root.unfold-start) / 1s)) {
+                root.unfold-running = false;
+            }
+        }
     }
 
     changed query => { root.search(root.query); }
@@ -3296,18 +3379,29 @@ component Proxies inherits Rectangle {
                                 // stays at the top until the group's last row pushes it off.
                                 if mod(i, root.group-columns) == c: Rectangle {
                                     group-body := VerticalLayout {
-                                        spacing: 8px;
                                         padding-bottom: 10px;
                                         header-slot := Rectangle { height: 64px; }
-                                        if g.expanded: NodeGrid {
-                                        nodes: g.nodes;
-                                        columns: root.columns;
-                                        card-height: root.card-height;
-                                        size: root.style.card;
-                                        menu-enabled: root.pickable(g.kind);
-                                        select(n) => { root.select-node(g.name, n); }
-                                        test(n) => { root.test-node(g.name, n); }
-                                        menu(n, x, y, w, h) => { root.node-menu(g.name, g.kind, n, x, y, w, h); }
+                                        // `UnfoldSliver`: while moving, the rows slide out from behind
+                                        // the header as one block of at most a screen, clipped at its
+                                        // bottom edge, and what follows moves with the block's bottom.
+                                        if g.expanded || root.moving(g.name): Rectangle {
+                                            property <bool> in-motion: root.moving(g.name);
+                                            property <length> full: rows.height + 8px;
+                                            property <length> extent: min(self.full, flick.height);
+                                            property <length> shown: self.extent * root.unfold-of(g);
+                                            height: self.in-motion ? self.shown : self.full;
+                                            clip: self.in-motion;
+                                            rows := NodeGrid {
+                                                y: parent.in-motion ? parent.shown - parent.extent + 8px : 8px;
+                                                nodes: g.nodes;
+                                                columns: root.columns;
+                                                card-height: root.card-height;
+                                                size: root.style.card;
+                                                menu-enabled: root.pickable(g.kind);
+                                                select(n) => { root.select-node(g.name, n); }
+                                                test(n) => { root.test-node(g.name, n); }
+                                                menu(n, x, y, w, h) => { root.node-menu(g.name, g.kind, n, x, y, w, h); }
+                                            }
                                         }
                                     }
                                     GroupHeader {
@@ -3315,7 +3409,11 @@ component Proxies inherits Rectangle {
                                         width: parent.width;
                                         group: g;
                                         icon: root.style.icon;
-                                        toggle => { root.toggle-group(g.name); }
+                                        unfold: root.unfold-of(g);
+                                        toggle => {
+                                            root.start-unfold(g.name, g.expanded);
+                                            root.toggle-group(g.name);
+                                        }
                                         test => { root.test-group(g.name); }
                                         locate => { root.go-to(g.name); }
                                     }

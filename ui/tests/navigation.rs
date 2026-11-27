@@ -90,6 +90,24 @@ fn navigation() {
     assert_eq!(drag.invoke_speed(110.0, 1060, 100.0, 1050, 500.0), 750.0);
     assert_eq!(drag.invoke_speed(110.0, 1050, 110.0, 1050, 300.0), 300.0);
 
+    // A group's rows unfold on UIKit's outline spring: still at the touch, within a thousandth
+    // after 0.367 s, and a turn mid-motion starts from where the block stands at its speed.
+    let unfold = ui.global::<UnfoldMotion>();
+    assert_eq!(unfold.invoke_at(0.0, 1.0, 0.0, 0.0), 0.0);
+    assert_eq!(unfold.invoke_velocity(0.0, 1.0, 0.0, 0.0), 0.0);
+    assert!(unfold.invoke_at(0.0, 1.0, 0.0, 0.1) > 0.5);
+    assert!(!unfold.invoke_settled(0.0, 1.0, 0.0, 0.3));
+    assert!(unfold.invoke_settled(0.0, 1.0, 0.0, 0.37));
+    assert!(unfold.invoke_settled(1.0, 0.0, 0.0, 0.37));
+    let (x, v) = (
+        unfold.invoke_at(0.0, 1.0, 0.0, 0.08),
+        unfold.invoke_velocity(0.0, 1.0, 0.0, 0.08),
+    );
+    assert!(v > 0.0);
+    assert!((unfold.invoke_at(x, 0.0, v, 0.0) - x).abs() < 1e-6);
+    assert!(unfold.invoke_at(x, 0.0, v, 0.02) > x);
+    assert!(unfold.invoke_at(x, 0.0, v, 0.5) < 0.001);
+
     let card = ui.global::<ProxyCardMetrics>();
     for scale in [1.0f32, 1.3] {
         ui.global::<Type>().set_scale(scale);
