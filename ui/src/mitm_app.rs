@@ -268,9 +268,18 @@ pub fn module_sections(
     updating: bool,
     updated: &str,
 ) -> Vec<SetSection> {
+    let mut about = mitm::about_footer(m);
+    if let Some(requirement) = read.and_then(|r| r.requirement.as_ref()) {
+        if !about.is_empty() {
+            about.push_str("\n\n");
+        }
+        about.push_str(&format!(
+            "模块要求 {requirement}，本设备不满足，可能无法按预期工作。"
+        ));
+    }
     let mut out = vec![section(
         "",
-        &mitm::about_footer(m),
+        &about,
         vec![toggle("enabled", "已开启", m.enabled)],
     )];
     let mut source = vec![
@@ -354,6 +363,28 @@ pub fn module_sections(
             })
             .collect();
         out.push(section("参数", &mitm::arguments_footer(read), rows));
+    }
+    if !read.resources.is_empty() {
+        let mut rows: Vec<SetRow> = read
+            .resources
+            .iter()
+            .enumerate()
+            .map(|(i, r)| SetRow {
+                invalid: r.state == "failed",
+                ..row(
+                    &format!("res:{i}"),
+                    if r.state == "fetching" {
+                        "busy"
+                    } else {
+                        "info"
+                    },
+                    &r.url,
+                    &r.label(),
+                )
+            })
+            .collect();
+        rows.push(row("res-fetch", "value", "重新下载", ""));
+        out.push(section("远程文件", "", rows));
     }
     if !network.is_empty() {
         out.push(network_section());
@@ -1336,7 +1367,11 @@ impl App {
         let read = std::fs::read_to_string(self.module_path(&m))
             .map_err(|e| e.to_string())
             .and_then(|text| self.read_text(&text, &m.arguments, &m.attachments()))
-            .map(|read| read.with_refused(&self.refused_rules(&id)));
+            .map(|read| {
+                let status = self.module_status();
+                read.with_refused(&mitm::refused_rules(&status, &id))
+                    .with_resources(mitm::module_resources(&status, &id))
+            });
         {
             let mut st = state().lock().unwrap();
             if st.module != id {
@@ -1352,12 +1387,24 @@ impl App {
         read.ok()
     }
 
-    /// `mitmModuleStatusProvider`'s refused rules of one module; none while it is not in force.
-    fn refused_rules(&self, id: &str) -> BTreeMap<i64, String> {
+    /// `mitmModuleStatusProvider`: what the Core holds of the modules in force.
+    fn module_status(&self) -> Value {
         self.bridge()
             .and_then(|b| b.call("mitm.moduleStatus", json!({}), CALL))
-            .map(|status| mitm::refused_rules(&status, id))
-            .unwrap_or_default()
+            .unwrap_or(Value::Null)
+    }
+
+    /// `fetchResources`: the module's remote files downloaded again.
+    fn fetch_module_resources(self: &Arc<Self>, id: String) {
+        self.spawn(move |app| {
+            let fetched = app
+                .bridge()
+                .and_then(|b| b.call("mitm.fetchModule", json!({"name": id}), CALL));
+            if let Err(e) = fetched {
+                app.toast(e);
+            }
+            app.reload_module_read();
+        });
     }
 
     /// `readMitmModule`: the Core reads the text with these argument values.
@@ -1479,6 +1526,7 @@ impl App {
             "edit" => self.module_action(m, "edit", "mitm-module"),
             "source" if m.is_remote() => self.module_action(m, "url", "mitm-module"),
             "att-add" => self.spawn(move |app| app.attach(m)),
+            "res-fetch" => self.fetch_module_resources(mid),
             id if id.starts_with("long:att:") => {
                 let names: Vec<String> = m.attachments().into_keys().collect();
                 if let Some(i) = names.iter().position(|n| n == &id["long:att:".len()..]) {
@@ -2244,5 +2292,31 @@ mod tests {
         state().lock().unwrap().editor = Some((Editor::Hosts, "mitm".into()));
         crate::rule_sets_app::release_editor();
         assert!(state().lock().unwrap().editor.is_none());
+    }
+
+    #[test]
+    fn remote_files_list_before_the_network() {
+        let read = mitm::ModuleRead {
+            requirement: Some("Android 14".into()),
+            resources: vec![mitm::ModuleResource {
+                url: "https://a.test/a.js".into(),
+                state: "failed".into(),
+                reason: "dns".into(),
+                status: None,
+            }],
+            ..Default::default()
+        };
+        let m = MitmModule {
+            id: "1".into(),
+            url: "https://a.test/m".into(),
+            ..Default::default()
+        };
+        let s = module_sections(&m, Some(&read), &[], false, "");
+        assert!(s[0].footer.contains("模块要求 Android 14"));
+        let files = s.iter().find(|x| x.title == "远程文件").unwrap();
+        assert_eq!(titles(files), vec!["https://a.test/a.js", "重新下载"]);
+        let first = files.rows.row_data(0).unwrap();
+        assert!(first.invalid);
+        assert_eq!(first.subtitle, "下载失败：无法解析主机名");
     }
 }

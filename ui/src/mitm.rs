@@ -543,6 +543,57 @@ pub fn refused_rules(status: &Value, name: &str) -> BTreeMap<i64, String> {
         .unwrap_or_default()
 }
 
+/// A remote file a module reads, as `mitm.moduleStatus` reports it (`MitmModuleResourceStatus`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ModuleResource {
+    pub url: String,
+    pub state: String,
+    /// `MitmFetchFailure.reason` and the HTTP status of an `http` one.
+    pub reason: String,
+    pub status: Option<i64>,
+}
+
+impl ModuleResource {
+    /// `_resourceState`.
+    pub fn label(&self) -> String {
+        match self.state.as_str() {
+            "ok" => "已下载".into(),
+            "fetching" => "正在下载".into(),
+            "failed" => match (self.reason.as_str(), self.status) {
+                ("http", Some(status)) => format!("下载失败：服务器返回 {status}"),
+                ("dns", _) => "下载失败：无法解析主机名".into(),
+                ("tls", _) => "下载失败：无法建立安全连接".into(),
+                ("timeout", _) => "下载失败：服务器响应超时".into(),
+                ("connection", _) => "下载失败：连接中断".into(),
+                _ => "下载失败".into(),
+            },
+            _ => "尚未下载".into(),
+        }
+    }
+}
+
+/// `resources` of the module `mitm.moduleStatus` reports under `name`.
+pub fn module_resources(status: &Value, name: &str) -> Vec<ModuleResource> {
+    array(status, "modules")
+        .iter()
+        .find(|m| m.get("name").and_then(Value::as_str) == Some(name))
+        .map(|m| {
+            array(m, "resources")
+                .iter()
+                .map(|r| {
+                    let error = r.get("error").cloned().unwrap_or(Value::Null);
+                    ModuleResource {
+                        url: text(r, "url"),
+                        state: text(r, "state"),
+                        reason: text(&error, "reason"),
+                        status: error.get("status").and_then(Value::as_i64),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// `MitmModuleDetails`: what `mitm.readModule` makes of a module's text.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ModuleRead {
@@ -550,6 +601,9 @@ pub struct ModuleRead {
     pub desc: Option<String>,
     pub system: Option<String>,
     pub arguments_desc: Option<String>,
+    /// `meta.requirement` while the Core turns the whole module `off` for it.
+    pub requirement: Option<String>,
+    pub resources: Vec<ModuleResource>,
     pub arguments: Vec<Argument>,
     pub declared_scripts: usize,
     pub asks_consent: bool,
@@ -758,6 +812,12 @@ pub fn read_module(source: &str, read: &Value) -> ModuleRead {
         desc: opt_text(&meta, "desc"),
         system: opt_text(&meta, "system"),
         arguments_desc: opt_text(&meta, "argumentsDesc"),
+        requirement: read
+            .get("off")
+            .and_then(|o| o.get("reason"))
+            .and_then(Value::as_str)
+            .and_then(|_| opt_text(&meta, "requirement")),
+        resources: Vec::new(),
         arguments,
         declared_scripts: array(read, "declaredScripts").len(),
         asks_consent: read.get("asksConsent").and_then(Value::as_bool) == Some(true),
@@ -788,6 +848,11 @@ fn task_name(view: &Value) -> Option<String> {
 }
 
 impl ModuleRead {
+    pub fn with_resources(mut self, resources: Vec<ModuleResource>) -> Self {
+        self.resources = resources;
+        self
+    }
+
     pub fn with_refused(mut self, refused: &BTreeMap<i64, String>) -> Self {
         for rule in &mut self.rules {
             rule.refused = refused.get(&rule.line).cloned().unwrap_or_default();
@@ -1316,5 +1381,40 @@ mod tests {
         assert_eq!((c.subject.as_str(), c.fingerprint.as_str()), ("S", "F"));
         assert!(c.not_after > 0);
         assert!(certificate_of(&json!({"certificate": null})).is_none());
+    }
+
+    #[test]
+    fn remote_files_say_how_their_download_went() {
+        let status = json!({"modules": [{"name": "m1", "resources": [
+            {"url": "https://a.test/a.js", "state": "ok"},
+            {"url": "https://a.test/b.js", "state": "failed", "error": {"reason": "http", "status": 404}},
+            {"url": "https://a.test/c.js", "state": "failed", "error": {"reason": "tls"}},
+            {"url": "https://a.test/d.js", "state": "fetching"},
+            {"url": "https://a.test/e.js"}
+        ]}]});
+        let labels: Vec<String> = module_resources(&status, "m1")
+            .iter()
+            .map(|r| r.label())
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                "已下载",
+                "下载失败：服务器返回 404",
+                "下载失败：无法建立安全连接",
+                "正在下载",
+                "尚未下载"
+            ]
+        );
+        assert!(module_resources(&status, "m2").is_empty());
+        let mut off = read_json();
+        off["off"] = json!({"reason": "requirement"});
+        off["meta"] = json!({"requirement": "Android 14"});
+        assert_eq!(
+            read_module(SOURCE, &off).requirement.as_deref(),
+            Some("Android 14")
+        );
+        off.as_object_mut().unwrap().remove("off");
+        assert_eq!(read_module(SOURCE, &off).requirement, None);
     }
 }
