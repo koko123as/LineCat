@@ -693,6 +693,23 @@ impl App {
         out
     }
 
+    /// `remoteProviderOf`: the app's remote rule set the Core reads from `path`.
+    pub(crate) fn remote_rule_set_at(&self, path: &str) -> Option<String> {
+        let dir = self.rule_sets_dir();
+        let core = |s: &RuleSet| {
+            let file = s.file_name();
+            dir.join(if compiled(s) {
+                format!("{file}.mrs")
+            } else {
+                file
+            })
+        };
+        self.rule_sets()
+            .into_iter()
+            .find(|s| s.is_remote() && core(s).to_string_lossy() == path)
+            .map(|s| s.id)
+    }
+
     pub(crate) fn delete_rule_set(self: &Arc<Self>, id: &str) {
         let Some(s) = self.rule_sets().into_iter().find(|s| s.id == id) else {
             return;

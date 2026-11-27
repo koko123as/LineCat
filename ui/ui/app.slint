@@ -243,9 +243,20 @@ export struct DashProfileDetail {
     remote: bool,
 }
 
+// `_ExternalProviderItem`: the count, or with a subscription its traffic meter and the
+// count as a chip; the expiry chip; a spinner or when it was last updated.
 export struct ProviderRow {
     name: string,
     subtitle: string,
+    chip: string,
+    expire: string,
+    expired: bool,
+    meter: bool,
+    traffic: string,
+    ratio: float,
+    updated: string,
+    busy: bool,
+    previewable: bool,
 }
 
 export struct DashProfile {
@@ -9937,6 +9948,9 @@ export component AppWindow inherits Window {
     in-out property <bool> picker-open;
     in property <DashProfileDetail> profile-detail;
     in property <[ProviderRow]> profile-providers;
+    in property <bool> providers-updating;
+    // The sheet's 外部资源: "update-all", or a row's "preview" / "menu" by its name.
+    callback provider-act(string, string);
     callback open-profile-detail();
     callback dash-move(int, int);
     callback dash-card-height(int, length);
@@ -12299,22 +12313,78 @@ export component AppWindow inherits Window {
             if root.profile-providers.length > 0: VerticalLayout {
                 spacing: 8px;
                 Rectangle { height: 4px; }
-                Text { text: "外部资源"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+                HorizontalLayout {
+                    Text { text: "外部资源"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
+                    if root.providers-updating: VerticalLayout {
+                        alignment: center;
+                        Rectangle { width: 40px; height: 40px; Spinner { width: 20px; height: 20px; indeterminate: true; } }
+                    }
+                    if !root.providers-updating: IconButton { glyph: Icons.sync; tint: Theme.s.on-surface-variant; clicked => { root.provider-act("update-all", ""); } }
+                }
                 Rectangle {
                     background: Theme.s.card;
                     border-radius: 16px;
                     height: self.preferred-height;
+                    clip: true;
                     VerticalLayout {
-                        padding-left: 16px;
-                        padding-right: 16px;
-                        for pr[pi] in root.profile-providers: VerticalLayout {
-                            if pi > 0: Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
-                            VerticalLayout {
+                        for pr[pi] in root.profile-providers: Rectangle {
+                            property <bool> long-fired;
+                            height: pv-col.preferred-height;
+                            background: pv-ta.pressed && !pr.busy ? Theme.s.inset : transparent;
+                            if pi > 0: Rectangle { x: 16px; y: 0; width: parent.width - 16px; height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                            pv-col := HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
                                 padding-top: 10px;
                                 padding-bottom: 10px;
-                                spacing: 2px;
-                                Text { text: pr.name; font-size: 15px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
-                                Text { text: pr.subtitle; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
+                                spacing: 12px;
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 4px;
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Text { text: pr.name; font-size: 15px * Type.scale; color: Theme.s.on-surface; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+                                        if pr.chip != "": VerticalLayout { alignment: center; Chip { text: pr.chip; } }
+                                        if pr.expire != "": VerticalLayout { alignment: center; Chip { text: pr.expire; tone: pr.expired ? Theme.s.error : Theme.s.primary; } }
+                                    }
+                                    if !pr.meter: Text { text: pr.subtitle; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
+                                    if pr.meter: VerticalLayout {
+                                        spacing: 6px;
+                                        Text { text: pr.traffic; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; overflow: elide; }
+                                        Rectangle {
+                                            height: 4px;
+                                            border-radius: 2px;
+                                            background: Theme.s.primary.with-alpha(0.15);
+                                            Rectangle { x: 0; width: parent.width * pr.ratio; border-radius: 2px; background: Theme.s.primary; }
+                                        }
+                                    }
+                                }
+                                if pr.busy: VerticalLayout { alignment: center; Spinner { width: 24px; height: 24px; indeterminate: true; } }
+                                if !pr.busy && pr.updated != "": VerticalLayout {
+                                    alignment: center;
+                                    Text { text: pr.updated; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; }
+                                }
+                            }
+                            pv-ta := TouchArea {
+                                enabled: !pr.busy;
+                                pointer-event(e) => {
+                                    if (e.kind == PointerEventKind.down) { parent.long-fired = false; }
+                                }
+                                clicked => {
+                                    if (!parent.long-fired && pr.previewable) { root.provider-act("preview", pr.name); }
+                                }
+                            }
+                            Timer {
+                                interval: 500ms;
+                                running: pv-ta.pressed && !parent.long-fired && !pr.busy;
+                                triggered => {
+                                    parent.long-fired = true;
+                                    Anchor.x = parent.absolute-position.x;
+                                    Anchor.y = parent.absolute-position.y;
+                                    Anchor.w = parent.width;
+                                    Anchor.h = parent.height;
+                                    root.provider-act("menu", pr.name);
+                                }
                             }
                         }
                     }

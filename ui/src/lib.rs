@@ -23,6 +23,8 @@ mod editor_app;
 pub mod editor_complete;
 pub mod editor_history;
 pub mod editor_schema;
+pub mod ext_providers;
+mod ext_providers_app;
 pub mod extend;
 mod extend_app;
 pub use extend_app::{exit_section, global_view as extend_global_view, main_view as extend_view};

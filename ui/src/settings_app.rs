@@ -367,6 +367,9 @@ impl App {
             if kind == "acc" {
                 return a.access_menu_picked(&id);
             }
+            if kind == "provider" {
+                return a.provider_act(&id, &arg);
+            }
             if kind == "pr" || kind == "pr-add" {
                 return a.rules_menu_picked(&kind, &arg, &id);
             }

@@ -65,6 +65,8 @@ impl Default for DashTable {
 impl App {
     pub(crate) fn bind_dashboard(self: &Arc<Self>, ui: &AppWindow) {
         let a = self.clone();
+        ui.on_provider_act(move |action, name| a.provider_act(&action, &name));
+        let a = self.clone();
         ui.on_dash_move(move |from, to| a.move_dashboard(from as usize, to as usize));
         let a = self.clone();
         ui.on_dash_table_select(move |feed| {
@@ -343,22 +345,14 @@ impl App {
                     .unwrap_or_default();
                 Ok((inspect, providers))
             };
-            let (counts, rows) = match read() {
+            let (counts, providers) = match read() {
                 Ok((inspect, providers)) => (
                     dashboard::profile_stats(&inspect, &providers).map(|n| n.to_string()),
-                    providers
-                        .iter()
-                        .map(|p| {
-                            let (name, subtitle) = dashboard::provider_row(p);
-                            ProviderRow {
-                                name: name.into(),
-                                subtitle: subtitle.into(),
-                            }
-                        })
-                        .collect::<Vec<_>>(),
+                    providers,
                 ),
                 Err(_) => (std::array::from_fn(|_| "-".to_string()), Vec::new()),
             };
+            app.set_ext_providers(&providers);
             app.ui(move |ui| {
                 let [groups, proxies, rules, providers] = counts;
                 ui.set_profile_detail(DashProfileDetail {
@@ -370,7 +364,6 @@ impl App {
                     script: "无".into(),
                     remote: false,
                 });
-                ui.set_profile_providers(ModelRc::new(VecModel::from(rows)));
             });
         });
     }

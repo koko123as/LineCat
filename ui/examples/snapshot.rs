@@ -1835,11 +1835,21 @@ fn main() {
     ui.set_profile_providers(ModelRc::new(VecModel::from(vec![
         ProviderRow {
             name: "机场节点".into(),
-            subtitle: "代理 · HTTP · 42".into(),
+            chip: "42".into(),
+            expire: "2026-12-31".into(),
+            meter: true,
+            traffic: "12.4 GB / 100.0 GB".into(),
+            ratio: 0.124,
+            updated: "3 小时前".into(),
+            previewable: true,
+            ..Default::default()
         },
         ProviderRow {
             name: "reject-list".into(),
-            subtitle: "规则 · HTTP · 18230".into(),
+            subtitle: "18K 条规则".into(),
+            updated: "2 天前".into(),
+            busy: true,
+            ..Default::default()
         },
     ])));
     ui.set_profile_name("我的机场".into());
