@@ -18,6 +18,8 @@ pub mod dashboard;
 pub mod dns_queries;
 pub mod drag;
 pub mod edges;
+pub mod editor;
+mod editor_app;
 pub mod extend;
 mod extend_app;
 pub use extend_app::{exit_section, global_view as extend_global_view, main_view as extend_view};
@@ -2764,6 +2766,7 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
     });
     app.bind_app_icons(&ui);
     app.bind_net_images(&ui);
+    app.bind_editor(&ui);
     app.bind_logs(&ui);
     app.bind_dashboard(&ui);
     app.bind_live(&ui);
