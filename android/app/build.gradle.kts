@@ -6,10 +6,10 @@ plugins {
     id("com.android.application")
 }
 
-// The release this build is. The code stays at or above v0.9.5-rs.2's, which its release build
-// numbered 2026112701 plus 2000 for its arm64-v8a split, so an APK installs over it.
-val appVersionName = "0.9.5-rs.2"
-val appVersionCode = 2026114701
+// The release this build is. The code is the date and that day's build number (YYYYMMDDNN) plus
+// 2000, the arm64-v8a split offset v0.9.5-rs.2 shipped with, so it only goes up.
+val appVersionName = "0.9.5-rs.3"
+val appVersionCode = 2026114702
 
 val abiByPlatform =
     mapOf(

@@ -133,7 +133,9 @@ method it calls is one the Flutter UI's `rpc_core_api.dart` calls too. 修前 is
   a tag also needs all four signing secrets and Gradle's versionName equal to the tag, then the `release` job publishes
   `FlClash-<ver>-android-arm64.apk` and `FlClash-<ver>-SHA256SUMS` (names from `update.rs`) as a full release, notes
   from `release-notes/<tag>.md`.
-- Next release: bump `appVersionName` and `appVersionCode` (above 2026114701) in `android/app/build.gradle.kts`, add
+- v0.9.5-rs.3 (2026-11-27, owner approved): first release built by Gradle alone, versionCode 2026114702
+  (2026112702 plus the arm64 split's 2000), published by `slint-android.yaml` on the tag.
+- Next release: bump `appVersionName` and `appVersionCode` (above 2026114702) in `android/app/build.gradle.kts`, add
   `release-notes/<tag>.md`, push, wait for green, tag.
 
 ## Remaining
