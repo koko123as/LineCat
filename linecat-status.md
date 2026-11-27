@@ -83,6 +83,7 @@ what each batch landed and what is left.
 | 12b loading states | "open pages at once and load behind a spinner" | As prism's `NullStatusSwitcher` (`minimumLoadingDuration` 400 ms): the profile editor, 运行时配置, the rule set preview and 代理's quick edit open at once on a spinner held at least 400 ms and read their document behind it (`editor_load` drops a result from a page left or opened again); a document that cannot be read shows 编辑器不可用 with the reason (`editorUnavailable`) instead of a toast. 字体 holds its spinner the same way and brings the picked font to the middle once listed (`_revealSelected`). `ActionSheet` takes a `loading` state (`SelectionSheet.loadingStatus`): 扩展 → 出口's sheet opens while the outbounds are read and fills in, revealing the picked row. |
 | 12c record labels | "draw record lines as text with labels after it" | As FlClash rs `RecordLabelLine` / `RecordLabel`: the 请求 rows (connections: failure in red or the node and lifetime, ×n, MITM; DNS: the answer, failure, who asked, 缓存; HTTP: host, duration, mark), the detail heads (connection, DNS, HTTP outcome labels), the timeline (kind, then each note as a label), 链路 (UID, group type, node type), related connections, a connection's HTTP requests and the rule actions read as one line: the text, then tonal labels at their own widths, 4 apart. The text gives way first, then the last label within itself; a part left under twice its height that does not fit is dropped. The layout is the `RecordLine` global's pure functions, tested with given widths (no font). Left out: tabular figures (Slint `Text` has no font features), at most five labels a line. |
 | 12d back and close | "close the app from the root page as FlClash" | As `HomeBackScopeContainer` and `handleClose`: back with nothing left to close returns to 仪表盘 only on a TV off it; otherwise it closes the app: with 退出时最小化 on (the default) the task goes to the back (`UiBridge` `app.close` → `moveTaskToBack`), else the activity finishes. Before, back on another tab went to 仪表盘 and back on 仪表盘 did nothing. `PlaceholderPage` (no entry, no FlClash counterpart) is gone. Not done: the 「语言」 row (FlClash ships every locale; LineCat is Chinese only). Unchanged, already as FlClash: the default log level error, the Core in process. |
+| 12e build workflow | "do not run build.yaml on slint-ui" | `.github/workflows/build.yaml` runs on pushes to every branch but `slint-ui` (`branches-ignore`), on `v*` tags and by hand; `slint-ui` is built by `slint-android.yaml`. |
 
 ## Audit: entries that must really work
 
@@ -141,6 +142,5 @@ Handoff items 2–7:
 
 ## Waiting on the owner
 
-- Whether the build workflow skips `slint-ui`, the 「语言」 row, and whether
-  the tablet detail sheet buttons match the phone's (the Core already runs in
-  process, 12d).
+- The 「语言」 row, and whether the tablet detail sheet buttons match the
+  phone's (the Core already runs in process, 12d).

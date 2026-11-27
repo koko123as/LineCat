@@ -2,8 +2,9 @@ name: build
 
 on:
   push:
-    branches:
-      - '**'
+    # slint-ui is built by slint-android.yaml.
+    branches-ignore:
+      - slint-ui
     tags:
       - 'v*'
   workflow_dispatch:
