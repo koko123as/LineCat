@@ -368,6 +368,8 @@ export struct DetailRow {
     arg: string,
     labels: [RecordLabel],
     image: image,
+    // A long press opens the row's menu, as `ContextMenuRegion` does.
+    menu: bool,
 }
 
 export struct DetailSection {
@@ -612,7 +614,7 @@ global Glyphs {
             : k == "rules" ? Icons.rule : k == "filter" ? Icons.filter : k == "proxies" ? Icons.proxies
             : k == "photos" ? Icons.photos : k == "sliders" ? Icons.sliders : k == "shield" ? Icons.shield
             : k == "pin" ? Icons.pin : k == "check-circle" ? Icons.check-circle : k == "edit" ? Icons.edit
-            : k == "copy" ? Icons.copy : k == "sync" ? Icons.sync : k == "export" ? Icons.export : k == "eye" ? Icons.eye
+            : k == "copy" ? Icons.copy : k == "swap" ? Icons.swap : k == "sync" ? Icons.sync : k == "export" ? Icons.export : k == "eye" ? Icons.eye
             : k == "qr" ? Icons.qr : k == "devices" ? Icons.devices : k == "sort" ? Icons.sort : k == "file" ? Icons.file
             : k == "import-file" ? Icons.import-file : k == "cloud" ? Icons.cloud : k == "more-circle" ? Icons.more-circle
             : k == "lock-open" ? Icons.lock-open : k == "clock" ? Icons.clock : k == "link" ? Icons.link : k == "play" ? Icons.play : k == "puzzle" ? Icons.puzzle
@@ -8073,11 +8075,44 @@ component DetailRowView inherits Rectangle {
     property <color> muted: Theme.s.on-surface-variant;
     property <color> toned: root.item.tone == 1 ? Theme.s.error : root.item.tone == 2 ? Theme.success : root.item.tone == 3 ? Theme.warning : muted;
     property <bool> opens: root.item.kind == "link" || (root.item.arg != "" && root.item.kind != "traffic");
+    property <bool> fired;
     height: body.preferred-height;
     background: ta.pressed && opens ? Theme.s.inset : transparent;
     ta := TouchArea {
         enabled: root.opens;
-        clicked => { root.tapped(root.item.arg); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.fired = false;
+                if (root.item.menu) {
+                    MenuAnchor.at(root.absolute-position.x + self.mouse-x, root.absolute-position.y + self.mouse-y, 0px, 0px);
+                    if (e.button == PointerEventButton.right) {
+                        root.fired = true;
+                        root.tapped("menu:" + root.item.arg);
+                    } else {
+                        hold.running = true;
+                    }
+                }
+            } else if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                hold.running = false;
+            }
+        }
+        moved => {
+            if (abs(self.mouse-x - self.pressed-x) > 8px || abs(self.mouse-y - self.pressed-y) > 8px) {
+                hold.running = false;
+            }
+        }
+        clicked => {
+            if (!root.fired) { root.tapped(root.item.arg); }
+        }
+    }
+    hold := Timer {
+        interval: 450ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.fired = true;
+            root.tapped("menu:" + root.item.arg);
+        }
     }
     body := VerticalLayout {
         if root.item.kind == "text": HorizontalLayout {
@@ -9796,8 +9831,10 @@ export component AppWindow inherits Window {
     in-out property <bool> req-actions-open;
     in property <string> req-actions-title;
     in property <[ActionItem]> req-actions;
-    property <bool> req-tab-visible: root.tab == 4 || (root.tools-shown && root.tools-page == "requests");
-    out property <bool> req-visible: root.req-tab-visible || (root.tab == 0 && root.feed-open);
+    // A tools page pushed over the page (a module's editor from a request's menu) hides it.
+    property <bool> tools-covering: root.tools-over && root.tools-page != "";
+    property <bool> req-tab-visible: (root.tab == 4 && !root.tools-covering) || (root.tools-shown && root.tools-page == "requests");
+    out property <bool> req-visible: root.req-tab-visible || (root.tab == 0 && root.feed-open && !root.tools-covering);
     // `openDashboardFeed`: the requests page in a sheet over the dashboard, with its own
     // search, filters and selection (`req-feed`).
     in-out property <bool> feed-open;
@@ -11153,7 +11190,7 @@ export component AppWindow inherits Window {
 
         // `openDashboardFeed`: the requests page in a snap sheet over the dashboard, on DNS
         // for the DNS figure.
-        if root.feed-open && root.tab == 0: SnapSheet {
+        if root.feed-open && root.tab == 0 && !root.tools-covering: SnapSheet {
             side: root.wide;
             top-inset: root.top-inset;
             tall <=> root.feed-tall;
@@ -12072,7 +12109,7 @@ export component AppWindow inherits Window {
             ah: MenuAnchor.h;
             max-rows: 10;
             picked(id) => {
-                if (id != "capture-limit") { root.req-actions-open = false; }
+                if (id != "capture-limit" && id != "http-reject" && id != "http-map-local") { root.req-actions-open = false; }
                 root.req-action(id);
             }
             dismiss => { root.req-actions-open = false; }

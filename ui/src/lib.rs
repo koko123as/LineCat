@@ -24,6 +24,8 @@ pub use extend_app::{exit_section, global_view as extend_global_view, main_view 
 pub mod fonts;
 pub mod http_body;
 pub mod http_capture;
+pub mod http_export;
+mod http_export_app;
 pub mod icon_picker;
 pub mod icon_sets;
 mod icon_sets_app;
@@ -2190,6 +2192,7 @@ impl App {
         match (action.as_str(), yes) {
             ("delete", true) => self.delete_profile(arg),
             ("close-active", true) => self.close_active(),
+            ("http-warned", true) => self.http_warned(&arg),
             ("clear-data", true) => self.clear_data(),
             ("rules-delete", true) => self.delete_selected_rules(),
             ("script-delete", true) => self.delete_script(&arg),

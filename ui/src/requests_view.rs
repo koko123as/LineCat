@@ -56,6 +56,10 @@ pub struct ReqState {
     /// The bytes the hex page shows, and how many characters its lines hold.
     pub hex: Option<std::sync::Arc<Vec<u8>>>,
     pub hex_columns: usize,
+    /// The request the open menu acts on, and the item whose modules show under it.
+    pub http_menu: Option<(crate::http_export::MenuTarget, Option<String>)>,
+    /// `MitmExportWarned`: told this run what a copied or exported request can carry.
+    pub export_warned: bool,
 }
 
 #[derive(Default)]
@@ -1569,6 +1573,7 @@ fn exchange_link(e: &Summary) -> DetailRow {
             ],
         ),
         arg: s(format!("http:{}", e.id)),
+        menu: true,
         ..Default::default()
     }
 }

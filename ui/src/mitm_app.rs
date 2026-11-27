@@ -51,6 +51,8 @@ struct State {
     editor: Option<(Editor, String)>,
     /// The module text the editor opened on, and the text back offered to save.
     editor_text: String,
+    /// A file a map-local rule in the editor names, attached once the module is saved.
+    attachment: Option<(String, Vec<u8>)>,
     unsaved: String,
     review: Vec<String>,
     /// The hostname page's search.
@@ -1072,6 +1074,7 @@ impl App {
             let mut st = state().lock().unwrap();
             st.editor = Some((editor, parent.to_string()));
             st.editor_text = text.clone();
+            st.attachment = None;
         }
         let (title, parent): (SharedString, SharedString) = (title.into(), parent.into());
         self.ui(move |ui| {
@@ -1083,6 +1086,103 @@ impl App {
             ui.set_tools_editor_parent(parent);
             ui.set_tools_page("editor".into());
         });
+    }
+
+    /// Over the requests page with `edited` unsaved, so back asks to save it, then returns.
+    fn open_editor_over(
+        self: &Arc<Self>,
+        editor: Editor,
+        title: &str,
+        original: String,
+        edited: String,
+    ) {
+        crate::rule_sets_app::release_editor();
+        let title: SharedString = title.into();
+        self.ui(move |ui| {
+            let parent = if ui.get_tools_page() == "requests" {
+                "requests"
+            } else {
+                ""
+            };
+            {
+                let mut st = state().lock().unwrap();
+                st.editor = Some((editor, parent.to_string()));
+                st.editor_text = original;
+            }
+            ui.set_tools_editor_title(title);
+            ui.set_tools_editor_text(edited.into());
+            ui.set_tools_editor_guard(true);
+            ui.set_tools_editor_readonly(false);
+            ui.set_tools_editor_title_editable(false);
+            ui.set_tools_editor_parent(parent.into());
+            if parent.is_empty() {
+                ui.invoke_open_tools("editor".into());
+            } else {
+                ui.set_tools_page("editor".into());
+            }
+        });
+    }
+
+    /// `_addRule`: `line` opens in the module's editor, or a new module's, to be saved there.
+    /// A Stash override has no sections, so the line is copied instead.
+    pub(crate) fn add_module_rule(
+        self: &Arc<Self>,
+        module_id: &str,
+        section: &str,
+        line: String,
+        attachment: Option<(String, Vec<u8>)>,
+    ) {
+        let (editor, title, text) = if module_id.is_empty() {
+            (Editor::New, "新建模块".to_string(), mitm::template())
+        } else {
+            let Some(m) = self.module(module_id) else {
+                return;
+            };
+            match std::fs::read_to_string(self.module_path(&m)) {
+                Ok(text) => (Editor::Module(m.id.clone()), m.name.clone(), text),
+                Err(e) => return self.alert("提示", e.to_string()),
+            }
+        };
+        let Some(edited) = crate::http_export::add_line(&text, section, &line) else {
+            let copied = self
+                .bridge()
+                .and_then(|b| b.shell("clipboard.set", json!({"text": line}), CALL));
+            return match copied {
+                Ok(_) => self.toast(crate::http_export::STASH_COPIED),
+                Err(e) => self.toast(e),
+            };
+        };
+        state().lock().unwrap().attachment = attachment;
+        self.open_editor_over(editor, &title, text, edited);
+    }
+
+    fn attach_bytes(self: &Arc<Self>, m: &MitmModule, file_name: String, bytes: Vec<u8>) {
+        if bytes.len() > mitm::MAX_RESOURCE_SIZE {
+            let limit = mitm::MAX_RESOURCE_SIZE >> 20;
+            return self.alert("提示", format!("文件大于 {limit} MB"));
+        }
+        let dir = self.resources_dir();
+        let name = mitm::resource_name(&file_name, &bytes);
+        let target = dir.join(&name);
+        let stored = std::fs::create_dir_all(&dir).and_then(|_| {
+            if target.exists() {
+                Ok(())
+            } else {
+                std::fs::write(&target, &bytes)
+            }
+        });
+        if let Err(e) = stored {
+            return self.toast(e.to_string());
+        }
+        let replaced = m.attachments().get(&file_name).cloned();
+        let stored = name.clone();
+        self.update_module(&m.id, move |m| {
+            m.resources.insert(file_name, stored);
+        });
+        if let Some(old) = replaced.filter(|old| old != &name) {
+            self.drop_attachments(vec![old]);
+        }
+        self.after_attachments_changed();
     }
 
     // -------------------------------------------------------------- hostnames
@@ -1945,6 +2045,7 @@ impl App {
                 match app.save_module(module, &text, true, true, true, None) {
                     Ok(saved) => {
                         app.mitm_go(&parent);
+                        app.attach_saved(&saved);
                         app.offer_module(&saved);
                     }
                     Err(e) => app.toast(e),
@@ -1955,6 +2056,7 @@ impl App {
                 match app.save_module(m, &text, false, false, true, None) {
                     Ok(saved) => {
                         app.mitm_go(&parent);
+                        app.attach_saved(&saved);
                         app.offer_module(&saved);
                     }
                     Err(e) => app.toast(e),
@@ -1962,6 +2064,13 @@ impl App {
             }),
         }
         true
+    }
+
+    fn attach_saved(self: &Arc<Self>, saved: &MitmModule) {
+        let attachment = state().lock().unwrap().attachment.take();
+        if let Some((name, bytes)) = attachment {
+            self.attach_bytes(saved, name, bytes);
+        }
     }
 
     pub(crate) fn mitm_picked(self: &Arc<Self>, key: &str, value: &str) -> bool {

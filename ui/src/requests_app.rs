@@ -286,7 +286,7 @@ impl App {
         self.ui(move |ui| app.publish_requests(&ui));
     }
 
-    fn show_actions(self: &Arc<Self>, title: String, items: Vec<ActionItem>) {
+    pub(crate) fn show_actions(self: &Arc<Self>, title: String, items: Vec<ActionItem>) {
         if items.is_empty() {
             return;
         }
@@ -297,7 +297,7 @@ impl App {
         });
     }
 
-    fn copy(self: &Arc<Self>, text: String) {
+    pub(crate) fn copy(self: &Arc<Self>, text: String) {
         self.spawn(move |app| {
             match app
                 .bridge()
@@ -438,6 +438,19 @@ impl App {
             self.copy(text.to_string());
             return;
         }
+        if let Some(id) = arg.strip_prefix("menu:http:") {
+            let target = id.parse::<i64>().ok().and_then(|id| {
+                let req = self.req.lock().unwrap();
+                let (_, list) = req.conn_http.as_ref()?;
+                list.iter()
+                    .find(|e| e.id == id)
+                    .map(crate::http_export::MenuTarget::of_summary)
+            });
+            if let Some(target) = target {
+                self.open_http_menu(target);
+            }
+            return;
+        }
         if let Some(side) = arg.strip_prefix("body-open:") {
             return self.open_body(side == "response", false);
         }
@@ -500,6 +513,9 @@ impl App {
 
     fn action(self: &Arc<Self>, id: &str) {
         let (name, arg) = id.split_once(':').unwrap_or((id, ""));
+        if name.starts_with("http-") && self.http_menu_picked(name, arg) {
+            return;
+        }
         let num: i64 = arg.parse().unwrap_or(0);
         match name {
             "status" => {
@@ -585,18 +601,6 @@ impl App {
                 let text = self.req.lock().unwrap().copy_text(name, num);
                 if let Some(text) = text {
                     self.copy(text);
-                }
-            }
-            "copy-url" => {
-                let url = self
-                    .req
-                    .lock()
-                    .unwrap()
-                    .exchange
-                    .as_ref()
-                    .and_then(|e| e.get("url").and_then(Value::as_str).map(String::from));
-                if let Some(url) = url {
-                    self.copy(url);
                 }
             }
             "body-base64" => {
@@ -1115,39 +1119,45 @@ impl App {
         });
         let a = self.clone();
         ui.on_req_detail_menu(move || {
-            let items = {
+            let (items, http) = {
                 let req = a.req.lock().unwrap();
                 let seg = req.segment.clamp(0, 2);
                 match (seg, req.selected[seg as usize]) {
-                    (HTTP, Some(_)) => vec![ActionItem {
-                        id: "copy-url".into(),
-                        glyph: "copy".into(),
-                        label: "复制链接".into(),
-                        enabled: true,
-                        ..Default::default()
-                    }],
-                    (CONNECTIONS, Some(id)) => req
-                        .detail_actions(id)
-                        .into_iter()
-                        .map(|(id, glyph, label)| ActionItem {
-                            id: id.into(),
-                            glyph: glyph.into(),
-                            label: label.into(),
-                            enabled: true,
-                            ..Default::default()
-                        })
-                        .collect(),
-                    (_, Some(id)) => req
-                        .row_actions(seg, id)
-                        .into_iter()
-                        .filter(|a| {
-                            !a.id.starts_with("close:") && !a.id.starts_with("only-domain:")
-                        })
-                        .collect(),
-                    _ => Vec::new(),
+                    (HTTP, Some(_)) => (
+                        Vec::new(),
+                        req.exchange
+                            .as_ref()
+                            .and_then(crate::http_export::MenuTarget::of_exchange),
+                    ),
+                    (CONNECTIONS, Some(id)) => (
+                        req.detail_actions(id)
+                            .into_iter()
+                            .map(|(id, glyph, label)| ActionItem {
+                                id: id.into(),
+                                glyph: glyph.into(),
+                                label: label.into(),
+                                enabled: true,
+                                ..Default::default()
+                            })
+                            .collect(),
+                        None,
+                    ),
+                    (_, Some(id)) => (
+                        req.row_actions(seg, id)
+                            .into_iter()
+                            .filter(|a| {
+                                !a.id.starts_with("close:") && !a.id.starts_with("only-domain:")
+                            })
+                            .collect(),
+                        None,
+                    ),
+                    _ => (Vec::new(), None),
                 }
             };
-            a.show_actions(String::new(), items);
+            match http {
+                Some(target) => a.open_http_menu(target),
+                None => a.show_actions(String::new(), items),
+            }
         });
         let a = self.clone();
         ui.on_req_detail_row(move |arg| a.open_link(&arg));
