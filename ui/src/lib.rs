@@ -1946,15 +1946,26 @@ impl App {
         } else {
             self.store.lock().unwrap().profile_path(&id)
         };
-        let text = std::fs::read(&path)
-            .map(|b| String::from_utf8_lossy(&b).into_owned())
-            .unwrap_or_default();
-        let title = self.label_of(&id);
+        self.open_profile_editor(&id, "editor", false);
+        let load = items_app::editor_load();
+        self.spawn(move |app| {
+            let text = std::fs::read(&path)
+                .map(|b| String::from_utf8_lossy(&b).into_owned())
+                .unwrap_or_default();
+            app.profile_editor_loaded(load, Ok(text));
+        });
+    }
+
+    /// The profile editor or 运行时配置 opens at once on its spinner; the document follows.
+    fn open_profile_editor(self: &Arc<Self>, id: &str, page: &'static str, readonly: bool) {
+        let title = self.label_of(id);
         self.ui(move |ui| {
             ui.set_editor_title(title.into());
-            ui.set_editor_text(text.into());
-            ui.set_editor_readonly(false);
-            ui.set_profiles_page("editor".into());
+            ui.set_editor_text(SharedString::new());
+            ui.set_editor_readonly(readonly);
+            ui.set_editor_error(SharedString::new());
+            ui.set_editor_loading(true);
+            ui.set_profiles_page(page.into());
         });
     }
 
@@ -2016,6 +2027,8 @@ impl App {
 
     /// `PreviewProfileView`: the config as it would be applied, read only.
     fn preview(self: &Arc<Self>, id: String) {
+        self.open_profile_editor(&id, "preview", true);
+        let load = items_app::editor_load();
         self.spawn(move |app| {
             let result = app.bridge().and_then(|b| {
                 let (path, overlay) = app.profile_params(&b, &id)?;
@@ -2025,23 +2038,13 @@ impl App {
                     CALL,
                 )
             });
-            match result {
-                Ok(r) => {
-                    let text = r
-                        .get("text")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
-                    let title = app.label_of(&id);
-                    app.ui(move |ui| {
-                        ui.set_editor_title(title.into());
-                        ui.set_editor_text(text.into());
-                        ui.set_editor_readonly(true);
-                        ui.set_profiles_page("preview".into());
-                    });
-                }
-                Err(e) => app.toast(e),
-            }
+            let text = result.map(|r| {
+                r.get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string()
+            });
+            app.profile_editor_loaded(load, text);
         });
     }
 

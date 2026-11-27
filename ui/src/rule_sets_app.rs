@@ -278,6 +278,19 @@ impl App {
     /// `_handlePreview`: the text itself, or an mrs set dumped by the Core.
     fn preview_rule_set(self: &Arc<Self>, s: RuleSet) {
         release_editor();
+        let title: SharedString = s.label.as_str().into();
+        self.ui(move |ui| {
+            ui.set_tools_editor_title(title);
+            ui.set_tools_editor_text(SharedString::new());
+            ui.set_tools_editor_guard(false);
+            ui.set_tools_editor_readonly(true);
+            ui.set_tools_editor_title_editable(false);
+            ui.set_tools_editor_parent("rule-sets".into());
+            ui.set_tools_editor_error(SharedString::new());
+            ui.set_tools_editor_loading(true);
+            ui.set_tools_page("editor".into());
+        });
+        let load = crate::items_app::editor_load();
         self.spawn(move |app| {
             let path = app.rule_sets_dir().join(s.file_name());
             let text = if s.is_text() {
@@ -298,21 +311,7 @@ impl App {
                             .to_string()
                     })
             };
-            match text {
-                Ok(text) => {
-                    let title: SharedString = s.label.as_str().into();
-                    app.ui(move |ui| {
-                        ui.set_tools_editor_title(title);
-                        ui.set_tools_editor_text(text.into());
-                        ui.set_tools_editor_guard(false);
-                        ui.set_tools_editor_readonly(true);
-                        ui.set_tools_editor_title_editable(false);
-                        ui.set_tools_editor_parent("rule-sets".into());
-                        ui.set_tools_page("editor".into());
-                    });
-                }
-                Err(e) => app.toast(e),
-            }
+            app.tools_editor_loaded(load, text, || {});
         });
     }
 

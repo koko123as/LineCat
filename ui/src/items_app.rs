@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use slint::{ModelRc, SharedString, VecModel};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -402,6 +403,48 @@ impl App {
         }
     }
 
+    /// `NullStatusSwitcher`: the document read after the tools editor opened, unless since left.
+    pub(crate) fn tools_editor_loaded(
+        self: &Arc<Self>,
+        load: u64,
+        text: Result<String, String>,
+        then: impl FnOnce() + Send + 'static,
+    ) {
+        self.ui(move |ui| {
+            if EDITOR_LOAD.load(Ordering::SeqCst) != load
+                || ui.get_tools_page() != "editor"
+                || !ui.get_tools_editor_loading()
+            {
+                return;
+            }
+            match text {
+                Ok(text) => {
+                    then();
+                    ui.set_tools_editor_text(text.into());
+                }
+                Err(e) => ui.set_tools_editor_error(e.into()),
+            }
+            ui.set_tools_editor_loading(false);
+        });
+    }
+
+    pub(crate) fn profile_editor_loaded(self: &Arc<Self>, load: u64, text: Result<String, String>) {
+        self.ui(move |ui| {
+            let page = ui.get_profiles_page();
+            if EDITOR_LOAD.load(Ordering::SeqCst) != load
+                || (page != "editor" && page != "preview")
+                || !ui.get_editor_loading()
+            {
+                return;
+            }
+            match text {
+                Ok(text) => ui.set_editor_text(text.into()),
+                Err(e) => ui.set_editor_error(e.into()),
+            }
+            ui.set_editor_loading(false);
+        });
+    }
+
     pub(crate) fn open_tools_editor(self: &Arc<Self>, title: &str, text: &str, parent: &str) {
         crate::rule_sets_app::release_editor();
         let (title, text, parent): (SharedString, SharedString, SharedString) =
@@ -624,4 +667,11 @@ impl App {
         let scripts = self.store.lock().unwrap().state.settings.scripts.clone();
         self.add_script(&items::import_name(&scripts, &name), None, &bytes);
     }
+}
+
+static EDITOR_LOAD: AtomicU64 = AtomicU64::new(0);
+
+/// A new editor load; a result carrying an older one is dropped.
+pub(crate) fn editor_load() -> u64 {
+    EDITOR_LOAD.fetch_add(1, Ordering::SeqCst) + 1
 }

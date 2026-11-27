@@ -9,7 +9,7 @@ use crate::rules_app::{self, PAGES};
 use crate::store::State;
 use crate::{ActionItem, App, PageMeta, RuleRow, SetRow, SetSection};
 use serde_json::{json, Value};
-use slint::{ModelRc, VecModel};
+use slint::{ModelRc, SharedString, VecModel};
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::atomic::Ordering;
@@ -28,7 +28,12 @@ struct ExtUi {
     fallback: Option<String>,
     applying: bool,
     query: String,
+    /// The outbounds are still being read from the Core.
+    loading: bool,
 }
+
+/// The exit sheet waiting for the outbounds: its profile and exit.
+static EXIT_SHEET: Mutex<Option<(String, String)>> = Mutex::new(None);
 
 static EXT: Mutex<ExtUi> = Mutex::new(ExtUi {
     profile: String::new(),
@@ -38,6 +43,7 @@ static EXT: Mutex<ExtUi> = Mutex::new(ExtUi {
     fallback: None,
     applying: false,
     query: String::new(),
+    loading: false,
 });
 
 static MODULES: Mutex<Vec<(String, String, ModuleRead)>> = Mutex::new(Vec::new());
@@ -266,6 +272,7 @@ impl App {
             ext.fallback = None;
             ext.applying = false;
             ext.query.clear();
+            ext.loading = true;
         }
         self.rules_unhost(true);
         self.publish_ext();
@@ -276,6 +283,28 @@ impl App {
 
     /// The profile's outbounds and where unmatched traffic goes, for the exits.
     fn load_extend(self: &Arc<Self>, id: &str, path: &Path) {
+        self.read_extend(id, path);
+        {
+            let mut ext = EXT.lock().unwrap();
+            if ext.profile == id {
+                ext.loading = false;
+            }
+        }
+        let Some((pid, exit)) = EXIT_SHEET.lock().unwrap().take() else {
+            return;
+        };
+        let app = self.clone();
+        self.ui(move |ui| {
+            if ui.get_choice_open()
+                && ui.get_choice_loading()
+                && ui.get_choice_title() == exit.as_str()
+            {
+                app.open_exit_sheet(&pid, &exit);
+            }
+        });
+    }
+
+    fn read_extend(self: &Arc<Self>, id: &str, path: &Path) {
         if let Ok(bridge) = self.bridge() {
             if self.profile_script(id).is_some() {
                 let (outbounds, fallback) = match self.scripted_profile(&bridge, id, path) {
@@ -548,6 +577,11 @@ impl App {
         };
         let current = p.exit_targets.get(exit).cloned().unwrap_or_default();
         let (outbounds, fallback) = self.outbounds_for(&state, profile_id);
+        let loading = outbounds.is_none() && {
+            let ext = EXT.lock().unwrap();
+            ext.profile == profile_id && ext.loading
+        };
+        *EXIT_SHEET.lock().unwrap() = loading.then(|| (profile_id.to_string(), exit.to_string()));
         let outbounds = outbounds.unwrap_or_default();
         let item = |target: &str, label: &str, subtitle: &str, heading: &str| ActionItem {
             id: format!("ext-exit:{profile_id}\t{exit}\t{target}").into(),
@@ -582,7 +616,13 @@ impl App {
                 items.push(item(n, n, t, if i == 0 { heading } else { "" }));
             }
         }
-        self.show_choice(exit, items);
+        let title: SharedString = exit.into();
+        self.ui(move |ui| {
+            ui.set_choice_title(title);
+            ui.set_choice_items(ModelRc::new(VecModel::from(items)));
+            ui.set_choice_loading(loading);
+            ui.set_choice_open(true);
+        });
     }
 
     /// A pick from the exit sheet; false when it is not one.

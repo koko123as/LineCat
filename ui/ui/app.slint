@@ -1687,6 +1687,15 @@ export global SheetDrag {
     }
 }
 
+// `SelectionSheet._revealSelected`: the list offset that centres a row at `y` of height `h`,
+// or the current one when the row already shows whole.
+export global Reveal {
+    public pure function offset(y: length, h: length, top: length, view: length, content: length) -> length {
+        if (y >= top && y + h <= top + view) { return -top; }
+        return -clamp(y + h / 2 - view / 2, 0px, max(0px, content - view));
+    }
+}
+
 // prism's `UnfoldMotion`: UIKit's outline disclosure spring (mass 1, stiffness 631.65, damping
 // 50.27, critically damped), run from where it stands at the speed it has, so a tap mid-motion
 // turns it around without a jolt. `t` is in seconds since the run started.
@@ -4135,10 +4144,67 @@ component EditProfilePage inherits Rectangle {
 }
 
 // EditorPage: the profile file to edit, or the runtime config to read.
+component NullStatus inherits Rectangle {
+    in property <string> label;
+    in property <string> description;
+    // `TonalButton` under the text, when given.
+    in property <string> action;
+    callback act();
+    VerticalLayout {
+        alignment: center;
+        spacing: 6px;
+        padding-left: 32px;
+        padding-right: 32px;
+        Text { text: root.label; font-size: 16px * Type.scale; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; wrap: word-wrap; }
+        if root.description != "": Text { text: root.description; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
+        if root.action != "": HorizontalLayout {
+            alignment: center;
+            padding-top: 12px;
+            Rectangle {
+                height: 44px;
+                min-width: nsa-row.preferred-width * 1.1 + 40px;
+                border-radius: 22px;
+                background: nsa.pressed ? Theme.s.primary-container.darker(0.1) : Theme.s.primary-container;
+                nsa-row := HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    VerticalLayout { alignment: center; Icon { glyph: Icons.add-circle; size: 20px; tint: Theme.s.on-primary-container; } }
+                    Text { text: root.action; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-primary-container; vertical-alignment: center; }
+                }
+                nsa := TouchArea { clicked => { root.act(); } }
+            }
+        }
+    }
+}
+
+// prism's `NullStatusSwitcher` loading slot: the page opens at once and shows it while its
+// data loads, for at least 400 ms once shown (`minimumLoadingDuration`).
+component LoadingHold {
+    in property <bool> loading;
+    out property <bool> shown: root.loading || root.held;
+    property <bool> held;
+    init => {
+        if (root.loading) { root.held = true; }
+    }
+    changed loading => {
+        if (root.loading) { root.held = true; }
+    }
+    Timer {
+        interval: 400ms;
+        running: root.held;
+        triggered => { root.held = false; }
+    }
+}
+
 component EditorPage inherits Rectangle {
     in-out property <string> title;
     in-out property <string> text;
     in property <bool> readonly;
+    // `EditorView`'s document still loading, or why it could not (`editorUnavailable`).
+    in property <bool> loading;
+    in property <string> error;
+    hold := LoadingHold { loading: root.loading; }
+    property <bool> ready: !hold.shown && root.error == "";
     // `titleEditable`: the title is a field, 未命名 while empty.
     in property <bool> title-editable;
     callback save(string);
@@ -4170,12 +4236,16 @@ component EditorPage inherits Rectangle {
                     selection-background-color: Theme.s.primary-container;
                 }
             }
-            if !root.readonly: VerticalLayout {
+            if !root.readonly && root.ready: VerticalLayout {
                 alignment: center;
-                TextButton { text: "保存"; clicked => { root.save(editor.text); } }
+                TextButton { text: "保存"; clicked => { root.save(root.text); } }
             }
         }
-        Rectangle {
+        if hold.shown: Rectangle {
+            Spinner { width: 32px; height: 32px; indeterminate: true; }
+        }
+        if !hold.shown && root.error != "": NullStatus { label: "编辑器不可用"; description: root.error; }
+        if root.ready: Rectangle {
             background: Theme.s.card;
             flick := Flickable {
                 content-height: max(editor.preferred-height + 24px, self.height) + Dock.pad;
@@ -4602,38 +4672,6 @@ component Sections inherits VerticalLayout {
     }
 }
 
-component NullStatus inherits Rectangle {
-    in property <string> label;
-    in property <string> description;
-    // `TonalButton` under the text, when given.
-    in property <string> action;
-    callback act();
-    VerticalLayout {
-        alignment: center;
-        spacing: 6px;
-        padding-left: 32px;
-        padding-right: 32px;
-        Text { text: root.label; font-size: 16px * Type.scale; font-weight: 600; color: Theme.s.on-surface; horizontal-alignment: center; wrap: word-wrap; }
-        if root.description != "": Text { text: root.description; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; horizontal-alignment: center; wrap: word-wrap; }
-        if root.action != "": HorizontalLayout {
-            alignment: center;
-            padding-top: 12px;
-            Rectangle {
-                height: 44px;
-                min-width: nsa-row.preferred-width * 1.1 + 40px;
-                border-radius: 22px;
-                background: nsa.pressed ? Theme.s.primary-container.darker(0.1) : Theme.s.primary-container;
-                nsa-row := HorizontalLayout {
-                    alignment: center;
-                    spacing: 8px;
-                    VerticalLayout { alignment: center; Icon { glyph: Icons.add-circle; size: 20px; tint: Theme.s.on-primary-container; } }
-                    Text { text: root.action; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-primary-container; vertical-alignment: center; }
-                }
-                nsa := TouchArea { clicked => { root.act(); } }
-            }
-        }
-    }
-}
 
 // `_buildAuthorizeButton`: filled once authorized, error-toned until then, as wide as the
 // longer of its two labels.
@@ -7117,6 +7155,7 @@ component FontPage inherits Rectangle {
     callback search(string);
     callback back();
     changed query => { root.search(root.query); }
+    hold := LoadingHold { loading: root.loading; }
     VerticalLayout {
         if !root.searching: AppBar {
             title: "字体";
@@ -7163,8 +7202,15 @@ component FontPage inherits Rectangle {
                 }
             }
         }
-        if root.loading || (root.searching && root.query != "" && root.families.length == 0): Rectangle { vertical-stretch: 1; }
-        if !root.loading && !(root.searching && root.query != "" && root.families.length == 0): Flickable {
+        if hold.shown: Rectangle {
+            vertical-stretch: 1;
+            Spinner { width: 32px; height: 32px; indeterminate: true; }
+        }
+        if !hold.shown && root.searching && root.query != "" && root.families.length == 0: Rectangle { vertical-stretch: 1; }
+        if !hold.shown && !(root.searching && root.query != "" && root.families.length == 0): ff-flick := Flickable {
+            // `_revealSelected`: once the list is in, the picked font is brought to the middle
+            // unless it already shows.
+            property <bool> revealed;
             vertical-stretch: 1;
             content-height: ff-col.preferred-height + Dock.pad;
             ff-col := VerticalLayout {
@@ -7197,6 +7243,12 @@ component FontPage inherits Rectangle {
                             checked: root.selected == f;
                             divider: i < root.families.length - 1;
                             clicked => { root.pick(f); }
+                            init => {
+                                if (self.checked && !ff-flick.revealed) {
+                                    ff-flick.revealed = true;
+                                    ff-flick.content-y = Reveal.offset(self.absolute-position.y - ff-col.absolute-position.y, self.height, -ff-flick.content-y, ff-flick.height, ff-flick.content-height);
+                                }
+                            }
                         }
                     }
                 }
@@ -8806,18 +8858,36 @@ component ActionSheet inherits Rectangle {
     in property <string> title;
     in property <[ActionItem]> items;
     in property <length> bottom-inset;
+    // `SelectionSheet.loadingStatus`: the list loads late; the picked row is still revealed.
+    in property <bool> loading;
     callback picked(string);
     callback dismiss();
+    hold := LoadingHold { loading: root.loading; }
     background: #00000066;
     TouchArea { clicked => { root.dismiss(); } }
     Rectangle {
         y: parent.height - self.height;
-        height: min(sheet-col.preferred-height + root.bottom-inset, parent.height - 48px);
+        height: min((hold.shown ? 12px + (root.title != "" ? 40px : 0px) + 160px : sheet-col.preferred-height) + root.bottom-inset, parent.height - 48px);
         background: Theme.s.card;
         border-top-left-radius: 24px;
         border-top-right-radius: 24px;
         TouchArea { }
-        Flickable {
+        if hold.shown: VerticalLayout {
+            height: parent.height - root.bottom-inset;
+            padding-top: 12px;
+            if root.title != "": HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                Text { text: root.title; font-size: 16px * Type.scale; color: Theme.s.on-surface-variant; height: 40px; vertical-alignment: center; overflow: elide; }
+            }
+            Rectangle {
+                height: 160px;
+                Spinner { width: 32px; height: 32px; indeterminate: true; }
+            }
+        }
+        sheet-flick := Flickable {
+            property <bool> revealed;
+            visible: !hold.shown;
             height: parent.height - root.bottom-inset;
             content-height: sheet-col.preferred-height;
             sheet-col := VerticalLayout {
@@ -8867,6 +8937,15 @@ component ActionSheet inherits Rectangle {
                             enabled: a.enabled;
                             clicked => { root.picked(a.id); }
                         }
+                        property <bool> live: !hold.shown;
+                        function reveal() {
+                            if (self.live && a.check && a.checked && !sheet-flick.revealed) {
+                                sheet-flick.revealed = true;
+                                sheet-flick.content-y = Reveal.offset(self.absolute-position.y - sheet-col.absolute-position.y, self.height, -sheet-flick.content-y, sheet-flick.height, sheet-flick.content-height);
+                            }
+                        }
+                        init => { self.reveal(); }
+                        changed live => { self.reveal(); }
                     }
                 }
             }
@@ -9351,6 +9430,8 @@ export component AppWindow inherits Window {
     in-out property <string> editor-title;
     in-out property <string> editor-text;
     in-out property <bool> editor-readonly;
+    in-out property <bool> editor-loading;
+    in-out property <string> editor-error;
     callback editor-save(string);
     // Sort
     // The sort sheet's drop: from one index to another.
@@ -9603,6 +9684,8 @@ export component AppWindow inherits Window {
     in-out property <string> tools-editor-text;
     in property <string> tools-editor-parent;
     in property <bool> tools-editor-readonly;
+    in-out property <bool> tools-editor-loading;
+    in-out property <string> tools-editor-error;
     // Back asks Rust first, which offers to save a changed MITM module.
     in property <bool> tools-editor-guard;
     callback tools-editor-back(string);
@@ -9639,6 +9722,7 @@ export component AppWindow inherits Window {
     callback about-logo-tapped();
     in-out property <bool> choice-open;
     in property <string> choice-title;
+    in-out property <bool> choice-loading;
     in property <[ActionItem]> choice-items;
     callback choice-picked(string);
     in-out property <bool> input-open;
@@ -9703,7 +9787,14 @@ export component AppWindow inherits Window {
         if (root.tools-over && root.tools-page == "") { root.tools-over = false; }
         root.set-sorting = false;
         if (root.tools-page == "resources") { root.page-shown(); }
+        if (root.tools-page != "editor") {
+            root.tools-editor-loading = false;
+            root.tools-editor-error = "";
+        }
         root.tools-page-changed();
+    }
+    changed choice-open => {
+        if (!root.choice-open) { root.choice-loading = false; }
     }
     changed cond-value => { root.cond-changed(); }
     changed res-dialog-value => {
@@ -9797,6 +9888,10 @@ export component AppWindow inherits Window {
     property <bool> profiles-shown: root.tab == 2 || root.profiles-over;
     changed profiles-page => {
         if (self.profiles-page == "") { root.profiles-over = false; }
+        if (self.profiles-page != "editor" && self.profiles-page != "preview") {
+            root.editor-loading = false;
+            root.editor-error = "";
+        }
     }
     changed profiles-over => {
         root.po-tall = false;
@@ -10244,6 +10339,8 @@ export component AppWindow inherits Window {
                     title: root.editor-title;
                     text <=> root.editor-text;
                     readonly: root.editor-readonly;
+                    loading: root.editor-loading;
+                    error: root.editor-error;
                     save(t) => { root.editor-save(t); }
                     back => {
                         if (root.tab == 0 && !root.custom-open) { root.profile-sheet-open = true; }
@@ -10570,6 +10667,8 @@ export component AppWindow inherits Window {
                     title <=> root.tools-editor-title;
                     title-editable: root.tools-editor-title-editable;
                     readonly: root.tools-editor-readonly;
+                    loading: root.tools-editor-loading;
+                    error: root.tools-editor-error;
                     text <=> root.tools-editor-text;
                     save(t) => { root.tools-editor-save(t); }
                     back => {
@@ -11888,6 +11987,7 @@ export component AppWindow inherits Window {
         if root.choice-open: ActionSheet {
             title: root.choice-title;
             items: root.choice-items;
+            loading: root.choice-loading;
             bottom-inset: root.bottom-inset;
             picked(id) => { root.choice-open = false; root.choice-picked(id); }
             dismiss => { root.choice-open = false; }

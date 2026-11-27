@@ -100,24 +100,30 @@ impl App {
     }
 
     fn open_links_edit(self: &Arc<Self>) {
-        let previous = self.custom_proxies();
-        let links = match self.encode_links(previous.iter().map(|p| p.definition.clone()).collect())
-        {
-            Ok(links) => links,
-            Err(e) => return self.alert("提示", e),
-        };
-        let text: SharedString = ShareLinkEdit::text_of(&links).into();
-        with(|s| s.list = Some((previous, links)));
         crate::rule_sets_app::release_editor();
+        with(|s| s.list = None);
         self.ui(move |ui| {
             ui.set_tools_editor_title("代理".into());
-            ui.set_tools_editor_text(text);
+            ui.set_tools_editor_text(SharedString::new());
             ui.set_tools_editor_guard(false);
             ui.set_tools_editor_parent(LIST.into());
             ui.set_tools_editor_readonly(false);
             ui.set_tools_editor_title_editable(false);
+            ui.set_tools_editor_error(SharedString::new());
+            ui.set_tools_editor_loading(true);
             ui.set_tools_page("editor".into());
         });
+        let load = crate::items_app::editor_load();
+        let previous = self.custom_proxies();
+        match self.encode_links(previous.iter().map(|p| p.definition.clone()).collect()) {
+            Ok(links) => {
+                let text = ShareLinkEdit::text_of(&links);
+                self.tools_editor_loaded(load, Ok(text), move || {
+                    with(|s| s.list = Some((previous, links)))
+                });
+            }
+            Err(e) => self.tools_editor_loaded(load, Err(e), || {}),
+        }
     }
 
     /// The tools editor's save while the links' quick edit is open; false otherwise.

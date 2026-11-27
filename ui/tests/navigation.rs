@@ -108,6 +108,21 @@ fn navigation() {
     assert!(unfold.invoke_at(x, 0.0, v, 0.02) > x);
     assert!(unfold.invoke_at(x, 0.0, v, 0.5) < 0.001);
 
+    let reveal = ui.global::<Reveal>();
+    assert_eq!(reveal.invoke_offset(100.0, 50.0, 0.0, 400.0, 1000.0), 0.0);
+    assert_eq!(
+        reveal.invoke_offset(500.0, 50.0, 0.0, 400.0, 1000.0),
+        -325.0
+    );
+    assert_eq!(
+        reveal.invoke_offset(950.0, 50.0, 0.0, 400.0, 1000.0),
+        -600.0
+    );
+    assert_eq!(
+        reveal.invoke_offset(450.0, 50.0, 300.0, 400.0, 1000.0),
+        -300.0
+    );
+
     let card = ui.global::<ProxyCardMetrics>();
     for scale in [1.0f32, 1.3] {
         ui.global::<Type>().set_scale(scale);
