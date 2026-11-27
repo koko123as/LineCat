@@ -3,11 +3,19 @@ name: slint-android
 # Builds the Slint UI (ui/, libseasoncat_ui.so) for arm64-v8a and the arm64 release APK
 # around it. The APK keeps the Flutter build in it, since MainActivity stays for the
 # entry points other than the launcher.
+# An rs tag (v<version>-rs.N) builds the same APK and publishes it as a release under the
+# names the in-app updater (ui/src/update.rs) looks for, only when it is signed with the
+# repository release key.
 on:
   push:
     branches:
       - slint-ui
+    tags:
+      - 'v*-rs.*'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -139,6 +147,7 @@ jobs:
           cache-read-only: true
 
       - name: Signing key
+        id: signing
         env:
           KEYSTORE: ${{ secrets.KEYSTORE }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -149,12 +158,17 @@ jobs:
             echo "$KEYSTORE" | base64 --decode > android/app/keystore.jks
             alias="$KEY_ALIAS"; spass="$STORE_PASSWORD"; kpass="$KEY_PASSWORD"
             echo "Signing with the repository release key"
+            echo "release-key=true" >> "$GITHUB_OUTPUT"
           else
             spass="$(openssl rand -hex 16)"; kpass="$spass"; alias=seasoncat-ci
             keytool -genkeypair -v -keystore android/app/keystore.jks -alias "$alias" \
               -storepass "$spass" -keypass "$kpass" -keyalg RSA -keysize 2048 -validity 3650 \
               -dname "CN=SeasonCat CI throwaway"
             echo "::warning::No signing secrets; this APK will not install over one from another run"
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+              echo "::error::A release tag needs KEYSTORE, KEY_ALIAS, STORE_PASSWORD and KEY_PASSWORD; not publishing an APK signed with a throwaway key"
+              exit 1
+            fi
           fi
           {
             echo "keyAlias=$alias"
@@ -194,9 +208,78 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Every run reports the APK's version and checks its signer is the key the signing step
+      # set up; a release tag also needs the repository key and a versionName equal to the
+      # tag's version, so the updater sees it as that version and it installs over the
+      # previous release.
+      - name: Check the APK version and signer
+        env:
+          RELEASE_KEY: ${{ steps.signing.outputs.release-key }}
+        run: |
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          apk=dist/SeasonCat-slint-arm64-v8a.apk
+          badging="$("$tools/aapt2" dump badging "$apk")"
+          package="$(grep -m1 '^package:' <<< "$badging")"
+          echo "$package"
+          name="$(sed -n "s/.* versionName='\([^']*\)'.*/\1/p" <<< "$package")"
+          alias="$(sed -n 's/^keyAlias=//p' android/local.properties)"
+          spass="$(sed -n 's/^storePassword=//p' android/local.properties)"
+          key="$(keytool -exportcert -keystore android/app/keystore.jks -alias "$alias" -storepass "$spass" | sha256sum | cut -d' ' -f1)"
+          signer="$("$tools/apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          echo "signing key: $key"
+          echo "APK signer:  $signer"
+          echo "versionName: $name, signer SHA-256: $signer" >> "$GITHUB_STEP_SUMMARY"
+          [ -n "$signer" ] && [ "$key" = "$signer" ] || { echo "::error::APK signer is not the signing step's key"; exit 1; }
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            [ "$RELEASE_KEY" = true ] || { echo "::error::not signed with the repository release key"; exit 1; }
+            tag="${GITHUB_REF#refs/tags/}"
+            [ "$name" = "${tag#v}" ] || { echo "::error::versionName $name does not match tag $tag"; exit 1; }
+          fi
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: seasoncat-slint-arm64-v8a
           path: dist/
           if-no-files-found: error
+
+  release:
+    name: Release
+    needs: apk
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-rs.')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download the APK
+        uses: actions/download-artifact@v4
+        with:
+          name: seasoncat-slint-arm64-v8a
+          path: dist
+
+      # Names from update.rs: asset_name / checksums_name, the tag without its v and with
+      # '+' as '.'; the sums file holds "<sha256>  <name>" lines.
+      - name: Name the release files
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"; version="${version//+/.}"
+          notes="release-notes/$tag.md"
+          [ -s "$notes" ] || { echo "::error::$notes is missing"; exit 1; }
+          mkdir -p release
+          cp dist/SeasonCat-slint-arm64-v8a.apk "release/FlClash-$version-android-arm64.apk"
+          (cd dist && sha256sum -c SeasonCat-slint-arm64-v8a.apk.sha256)
+          (cd release && sha256sum "FlClash-$version-android-arm64.apk" > "FlClash-$version-SHA256SUMS")
+          cat "release/FlClash-$version-SHA256SUMS"
+          ls -l release
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "NOTES=$notes" >> "$GITHUB_ENV"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "SeasonCat $TAG" --notes-file "$NOTES" --latest

@@ -110,6 +110,16 @@ method it calls is one the Flutter UI's `rpc_core_api.dart` calls too. 修前 is
 | 配置 | `PlaceholderPage` | 无 | 无入口设置 `placeholder-title`，不可达 | 不变（死代码，未删以免越界） | — | grep |
 | 工具 | 资源页 `pending` 行状态 | 文件读取中显示 pending | 文件同步就地读取 | 不做：没有可观察的读取中状态 | — | — |
 
+## Release
+
+- v0.9.5-rs.2 (2026-11-27, owner approved): first Slint release. `pubspec.yaml` version `0.9.5-rs.2+2026112701`
+  (Gradle takes versionName/versionCode from it; the shell's hello sends versionName to `update.rs`).
+- `slint-android.yaml` also runs on `v*-rs.*` tags. Every run checks the APK's signer against the signing step's key;
+  a tag also needs all four signing secrets and versionName equal to the tag, then the `release` job publishes
+  `FlClash-<ver>-android-arm64.apk` and `FlClash-<ver>-SHA256SUMS` (names from `update.rs`) as a full release, notes
+  from `release-notes/<tag>.md`.
+- Next release: bump `pubspec.yaml`, add `release-notes/<tag>.md`, push, wait for green, tag.
+
 ## Remaining
 
 Handoff items 2–7:
@@ -119,6 +129,6 @@ Handoff items 2–7:
 
 ## Waiting on the owner
 
-- When to delete Flutter, VPN back/close behaviour, release signing, whether the build workflow skips `slint-ui`,
+- When to delete Flutter, VPN back/close behaviour, whether the build workflow skips `slint-ui`,
   kernel integration, the 「语言」 row, and whether the tablet detail
   sheet buttons match the phone's.
