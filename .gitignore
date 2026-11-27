@@ -4,13 +4,6 @@
 *.pyc
 *.swp
 .DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
 
 # IntelliJ related
 *.iml
@@ -23,16 +16,9 @@ migrate_working_dir/
 # is commented out by default.
 .vscode/
 
-# Dart scripts and build outputs
-.dart_tool/
+# Build outputs
 /build/
 /dist/
-
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
 
 # Claude Code - ignore user-specific settings only
 .claude/settings.local.json
@@ -60,15 +46,7 @@ docs/
 /android/app/src/main/jniLibs/
 /services/helper/target
 /android/core/jni/target
-/macos/**/Package.resolved
-/macos/build/
-/core_sha256.json
 /issue-triage/
-
-# FVM Version Cache
-.fvm/
-.fvmrc
-/coverage/lcov.info
 
 
 # Built by CI from ui/ (cargo ndk) before gradle
