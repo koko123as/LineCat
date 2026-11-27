@@ -80,18 +80,19 @@ fn newest_in_feed() -> Result<(String, String), String> {
         .build()
         .into();
     for tag in update::feed_candidates(&update::release_tags_of_feed(&feed)) {
-        let sums = update::asset_url(&tag, &update::checksums_name(&tag));
-        let status = head
-            .head(&sums)
-            .header("User-Agent", profile::USER_AGENT)
-            .call()
-            .map_err(|e| format!("检查更新失败：{e}"))?
-            .status()
-            .as_u16();
-        match status {
-            404 => continue,
-            s if s < 400 => return Ok((tag, String::new())),
-            s => return Err(format!("检查更新失败：HTTP {s}")),
+        for name in update::checksums_names(&tag) {
+            let status = head
+                .head(&update::asset_url(&tag, &name))
+                .header("User-Agent", profile::USER_AGENT)
+                .call()
+                .map_err(|e| format!("检查更新失败：{e}"))?
+                .status()
+                .as_u16();
+            match status {
+                404 => continue,
+                s if s < 400 => return Ok((tag, String::new())),
+                s => return Err(format!("检查更新失败：HTTP {s}")),
+            }
         }
     }
     Err("检查更新失败：没有可用的版本".into())
@@ -141,28 +142,28 @@ fn newest_listed() -> Result<(String, String), Listing> {
 /// `downloadVerifiedRelease`: the checksums first, then the file, checked against them.
 fn download_verified(
     tag: &str,
-    name: &str,
+    arch: &str,
     dir: &Path,
     cancel: &AtomicBool,
     mut progress: impl FnMut(u64, u64),
 ) -> Result<PathBuf, Failure> {
     let failed = |e: String| Failure::Failed(e);
     let agent = agent();
-    let mut sums = get(
-        &agent,
-        &update::asset_url(tag, &update::checksums_name(tag)),
-    )
-    .map_err(failed)?;
-    match sums.status().as_u16() {
-        404 => return Err(Failure::Missing),
-        200 => {}
-        code => return Err(Failure::Failed(format!("HTTP {code}"))),
-    }
-    let sums = sums
-        .body_mut()
-        .read_to_string()
-        .map_err(|e| failed(e.to_string()))?;
-    let expected = update::checksum(&sums, name).ok_or(Failure::Missing)?;
+    let (name, expected) =
+        update::expected_file(tag, arch, |sums: &str| -> Result<Option<String>, Failure> {
+            let mut sums = get(&agent, &update::asset_url(tag, sums)).map_err(failed)?;
+            match sums.status().as_u16() {
+                404 => Ok(None),
+                200 => sums
+                    .body_mut()
+                    .read_to_string()
+                    .map(Some)
+                    .map_err(|e| failed(e.to_string())),
+                code => Err(Failure::Failed(format!("HTTP {code}"))),
+            }
+        })?
+        .ok_or(Failure::Missing)?;
+    let name = name.as_str();
     if cancel.load(Ordering::SeqCst) {
         return Err(Failure::Cancelled);
     }
@@ -268,9 +269,7 @@ impl App {
                 };
                 if yes {
                     match update::self_update_arch() {
-                        Some(arch) => {
-                            self.download_update(tag.clone(), update::asset_name(&tag, arch))
-                        }
+                        Some(arch) => self.download_update(tag.clone(), arch),
                         None => self.open_release_page(&tag),
                     }
                 } else if !by_user {
@@ -307,14 +306,14 @@ impl App {
             let newest = newest_release();
             app.ui(|ui| ui.set_update_checking(false));
             match newest {
-                Ok((tag, _)) => app.download_update(tag.clone(), update::asset_name(&tag, arch)),
+                Ok((tag, _)) => app.download_update(tag.clone(), arch),
                 Err(e) => app.toast(e),
             }
         });
     }
 
     /// `_downloadUpdate`.
-    fn download_update(self: &Arc<Self>, tag: String, name: String) {
+    fn download_update(self: &Arc<Self>, tag: String, arch: &'static str) {
         let cancel = Arc::new(AtomicBool::new(false));
         {
             let mut live = self.live.lock().unwrap();
@@ -339,7 +338,7 @@ impl App {
             let result = std::fs::create_dir_all(&dir)
                 .map_err(|e| Failure::Failed(e.to_string()))
                 .and_then(|_| {
-                    download_verified(&tag, &name, &dir, &cancel, |received, total| {
+                    download_verified(&tag, arch, &dir, &cancel, |received, total| {
                         app.set_update(Some(Status::Downloading {
                             tag: tag.clone(),
                             received: received as i64,
