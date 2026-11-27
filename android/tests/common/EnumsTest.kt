@@ -5,20 +5,20 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * The Flutter layer exchanges these enums as JSON, so the serialized spelling is a cross-language
+ * The Slint UI exchanges these enums as JSON, so the serialized spelling is a cross-language
  * contract rather than an implementation detail.
  */
 class EnumsTest {
     private val gson = Gson()
 
     @Test
-    fun `access control mode serializes to the Dart spelling`() {
+    fun `access control mode serializes to the UI spelling`() {
         assertEquals("\"acceptSelected\"", gson.toJson(AccessControlMode.ACCEPT_SELECTED))
         assertEquals("\"rejectSelected\"", gson.toJson(AccessControlMode.REJECT_SELECTED))
     }
 
     @Test
-    fun `access control mode deserializes from the Dart spelling`() {
+    fun `access control mode deserializes from the UI spelling`() {
         assertEquals(
             AccessControlMode.ACCEPT_SELECTED,
             gson.fromJson("\"acceptSelected\"", AccessControlMode::class.java),

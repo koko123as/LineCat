@@ -6,7 +6,7 @@ plugins {
     id("com.android.application")
 }
 
-// The release this build is. The code stays at or above v0.9.5-rs.2's, which the Flutter build
+// The release this build is. The code stays at or above v0.9.5-rs.2's, which its release build
 // numbered 2026112701 plus 2000 for its arm64-v8a split, so an APK installs over it.
 val appVersionName = "0.9.5-rs.2"
 val appVersionCode = 2026114701

@@ -8,14 +8,15 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * `SharedState` is written by Flutter into `FlutterSharedPreferences` and read back here, so the
- * JSON spelling of every field is a cross-language contract rather than an implementation detail.
+ * `SharedState` is built from what the Slint UI sends over `UiBridge` and kept as JSON for quick
+ * start, so the JSON spelling of every field is a cross-language contract rather than an
+ * implementation detail.
  */
 class SharedStateTest {
     private val gson = Gson()
 
     @Test
-    fun `setup params reach the Core exactly as Flutter wrote them`() {
+    fun `setup params reach the Core exactly as the UI wrote them`() {
         val params = """{"selected-map":{"GLOBAL":"auto"},"options":{"test-url":"t","skip-cert-verify":true},""" +
             """"host":{"externalController":"127.0.0.1:9090","secret":"s","hostCredential":"h:s"}}"""
 
@@ -77,7 +78,7 @@ class SharedStateTest {
     }
 
     @Test
-    fun `the constructed default keeps every fallback Flutter relies on`() {
+    fun `the constructed default keeps every fallback the UI relies on`() {
         val defaults = SharedState()
 
         assertEquals("FlClash", defaults.currentProfileName)

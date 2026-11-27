@@ -45,7 +45,7 @@ private class Watch(
 
 /**
  * A JSON-RPC session of the service's own with the Core, opened on first use and kept for
- * the process: the VPN service reaches the Core through it with no Flutter engine alive.
+ * the process: the VPN service reaches the Core through it with no UI attached.
  * Callbacks run on the Core's threads and must not block.
  */
 class CoreClient(

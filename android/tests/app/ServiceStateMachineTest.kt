@@ -337,7 +337,7 @@ class ServiceStateMachineTest {
         assertEquals(listOf(StartFailure.VPN_PERMISSION), host.stopFailures)
     }
 
-    /** Flutter opened the Core's listeners before asking, and may be gone before it hears back. */
+    /** The UI opened the Core's listeners before asking, and may be gone before it hears back. */
     @Test
     fun `a start refused before any service came up closes the core without passing STOPPING`() =
         runTest {
@@ -583,7 +583,7 @@ class ServiceStateMachineTest {
     }
 
     @Test
-    fun `handleStopAction stops the service itself and reports it to Flutter`() = runTest {
+    fun `handleStopAction stops the service itself and reports it to the UI`() = runTest {
         val host = FakeHost(backgroundScope)
         val machine = ServiceStateMachine(host)
         machine.syncSharedState(configuredState())
@@ -707,7 +707,7 @@ class ServiceStateMachineTest {
     }
 
     @Test
-    fun `a revoke stops the vpn service even with Flutter attached`() = runTest {
+    fun `a revoke stops the vpn service even with the UI attached`() = runTest {
         val host = FakeHost(backgroundScope)
         val machine = ServiceStateMachine(host)
         machine.syncSharedState(configuredState())

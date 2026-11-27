@@ -194,7 +194,7 @@ class VpnService : SystemVpnService(), ManagedService {
         }
     }
 
-    // Flutter lists every family it routes, so a family missing from a
+    // The UI lists every family it routes, so a family missing from a
     // non-empty list is one whose routes were all excluded.
     private fun Builder.addRoutes(
         routes: () -> List<CIDR>,

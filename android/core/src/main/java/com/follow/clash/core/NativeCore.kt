@@ -30,7 +30,7 @@ interface FrameTransport {
 }
 
 object NativeCore : FrameTransport {
-    // Dart's DynamicLibrary.open finds the loaded library; JNI_OnLoad is what starts the Core.
+    // Loading Mobile loads the library, and its JNI_OnLoad is what starts the Core.
     fun load() = Mobile.touch()
 
     override fun open(receiver: FrameReceiver): Long = Mobile.openSession(receiver)
