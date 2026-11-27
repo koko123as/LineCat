@@ -289,6 +289,23 @@ export struct LogItem {
 }
 
 // A row of the requests lists: a minute's header, or a record under it.
+// `RecordLabel`: a tonal chip after a record's line; tone 0 neutral, 1 error, 2 success,
+// 3 warning.
+export struct RecordLabel {
+    text: string,
+    tone: int,
+}
+
+// Where `RecordLabelLine` puts its parts in `room`.
+export struct LineLayout {
+    text-shown: bool,
+    text-w: length,
+    last-shown: bool,
+    last-w: length,
+    // Where the last label starts after the text.
+    before-last: length,
+}
+
 export struct RecordRow {
     header: bool,
     label: string,
@@ -299,10 +316,9 @@ export struct RecordRow {
     app: string,
     well-label: bool,
     title: string,
-    about: string,
-    about-error: bool,
-    chip: string,
-    mitm: bool,
+    // `RecordLabelLine` under the title.
+    line: string,
+    labels: [RecordLabel],
     top: string,
     top-strong: bool,
     // 0 plain, 1 error, 2 success, 3 warning, 4 muted
@@ -350,6 +366,7 @@ export struct DetailRow {
     first: bool,
     last: bool,
     arg: string,
+    labels: [RecordLabel],
 }
 
 export struct DetailSection {
@@ -368,7 +385,7 @@ export struct ReqDetail {
     well-label: bool,
     title: string,
     subtitle: string,
-    subtitle-error: bool,
+    labels: [RecordLabel],
     closable: bool,
     menu: bool,
     tabs: [string],
@@ -7830,6 +7847,101 @@ component ConditionBlock inherits Rectangle {
     }
 }
 
+// `RecordLabelLine` (lib/widgets/record_label_line.dart): a record's text, then its labels
+// at their own widths, four apart. The text gives way first, then the last label within
+// itself; the labels before it never shrink. A part left less than twice its height that
+// does not fit whole is dropped.
+export global RecordLine {
+    out property <length> gap: 4px;
+    public pure function shows(natural: length, height: length, room: length) -> bool {
+        return room >= 2 * height || natural <= room;
+    }
+    // `w` holds each label's natural width, `n` how many there are.
+    public pure function before(w: [length], k: int) -> length {
+        return (k > 0 ? w[0] + 4px : 0px) + (k > 1 ? w[1] + 4px : 0px) + (k > 2 ? w[2] + 4px : 0px)
+            + (k > 3 ? w[3] + 4px : 0px) + (k > 4 ? w[4] + 4px : 0px);
+    }
+    public pure function layout(room: length, text: length, text-h: length, label-h: length, w: [length], n: int) -> LineLayout {
+        let before-last = n > 0 ? RecordLine.before(w, n - 1) : 0px;
+        let last-room = room - before-last;
+        let last-shown = n > 0 && RecordLine.shows(w[n - 1], label-h, last-room);
+        let last-w = n > 0 ? min(w[n - 1], max(0px, last-room)) : 0px;
+        let labels = before-last + (last-shown ? last-w + 4px : 0px);
+        let text-room = room - labels;
+        let text-shown = text > 0px && RecordLine.shows(text, text-h, text-room);
+        return {
+            text-shown: text-shown,
+            text-w: text-shown ? min(text, max(0px, text-room)) : 0px,
+            last-shown: last-shown,
+            last-w: last-w,
+            before-last: before-last,
+        };
+    }
+}
+
+component RecordChip inherits Rectangle {
+    in property <RecordLabel> label;
+    in property <bool> shown: true;
+    property <color> tone: root.label.tone == 1 ? Theme.s.error : root.label.tone == 2 ? Theme.success : root.label.tone == 3 ? Theme.warning : Theme.s.on-surface-variant;
+    visible: root.shown && root.label.text != "";
+    height: 20px;
+    border-radius: 6px;
+    background: root.label.tone == 0 ? Theme.s.block : root.tone.with-alpha(0.14);
+    Text {
+        x: 6px;
+        width: max(0px, parent.width - 12px);
+        text: root.label.text;
+        font-size: 11px * Type.scale;
+        font-weight: 600;
+        color: root.tone;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component RecordLabelLine inherits Rectangle {
+    in property <string> text;
+    in property <[RecordLabel]> labels;
+    in property <length> font-size: 12px * Type.scale;
+    in property <color> color: Theme.s.on-surface-variant;
+    property <length> label-h: 20px;
+    property <int> n: min(root.labels.length, 5);
+    property <[length]> natural: [
+        m0.preferred-width + 12px, m1.preferred-width + 12px, m2.preferred-width + 12px,
+        m3.preferred-width + 12px, m4.preferred-width + 12px,
+    ];
+    property <LineLayout> line: RecordLine.layout(self.width, root.text == "" ? 0px : mt.preferred-width, mt.preferred-height, root.label-h, root.natural, root.n);
+    property <length> start: root.line.text-shown ? root.line.text-w + RecordLine.gap : 0px;
+    horizontal-stretch: 1;
+    min-width: 0px;
+    preferred-width: (root.text == "" ? 0px : mt.preferred-width + RecordLine.gap) + RecordLine.before(root.natural, root.n);
+    height: root.text == "" && root.n == 0 ? 0px : max(root.text == "" ? 0px : mt.preferred-height, root.n > 0 ? root.label-h : 0px);
+    clip: true;
+    mt := Text { visible: false; text: root.text; font-size: root.font-size; }
+    m0 := Text { visible: false; text: root.labels[0].text; font-size: 11px * Type.scale; font-weight: 600; }
+    m1 := Text { visible: false; text: root.labels[1].text; font-size: 11px * Type.scale; font-weight: 600; }
+    m2 := Text { visible: false; text: root.labels[2].text; font-size: 11px * Type.scale; font-weight: 600; }
+    m3 := Text { visible: false; text: root.labels[3].text; font-size: 11px * Type.scale; font-weight: 600; }
+    m4 := Text { visible: false; text: root.labels[4].text; font-size: 11px * Type.scale; font-weight: 600; }
+    if root.line.text-shown: Text {
+        x: 0;
+        width: root.line.text-w;
+        text: root.text;
+        font-size: root.font-size;
+        color: root.color;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    for l[i] in root.labels: RecordChip {
+        property <bool> is-last: i == root.n - 1;
+        x: root.start + (self.is-last ? root.line.before-last : RecordLine.before(root.natural, i));
+        y: (parent.height - self.height) / 2;
+        width: self.is-last ? root.line.last-w : root.natural[i];
+        label: l;
+        shown: i < root.n && (!self.is-last || root.line.last-shown);
+    }
+}
+
 // `TrackerAppWell` without the app's icon (its name's first letter), or `LabelWell`.
 component Well inherits Rectangle {
     in property <string> text;
@@ -7891,21 +8003,7 @@ component RecordRowView inherits Rectangle {
                 spacing: 4px;
                 horizontal-stretch: 1;
                 Text { text: root.rec.title; font-size: 15px * Type.scale; color: Theme.s.on-surface; overflow: elide; }
-                HorizontalLayout {
-                    spacing: 4px;
-                    about := Text {
-                        text: root.rec.about;
-                        font-size: 12px * Type.scale;
-                        color: root.rec.about-error ? Theme.s.error : root.muted;
-                        overflow: elide;
-                        horizontal-stretch: 1;
-                        max-width: self.preferred-width;
-                        vertical-alignment: center;
-                    }
-                    if root.rec.chip != "": Chip { text: root.rec.chip; height: 18px; }
-                    if root.rec.mitm: Chip { text: "MITM"; height: 18px; }
-                    Rectangle { horizontal-stretch: 1; }
-                }
+                RecordLabelLine { text: root.rec.line; labels: root.rec.labels; }
             }
             VerticalLayout {
                 alignment: center;
@@ -8019,17 +8117,21 @@ component DetailRowView inherits Rectangle {
             VerticalLayout {
                 spacing: 2px;
                 Text { text: root.item.title; font-size: 15px * Type.scale; color: Theme.s.on-surface; wrap: word-wrap; }
-                Text { text: root.item.value; font-size: 13px * Type.scale; color: root.muted; wrap: word-wrap; overflow: elide; max-height: 54px; }
+                if root.item.value != "": Text { text: root.item.value; font-size: 13px * Type.scale; color: root.muted; wrap: word-wrap; overflow: elide; max-height: 54px; }
+                if root.item.labels.length > 0: VerticalLayout {
+                    padding-top: 2px;
+                    RecordLabelLine { labels: root.item.labels; }
+                }
             }
         }
         if root.item.kind == "rail" || root.item.kind == "link": HorizontalLayout {
-            height: root.item.note == "" ? 48px : 58px;
+            height: root.item.note == "" && root.item.labels.length == 0 ? 48px : 58px;
             padding-left: root.item.kind == "rail" ? 0 : 16px;
             padding-right: 16px;
             spacing: 4px;
             if root.item.kind == "rail": Rectangle {
                 width: 44px;
-                property <length> cy: root.item.note == "" ? self.height / 2 : self.height / 2 - 9px;
+                property <length> cy: root.item.note == "" && root.item.labels.length == 0 ? self.height / 2 : self.height / 2 - 9px;
                 if !root.item.first: Rectangle { x: (parent.width - 1.5px) / 2; y: 0; width: 1.5px; height: max(0px, parent.cy - 8px); background: Theme.s.outline-variant; }
                 if !root.item.last: Rectangle { x: (parent.width - 1.5px) / 2; y: parent.cy + 8px; width: 1.5px; height: max(0px, parent.height - parent.cy - 8px); background: Theme.s.outline-variant; }
                 Rectangle {
@@ -8048,7 +8150,7 @@ component DetailRowView inherits Rectangle {
                 spacing: 2px;
                 horizontal-stretch: 1;
                 Text { text: root.item.title; font-size: 15px * Type.scale; font-weight: root.item.mark == 1 && root.item.kind == "rail" ? 600 : 400; color: Theme.s.on-surface; overflow: elide; }
-                if root.item.note != "": Text { text: root.item.note; font-size: 13px * Type.scale; color: root.item.kind == "link" && root.item.tone == 1 ? Theme.s.error : root.muted; overflow: elide; }
+                if root.item.note != "" || root.item.labels.length > 0: RecordLabelLine { text: root.item.note; labels: root.item.labels; font-size: 13px * Type.scale; }
             }
             if root.item.trailing != "": Text {
                 text: root.item.trailing;
@@ -8113,7 +8215,7 @@ component DetailView inherits Rectangle {
                 spacing: 4px;
                 horizontal-stretch: 1;
                 Text { text: root.detail.title; font-size: 17px * Type.scale; font-weight: 600; color: Theme.s.on-surface; overflow: elide; }
-                if root.detail.subtitle != "": Text { text: root.detail.subtitle; font-size: 13px * Type.scale; color: root.detail.subtitle-error ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
+                if root.detail.subtitle != "" || root.detail.labels.length > 0: RecordLabelLine { text: root.detail.subtitle; labels: root.detail.labels; font-size: 13px * Type.scale; }
             }
             if root.detail.closable: VerticalLayout { alignment: center; IconButton { glyph: Icons.block; tint: Theme.s.error; clicked => { root.close(); } } }
             if root.head-menu && root.detail.menu: VerticalLayout { alignment: center; IconButton { glyph: Icons.more; clicked => { root.menu(); } } }

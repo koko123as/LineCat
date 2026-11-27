@@ -135,15 +135,6 @@ impl Query {
             _ => "DNS 解析失败",
         }
     }
-
-    /// The row's subtitle: who asked, then the answer.
-    pub fn about(&self) -> String {
-        [initiator_label(&self.initiator).to_string(), self.summary()]
-            .into_iter()
-            .filter(|p| !p.is_empty())
-            .collect::<Vec<_>>()
-            .join(" · ")
-    }
 }
 
 impl Record for Query {
@@ -228,7 +219,6 @@ mod tests {
         let ok = Query::parse(&q("a.com", "NOERROR", false)).unwrap();
         assert!(!ok.is_failed());
         assert_eq!(ok.summary(), "1.2.3.4, 5.6.7.8");
-        assert_eq!(ok.about(), "应用 · 1.2.3.4, 5.6.7.8");
         let bad = Query::parse(&q("b.com", "NXDOMAIN", true)).unwrap();
         assert!(bad.is_failed());
         assert_eq!(bad.summary(), "NXDOMAIN");

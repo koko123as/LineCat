@@ -123,6 +123,27 @@ fn navigation() {
         -300.0
     );
 
+    // `RecordLabelLine` laid out from given widths, so no font is measured.
+    let line = ui.global::<RecordLine>();
+    let widths = |w: &[f32]| slint::ModelRc::new(slint::VecModel::from(w.to_vec()));
+    assert_eq!(line.invoke_before(widths(&[40.0, 30.0]), 2), 78.0);
+    let l = line.invoke_layout(200.0, 100.0, 16.0, 20.0, widths(&[40.0, 30.0]), 2);
+    assert!(l.text_shown && l.last_shown);
+    assert_eq!((l.text_w, l.last_w, l.before_last), (100.0, 30.0, 44.0));
+    let l = line.invoke_layout(150.0, 100.0, 16.0, 20.0, widths(&[40.0, 30.0]), 2);
+    assert_eq!(l.text_w, 72.0);
+    let l = line.invoke_layout(90.0, 100.0, 16.0, 20.0, widths(&[40.0, 30.0]), 2);
+    assert!(!l.text_shown && l.last_shown);
+    assert_eq!(l.text_w, 0.0);
+    let l = line.invoke_layout(100.0, 0.0, 16.0, 20.0, widths(&[40.0, 80.0]), 2);
+    assert!(!l.text_shown && l.last_shown);
+    assert_eq!(l.last_w, 56.0);
+    let l = line.invoke_layout(60.0, 0.0, 16.0, 20.0, widths(&[40.0, 30.0]), 2);
+    assert!(!l.last_shown);
+    let l = line.invoke_layout(30.0, 20.0, 16.0, 20.0, widths(&[]), 0);
+    assert!(l.text_shown && !l.last_shown);
+    assert_eq!(l.text_w, 20.0);
+
     let card = ui.global::<ProxyCardMetrics>();
     for scale in [1.0f32, 1.3] {
         ui.global::<Type>().set_scale(scale);

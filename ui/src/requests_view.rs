@@ -7,8 +7,8 @@ use crate::http_capture::{self, Summary};
 use crate::proxies::Groups;
 use crate::requests::{self, Condition, Conn, Filters};
 use crate::{
-    ActionItem, ConditionItem, ConditionLine, ConditionRow, DetailRow, DetailSection, RecordRow,
-    ReqDetail, Suggestion,
+    ActionItem, ConditionItem, ConditionLine, ConditionRow, DetailRow, DetailSection, RecordLabel,
+    RecordRow, ReqDetail, Suggestion,
 };
 use serde_json::Value;
 use slint::{ModelRc, SharedString, VecModel};
@@ -87,6 +87,47 @@ fn model<T: Clone + 'static>(v: Vec<T>) -> ModelRc<T> {
     ModelRc::new(VecModel::from(v))
 }
 
+/// `RecordLabel`s from their texts and tones (0 neutral, 1 error, 2 success, 3 warning);
+/// an empty text gives no label.
+fn labels<T: AsRef<str>>(parts: impl IntoIterator<Item = (T, i32)>) -> ModelRc<RecordLabel> {
+    model(
+        parts
+            .into_iter()
+            .filter(|(text, _)| !text.as_ref().is_empty())
+            .map(|(text, tone)| RecordLabel {
+                text: s(text),
+                tone,
+            })
+            .collect(),
+    )
+}
+
+/// `outcomeLabels`: the status, then the error, or that it is still in progress, or
+/// `finished`.
+fn outcome_labels(
+    status: i64,
+    reason: &str,
+    error: &str,
+    pending: bool,
+    finished: Vec<String>,
+) -> ModelRc<RecordLabel> {
+    let mut out = Vec::new();
+    if status != 0 {
+        out.push((
+            http_capture::status_text(status, reason),
+            http_capture::status_tone(status),
+        ));
+    }
+    if !error.is_empty() {
+        out.push((error.to_string(), 1));
+    } else if pending {
+        out.push(("进行中".to_string(), 0));
+    } else {
+        out.extend(finished.into_iter().map(|p| (p, 0)));
+    }
+    labels(out)
+}
+
 /// `NumberFormat.decimalPattern('en')`.
 pub fn grouped(n: usize) -> String {
     let digits = n.to_string();
@@ -98,15 +139,6 @@ pub fn grouped(n: usize) -> String {
         out.push(c);
     }
     out
-}
-
-fn join(parts: &[&str]) -> String {
-    parts
-        .iter()
-        .filter(|p| !p.is_empty())
-        .copied()
-        .collect::<Vec<_>>()
-        .join(" · ")
 }
 
 /// The local wall clock of a Unix millisecond, HH:mm:ss.
@@ -770,7 +802,8 @@ impl ReqState {
             app: s(&c.process),
             well_label: false,
             title: s(c.title()),
-            subtitle: s(c.headline(cx.now)),
+            subtitle: s(c.process.trim()),
+            labels: labels(c.headline_labels(cx.now)),
             closable: c.is_active(),
             menu: true,
             tabs: model(tabs),
@@ -808,7 +841,8 @@ impl ReqState {
                 DetailRow {
                     kind: s("rail"),
                     title: s(&step.title),
-                    note: s(join(&[&step.kind, &step.note])),
+                    note: s(&step.kind),
+                    labels: labels(step.notes),
                     trailing: s(trailing),
                     mark: step.mark,
                     first: i == 0,
@@ -837,20 +871,23 @@ impl ReqState {
         }
         let mut path = Vec::new();
         if !c.process.is_empty() || c.uid != 0 {
-            let mut note = vec!["进程".to_string()];
-            if c.uid != 0 {
-                note.push(format!("UID {}", c.uid));
-            }
-            path.push(rail(
+            let uid = if c.uid != 0 {
+                format!("UID {}", c.uid)
+            } else {
+                String::new()
+            };
+            let mut row = rail(
                 if c.process.is_empty() {
                     c.uid.to_string()
                 } else {
                     c.process.clone()
                 },
-                note.join(" · "),
+                "进程".into(),
                 String::new(),
                 0,
-            ));
+            );
+            row.labels = labels([(uid, 0)]);
+            path.push(row);
         }
         let hops: Vec<&String> = c.chains.iter().rev().collect();
         path.push(rail(
@@ -861,23 +898,26 @@ impl ReqState {
         ));
         for (step, name) in hops.iter().enumerate() {
             let end = step + 1 == hops.len();
-            let (note, trailing) = match cx.groups.groups.get(*name) {
-                Some(g) => (format!("策略组 · {}", g.kind), String::new()),
+            let (note, kind, trailing) = match cx.groups.groups.get(*name) {
+                Some(g) => ("策略组", g.kind.clone(), String::new()),
                 None => {
                     let kind = cx.groups.kinds.get(*name).cloned().unwrap_or_default();
                     let delay = cx.delays.get(*name).copied().filter(|d| *d > 0);
                     (
-                        join(&["节点", &kind]),
+                        "节点",
+                        kind,
                         delay.map(|d| format!("{d} ms")).unwrap_or_default(),
                     )
                 }
             };
-            path.push(rail(
+            let mut row = rail(
                 (*name).clone(),
-                note,
+                note.into(),
                 trailing,
                 if end { 1 } else { 0 },
-            ));
+            );
+            row.labels = labels([(kind, 0)]);
+            path.push(row);
         }
         let last = path.len().saturating_sub(1);
         for (i, row) in path.iter_mut().enumerate() {
@@ -1015,23 +1055,21 @@ impl ReqState {
             fields.push(code);
         }
         sections.push(section("查询", fields));
-        let subtitle = [
-            if initiator.is_empty() {
-                String::new()
-            } else {
-                format!("{initiator}发起")
-            },
-            clock(q.time, cx.offset),
-            format!("{} ms", q.delay),
-        ];
+        let asked = if initiator.is_empty() {
+            String::new()
+        } else {
+            format!("{initiator}发起")
+        };
         ReqDetail {
             has: true,
             well: s(&q.kind),
             well_label: true,
             title: s(&q.domain),
-            subtitle: s(join(
-                &subtitle.iter().map(String::as_str).collect::<Vec<_>>(),
-            )),
+            labels: labels([
+                (asked, 0),
+                (clock(q.time, cx.offset), 0),
+                (format!("{} ms", q.delay), 0),
+            ]),
             menu: true,
             tabs: model(Vec::new()),
             sections: model(sections),
@@ -1076,24 +1114,16 @@ impl ReqState {
         let (duration, ttfb) = (int("duration"), int("ttfb"));
         let (request_size, response_size) = (int("request-size"), int("response-size"));
         let url = text("url");
-        let outcome = if status > 0 {
-            http_capture::status_text(status, &reason)
-        } else if pending {
-            "进行中".into()
-        } else if !error.is_empty() {
-            error.clone()
-        } else {
-            "失败".into()
-        };
-        let subtitle = if pending {
-            outcome
-        } else {
-            join(&[
-                &outcome,
-                &http_capture::millis_text(duration),
-                &crate::size(response_size),
-            ])
-        };
+        let head = outcome_labels(
+            status,
+            &reason,
+            &error,
+            pending,
+            vec![
+                http_capture::millis_text(duration),
+                crate::size(response_size),
+            ],
+        );
         let tabs = vec![s("概览"), s("请求"), s("响应")];
         let tab = self.tab[HTTP as usize].clamp(0, 2);
         let headers = |key: &str| -> Vec<DetailRow> {
@@ -1228,22 +1258,29 @@ impl ReqState {
                     .map(|a| {
                         let at =
                             |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+                        let module = at("module");
                         DetailRow {
                             kind: s("stacked"),
                             title: s(http_capture::action_label(&at("kind"))),
-                            value: s(join(&[
-                                match at("phase").as_str() {
-                                    "request" => "请求",
-                                    "response" => "响应",
-                                    other => other,
-                                },
-                                &at("detail"),
-                                &if at("module").is_empty() {
-                                    String::new()
-                                } else {
-                                    format!("来自 {}", at("module"))
-                                },
-                            ])),
+                            value: s(at("detail")),
+                            labels: labels([
+                                (
+                                    match at("phase").as_str() {
+                                        "request" => "请求".to_string(),
+                                        "response" => "响应".to_string(),
+                                        other => other.to_string(),
+                                    },
+                                    0,
+                                ),
+                                (
+                                    if module.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!("来自 {module}")
+                                    },
+                                    0,
+                                ),
+                            ]),
                             ..Default::default()
                         }
                     })
@@ -1309,9 +1346,8 @@ impl ReqState {
             well: s(text("method")),
             well_label: true,
             title: s(http_capture::path_of(&url)),
-            subtitle: s(subtitle),
+            labels: head,
             menu: true,
-            subtitle_error: status == 0 && !pending,
             tabs: model(tabs),
             tab,
             sections: model(sections),
@@ -1383,29 +1419,54 @@ fn text_row(title: &str, value: &str, copyable: bool) -> DetailRow {
     }
 }
 
+/// `RelatedConnectionItem`: the app (else the host), then how it failed, or where it went
+/// with the node it left by and how long it has been open.
 fn conn_link(c: &Conn, now: i64) -> DetailRow {
+    let (note, labels) = match &c.failure {
+        Some((kind, _)) => (String::new(), labels([(requests::failure_label(kind), 1)])),
+        None => {
+            let state = if c.is_active() { "活动" } else { "已关闭" };
+            (
+                requests::endpoint(&c.dest_ip, &c.dest_port),
+                labels([
+                    (c.chains.first().cloned().unwrap_or_default(), 0),
+                    (format!("{state} {}", c.lifetime(now)), 0),
+                ]),
+            )
+        }
+    };
     DetailRow {
         kind: s("link"),
-        title: s(c.name()),
-        note: s(c.headline(now)),
-        tone: if c.failure.is_some() { 1 } else { 0 },
+        title: s(if c.process.is_empty() {
+            &c.host
+        } else {
+            &c.process
+        }),
+        note: s(note),
+        labels,
         arg: s(format!("conn:{}", c.id)),
         ..Default::default()
     }
 }
 
+/// The connection's HTTP requests (`MitmExchangeItem`): the path, then the method with
+/// how the request ended.
 fn exchange_link(e: &Summary) -> DetailRow {
-    let (status, tone) = e.status_text();
     DetailRow {
         kind: s("link"),
-        title: s(format!(
-            "{} {}",
-            e.method,
-            if e.path.is_empty() { &e.url } else { &e.path }
-        )),
-        note: s(join(&[&e.host, &http_capture::millis_text(e.duration)])),
-        trailing: s(status),
-        tone,
+        title: s(http_capture::path_of(&e.url)),
+        note: s(&e.method),
+        labels: outcome_labels(
+            e.status,
+            "",
+            &e.error,
+            e.pending,
+            vec![
+                crate::size(e.response_size),
+                http_capture::millis_text(e.duration),
+                e.mark(),
+            ],
+        ),
         arg: s(format!("http:{}", e.id)),
         ..Default::default()
     }
@@ -1420,19 +1481,19 @@ fn conn_well(c: &Conn) -> String {
 }
 
 fn conn_row(c: &Conn, repeats: usize, now: i64) -> RecordRow {
-    let failure = c.failure.as_ref().map(|f| requests::failure_label(&f.0));
-    let last_chain = c.chains.last().map(String::as_str).unwrap_or("");
-    let about = join(&[&c.process, failure.unwrap_or(last_chain)]);
-    let about = if failure.is_some() {
-        about
-    } else {
-        let lifetime = c.lifetime(now);
-        if about.is_empty() {
-            lifetime
-        } else {
-            format!("{about} · {lifetime}")
-        }
+    let mut parts = match &c.failure {
+        Some((kind, _)) => vec![(requests::failure_label(kind).to_string(), 1)],
+        None => vec![
+            (c.chains.last().cloned().unwrap_or_default(), 0),
+            (c.lifetime(now), 0),
+        ],
     };
+    if repeats > 1 {
+        parts.push((format!("×{repeats}"), 0));
+    }
+    if c.mitm {
+        parts.push(("MITM".to_string(), 0));
+    }
     let active = c.is_active();
     let total = crate::size(c.upload + c.download);
     let (up, down) = c.speeds(now);
@@ -1441,14 +1502,7 @@ fn conn_row(c: &Conn, repeats: usize, now: i64) -> RecordRow {
         well: s(conn_well(c)),
         app: s(&c.process),
         title: s(c.name()),
-        about: s(about),
-        about_error: failure.is_some(),
-        chip: s(if repeats > 1 {
-            format!("×{repeats}")
-        } else {
-            String::new()
-        }),
-        mitm: c.mitm,
+        labels: labels(parts),
         top: s(if active {
             crate::speed(up + down)
         } else {
@@ -1467,11 +1521,18 @@ fn dns_row(q: &Query) -> RecordRow {
         well: s(&q.kind),
         well_label: true,
         title: s(&q.domain),
-        about: s(q.about()),
-        about_error: q.is_failed(),
+        line: s(if q.is_failed() {
+            String::new()
+        } else {
+            q.summary()
+        }),
+        labels: labels([
+            (if q.is_failed() { q.failure_title() } else { "" }, 1),
+            (dns_queries::initiator_label(&q.initiator), 0),
+            (if q.cached { "缓存" } else { "" }, 0),
+        ]),
         top: s(format!("{} ms", q.delay)),
         top_tone: 4,
-        bottom: s(if q.cached { "缓存" } else { "" }),
         ..Default::default()
     }
 }
@@ -1483,15 +1544,12 @@ fn http_row(e: &Summary) -> RecordRow {
         well: s(&e.method),
         well_label: true,
         title: s(if e.path.is_empty() { &e.url } else { &e.path }),
-        about: s(join(&[&e.host, &e.process])),
-        chip: s(e.mark()),
+        line: s(&e.host),
+        labels: labels([(http_capture::millis_text(e.duration), 0), (e.mark(), 0)]),
         top: s(status),
         top_strong: true,
         top_tone: if tone == 0 { 4 } else { tone },
-        bottom: s(join(&[
-            &crate::size(e.response_size),
-            &http_capture::millis_text(e.duration),
-        ])),
+        bottom: s(crate::size(e.response_size)),
         ..Default::default()
     }
 }
@@ -1591,6 +1649,64 @@ mod tests {
         assert!(rows[1].time.starts_with("1970-01-01 00:02:"));
         assert_eq!(row_y(rows.iter().cloned(), 1), Some(40.0 + 64.0 + 40.0));
         assert_eq!(row_y(rows.iter().cloned(), 9), None);
+        assert_eq!(rows[1].line, "");
+        assert_eq!(texts(&rows[1].labels), ["节点选择", "1:20"]);
+    }
+
+    fn texts(labels: &ModelRc<RecordLabel>) -> Vec<String> {
+        labels.iter().map(|l| l.text.to_string()).collect()
+    }
+
+    fn tones(labels: &ModelRc<RecordLabel>) -> Vec<i32> {
+        labels.iter().map(|l| l.tone).collect()
+    }
+
+    #[test]
+    fn record_lines_carry_their_labels() {
+        let q = |rcode: &str, cached: bool| {
+            Query::parse(&json!({"id": 1, "domain": "a.com", "type": "A", "initiator": "app",
+                "cached": cached, "answers": ["1.2.3.4"], "rcode": rcode, "delay": 12, "time": 1000}))
+            .unwrap()
+        };
+        let ok = dns_row(&q("NOERROR", true));
+        assert_eq!(ok.line, "1.2.3.4");
+        assert_eq!(texts(&ok.labels), ["应用", "缓存"]);
+        let failed = q("NXDOMAIN", false);
+        let bad = dns_row(&failed);
+        assert_eq!(bad.line, "");
+        assert_eq!(texts(&bad.labels), [failed.failure_title(), "应用"]);
+        assert_eq!(tones(&bad.labels), [1, 0]);
+
+        let mut c = Conn::parse(&conn(1, "a.com")).unwrap();
+        c.mitm = true;
+        let row = conn_row(&c, 3, 90_000);
+        assert_eq!(texts(&row.labels), ["节点选择", "0:30", "×3", "MITM"]);
+        let link = conn_link(&c, 90_000);
+        assert_eq!(
+            (link.title.as_str(), link.note.as_str()),
+            ("chrome", "1.2.3.4:443")
+        );
+        assert_eq!(texts(&link.labels), ["香港 01", "活动 0:30"]);
+
+        assert_eq!(
+            texts(&outcome_labels(
+                404,
+                "Not Found",
+                "",
+                false,
+                vec!["1 KB".into()]
+            )),
+            ["404 Not Found", "1 KB"]
+        );
+        assert_eq!(tones(&outcome_labels(404, "", "", false, Vec::new())), [1]);
+        assert_eq!(
+            texts(&outcome_labels(0, "", "", true, vec!["1 KB".into()])),
+            ["进行中"]
+        );
+        assert_eq!(
+            tones(&outcome_labels(0, "", "reset", false, vec!["1 KB".into()])),
+            [1]
+        );
     }
 
     #[test]
@@ -1656,8 +1772,9 @@ mod tests {
         let hop = path.rows.row_data(path.rows.row_count() - 1).unwrap();
         assert_eq!(
             (hop.title.as_str(), hop.note.as_str(), hop.trailing.as_str()),
-            ("香港 01", "节点 · Trojan", "88 ms")
+            ("香港 01", "节点", "88 ms")
         );
+        assert_eq!(texts(&hop.labels), ["Trojan"]);
         assert!(!(0..d.sections.row_count())
             .any(|i| d.sections.row_data(i).unwrap().title == "HTTPS 解密"));
         let hosts = vec!["a.com".to_string()];

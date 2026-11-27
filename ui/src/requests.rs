@@ -628,22 +628,31 @@ impl Conn {
 
     /// `trackerHeadlineParts`, joined.
     pub fn headline(&self, now: i64) -> String {
-        let mut parts: Vec<String> = [
-            self.process.trim().to_string(),
-            self.chains.first().cloned().unwrap_or_default(),
-        ]
-        .into_iter()
-        .filter(|p| !p.is_empty())
-        .collect();
+        std::iter::once(self.process.trim().to_string())
+            .chain(self.headline_labels(now).into_iter().map(|(text, _)| text))
+            .filter(|p| !p.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · ")
+    }
+
+    /// `trackerHeadlineLabels`, each with its tone (1 for a failure).
+    pub fn headline_labels(&self, now: i64) -> Vec<(String, i32)> {
+        let mut labels: Vec<(String, i32)> = self
+            .chains
+            .first()
+            .filter(|n| !n.is_empty())
+            .map(|n| (n.clone(), 0))
+            .into_iter()
+            .collect();
         if self.failure.is_some() {
-            parts.push("失败".into());
-            parts.push(self.lifetime(now));
+            labels.push(("失败".into(), 1));
+            labels.push((self.lifetime(now), 0));
         } else if self.is_active() {
-            parts.push(format!("活动 {}", self.lifetime(now)));
+            labels.push((format!("活动 {}", self.lifetime(now)), 0));
         } else {
-            parts.push("已关闭".into());
+            labels.push(("已关闭".into(), 0));
         }
-        parts.join(" · ")
+        labels
     }
 
     /// `trackerRepeatKeyOf`.
@@ -954,13 +963,13 @@ pub fn full_time(ms: i64, offset: i64) -> String {
     )
 }
 
-/// A step of a connection's timeline (`TimelineEvent`): kind, title, note, when, and
-/// its mark (0 step, 1 end, 2 error).
+/// A step of a connection's timeline (`TimelineEvent`): its notes are labels with tones; mark
+/// 0 step, 1 end, 2 error.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Step {
     pub kind: String,
     pub title: String,
-    pub note: String,
+    pub notes: Vec<(String, i32)>,
     pub at: Option<i64>,
     pub mark: i32,
 }
@@ -978,13 +987,12 @@ fn millis(from: i64, to: i64) -> String {
     format!("{} ms", ((to - from) as f64 / 1000.0).round() as i64)
 }
 
-fn join(parts: &[String]) -> String {
+fn notes(parts: Vec<String>) -> Vec<(String, i32)> {
     parts
-        .iter()
+        .into_iter()
         .filter(|p| !p.is_empty())
-        .cloned()
-        .collect::<Vec<_>>()
-        .join(" · ")
+        .map(|p| (p, 0))
+        .collect()
 }
 
 /// `trackerTimelineEvents`, for the DNS queries the log still holds. `size` formats
@@ -1007,10 +1015,10 @@ pub fn timeline(
         &c.dest_ip
     };
     let target = endpoint(address, &c.dest_port);
-    let traffic = join(&[
+    let traffic = vec![
         format!("下载 {}", size(c.download)),
         format!("上传 {}", size(c.upload)),
-    ]);
+    ];
     let failed = c.failure.is_some()
         || matches!(
             c.end.as_ref().map(|e| e.0.as_str()),
@@ -1021,7 +1029,7 @@ pub fn timeline(
         steps.push(Step {
             kind: "DNS".into(),
             title: format!("{} → {}", q.kind, q.summary()),
-            note: join(&[
+            notes: notes(vec![
                 dns_mode.clone().unwrap_or_default(),
                 if q.cached {
                     "缓存".into()
@@ -1038,7 +1046,7 @@ pub fn timeline(
         steps.push(Step {
             kind: "DNS".into(),
             title: c.host.clone(),
-            note: join(&[
+            notes: notes(vec![
                 dns_mode.clone().unwrap_or_default(),
                 dns_time.unwrap_or_default(),
             ]),
@@ -1056,7 +1064,7 @@ pub fn timeline(
     steps.push(Step {
         kind: "规则".into(),
         title: c.rule_line(),
-        note: note.join(" "),
+        notes: notes(note),
         at: at(timing.and_then(|t| t.routed)),
         mark: 0,
     });
@@ -1064,7 +1072,7 @@ pub fn timeline(
         steps.push(Step {
             kind: "节点".into(),
             title: c.chains[0].clone(),
-            note: String::new(),
+            notes: Vec::new(),
             at: at(timing.and_then(|t| t.dial_start)),
             mark: 0,
         });
@@ -1072,9 +1080,11 @@ pub fn timeline(
     steps.push(Step {
         kind: "连接".into(),
         title: format!("{} {target}", c.network.to_uppercase()),
-        note: match &c.failure {
-            Some((kind, message)) => join(&[failure_label(kind).into(), message.clone()]),
-            None => dial_time.unwrap_or_default(),
+        notes: match &c.failure {
+            Some((kind, message)) => std::iter::once((failure_label(kind).to_string(), 1))
+                .chain(notes(vec![message.clone()]))
+                .collect(),
+            None => notes(vec![dial_time.unwrap_or_default()]),
         },
         at: at(timing.and_then(|t| t.dial_end.or(t.connected))),
         mark: if c.failure.is_some() { 2 } else { 0 },
@@ -1083,7 +1093,7 @@ pub fn timeline(
         steps.push(Step {
             kind: "解密".into(),
             title: "已解密".into(),
-            note: String::new(),
+            notes: Vec::new(),
             at: at(timing.and_then(|t| t.decrypted)),
             mark: 0,
         });
@@ -1092,7 +1102,7 @@ pub fn timeline(
         steps.push(Step {
             kind: "解密".into(),
             title: "客户端拒绝了证书".into(),
-            note: String::new(),
+            notes: Vec::new(),
             at: None,
             mark: 2,
         });
@@ -1101,7 +1111,7 @@ pub fn timeline(
         steps.push(Step {
             kind: "状态".into(),
             title: format!("活动 {}", c.lifetime(now)),
-            note: traffic,
+            notes: notes(traffic),
             at: Some(now),
             mark: 1,
         });
@@ -1114,7 +1124,7 @@ pub fn timeline(
         steps.push(Step {
             kind: "状态".into(),
             title: format!("已关闭 {}", c.lifetime(now)),
-            note: join(&[reason, traffic]),
+            notes: notes(std::iter::once(reason).chain(traffic).collect()),
             at: timing.and(c.ended_at()),
             mark: if failed { 2 } else { 1 },
         });
@@ -1257,6 +1267,26 @@ mod tests {
         assert_eq!(c.lifetime(1000 + 65_000), "1:05");
         assert_eq!(c.rule_text(), "DOMAIN-SUFFIX(google.com)");
         assert_eq!(c.rule_line(), "DOMAIN-SUFFIX,google.com");
+        assert_eq!(
+            c.headline_labels(1000 + 65_000),
+            [("香港 01".to_string(), 0), ("活动 1:05".to_string(), 0)]
+        );
+        assert_eq!(c.headline(1000 + 65_000), "香港 01 · 活动 1:05");
+    }
+
+    #[test]
+    fn timeline_notes_are_labels() {
+        let c = Conn::parse(&conn(1, "a.com", "chrome")).unwrap();
+        let steps = timeline(&c, &[], 5_000, |n| format!("{n} B"));
+        let state = steps.last().unwrap();
+        assert_eq!(state.kind, "状态");
+        assert_eq!(
+            state.notes,
+            [("下载 0 B".to_string(), 0), ("上传 0 B".to_string(), 0)]
+        );
+        assert!(steps
+            .iter()
+            .all(|s| s.notes.iter().all(|(n, _)| !n.is_empty())));
     }
 
     #[test]
