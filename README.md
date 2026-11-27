@@ -20,8 +20,7 @@ SeasonCat（包名 `season.us.ci.cat`）是 [FlClash](https://github.com/chen082
 
 ## 状态
 
-- Slint 界面正在 `slint-ui` 分支开发，第一版包含仪表盘、配置、代理、日志和设置。
-- `main` 分支目前仍是改名后的 FlClash（Flutter）界面，Slint 版稳定后合入。
+- 界面已全部改为 Slint，Flutter 已移除。
 - 先支持安卓 arm64，桌面端以后再说。
 
 ## 架构
@@ -39,6 +38,6 @@ GPL-3.0-or-later，与 FlClash 相同，见 [LICENSE](LICENSE)。Slint 按其 GP
 
 SeasonCat is an Android proxy client derived from [FlClash](https://github.com/chen08209/FlClash)
 (v0.9.5-rs.1, chen08209/FlClash@bdf83ca), using the [Concord](https://github.com/chen08209/concord) core.
-The UI is being rewritten in [Slint](https://slint.dev) on the `slint-ui` branch: flat, simple, low memory,
-with FlClash's theme colors. `main` still carries the rebranded Flutter UI for now.
+The UI is written in [Slint](https://slint.dev): flat, simple, low memory,
+with FlClash's theme colors. Flutter has been removed.
 Licensed under GPL-3.0-or-later, like FlClash.
