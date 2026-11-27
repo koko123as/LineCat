@@ -539,6 +539,8 @@ global Icons {
     out property <string> check: "M5 12.5l4.5 4.5L19 7.5";
     out property <string> edit: "M4 20h4L19 9l-4-4L4 16z M13.5 6.5l4 4";
     out property <string> swap: "M7 4L3 8l4 4 M3 8h14 M17 12l4 4-4 4 M21 16H7";
+    out property <string> undo: "M9 14L4 9l5-5 M4 9h10.5a5.5 5.5 0 0 1 0 11H11";
+    out property <string> redo: "M15 14l5-5-5-5 M20 9H9.5a5.5 5.5 0 0 0 0 11H13";
     out property <string> broom: "M19 3l-6.5 6.5 M10 8l6 6 M10 8c-2.5 0-4.5 1-5.5 3L3 21l10-1.5c2-1 3-3 3-5.5z M7 14l-2 4";
     out property <string> eye: "M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z M12 9a3 3 0 1 0 0.01 0z";
     out property <string> copy: "M8 8h11v12H8z M5 16V4h11";
@@ -620,7 +622,8 @@ global Glyphs {
             : k == "lock-open" ? Icons.lock-open : k == "clock" ? Icons.clock : k == "link" ? Icons.link : k == "play" ? Icons.play : k == "puzzle" ? Icons.puzzle
             : k == "customize" ? Icons.customize : k == "text-short" ? Icons.text-short : k == "compose" ? Icons.compose
             : k == "block" ? Icons.block : k == "eye-off" ? Icons.eye-off : k == "toggle" ? Icons.toggle : k == "toggle-on" ? Icons.toggle-on
-            : k == "sparkle" ? Icons.sparkle : k == "paste" ? Icons.paste : "";
+            : k == "sparkle" ? Icons.sparkle : k == "paste" ? Icons.paste
+            : k == "undo" ? Icons.undo : k == "redo" ? Icons.redo : "";
     }
 }
 
@@ -653,10 +656,21 @@ export struct EditorEdit {
     ok: bool,
 }
 
+export struct EditorState {
+    undo: bool,
+    redo: bool,
+}
+
+// Each callback past `find` names the editor by its page's `key`, which owns one history.
 export global EditorKit {
+    callback opened(string, string);
+    callback typed(string, string);
+    callback history(string, string) -> EditorState;
+    callback undo(string, string) -> EditorEdit;
+    callback redo(string, string) -> EditorEdit;
     pure callback find(string, string, bool, int, bool) -> EditorMatch;
-    callback replace(string, string, bool, int, string) -> EditorEdit;
-    callback replace-all(string, string, bool, string) -> EditorEdit;
+    callback replace(string, string, string, bool, int, string) -> EditorEdit;
+    callback replace-all(string, string, string, bool, string) -> EditorEdit;
 }
 
 export struct IconTile {
@@ -4223,330 +4237,6 @@ component LoadingHold {
     }
 }
 
-// `FindPanel`'s field: a glyph, the text, then what trails it (the count, 区分大小写).
-component FindField inherits Rectangle {
-    in property <string> glyph;
-    in property <string> hint;
-    in property <string> count;
-    in property <bool> case-toggle;
-    in-out property <bool> match-case;
-    in-out property <string> text <=> input.text;
-    callback edited();
-    callback accepted();
-    callback case-changed();
-    public function focus-input() { input.focus(); }
-    height: 40px;
-    border-radius: 20px;
-    background: Theme.s.block;
-    HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 4px;
-        spacing: 8px;
-        VerticalLayout { alignment: center; Icon { glyph: root.glyph; size: 18px; tint: Theme.s.on-surface-variant; } }
-        Rectangle {
-            horizontal-stretch: 1;
-            Text {
-                x: 0;
-                width: parent.width;
-                height: parent.height;
-                visible: input.text == "";
-                text: root.hint;
-                font-size: 15px * Type.scale;
-                color: Theme.s.on-surface-variant;
-                vertical-alignment: center;
-                overflow: elide;
-            }
-            input := TextInput {
-                width: parent.width;
-                height: parent.height;
-                vertical-alignment: center;
-                single-line: true;
-                font-size: 15px * Type.scale;
-                color: Theme.s.on-surface;
-                selection-background-color: Theme.s.primary-container;
-                edited => { root.edited(); }
-                accepted => { root.accepted(); }
-            }
-        }
-        if root.count != "": Text {
-            text: root.count;
-            font-size: 13px * Type.scale;
-            color: Theme.s.on-surface-variant;
-            vertical-alignment: center;
-        }
-        if root.case-toggle: VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 32px;
-                height: 32px;
-                border-radius: 16px;
-                background: root.match-case ? Theme.s.primary : case-ta.pressed ? Theme.s.inset : transparent;
-                Text {
-                    text: "Aa";
-                    font-size: 13px * Type.scale;
-                    font-weight: 600;
-                    color: root.match-case ? Theme.s.on-primary : Theme.s.on-surface-variant;
-                }
-                case-ta := TouchArea {
-                    clicked => {
-                        root.match-case = !root.match-case;
-                        root.case-changed();
-                    }
-                }
-            }
-        }
-    }
-}
-
-// `FindPanel`: the find field with its steps, 替换 and close beside it, or under it when
-// the page is narrower than `_findInlineMinWidth`; the replace row under them.
-component FindBar inherits Rectangle {
-    in property <bool> readonly;
-    in property <string> count;
-    in property <bool> has-matches;
-    in-out property <bool> replacing;
-    in-out property <bool> match-case;
-    in-out property <string> query;
-    in-out property <string> replacement;
-    callback edited();
-    callback previous();
-    callback next();
-    callback replace();
-    callback replace-all();
-    callback close();
-    property <bool> inline: root.width >= 440px * Type.scale;
-    property <bool> show-replace: root.replacing && !root.readonly;
-    background: Theme.s.page;
-    height: col.preferred-height;
-    col := VerticalLayout {
-        padding-left: 16px;
-        padding-right: 16px;
-        padding-top: 8px;
-        padding-bottom: 8px;
-        spacing: 8px;
-        HorizontalLayout {
-            spacing: 4px;
-            find-field := FindField {
-                horizontal-stretch: 1;
-                glyph: Icons.search;
-                hint: "搜索";
-                count: root.count;
-                case-toggle: true;
-                text <=> root.query;
-                match-case <=> root.match-case;
-                init => { self.focus-input(); }
-                edited => { root.edited(); }
-                case-changed => { root.edited(); }
-                accepted => { root.next(); }
-            }
-            if root.inline: HorizontalLayout {
-                spacing: 4px;
-                padding-left: 4px;
-                IconButton { glyph: Icons.up; enabled: root.has-matches; clicked => { root.previous(); } }
-                IconButton { glyph: Icons.down; enabled: root.has-matches; clicked => { root.next(); } }
-                if !root.readonly: IconButton {
-                    glyph: Icons.swap;
-                    tint: root.replacing ? Theme.s.on-primary : Theme.s.on-surface-variant;
-                    background: root.replacing ? Theme.s.primary : transparent;
-                    clicked => { root.replacing = !root.replacing; }
-                }
-                IconButton { glyph: Icons.close; clicked => { root.close(); } }
-            }
-        }
-        if !root.inline: HorizontalLayout {
-            spacing: 4px;
-            IconButton { glyph: Icons.up; enabled: root.has-matches; clicked => { root.previous(); } }
-            IconButton { glyph: Icons.down; enabled: root.has-matches; clicked => { root.next(); } }
-            if !root.readonly: IconButton {
-                glyph: Icons.swap;
-                tint: root.replacing ? Theme.s.on-primary : Theme.s.on-surface-variant;
-                background: root.replacing ? Theme.s.primary : transparent;
-                clicked => { root.replacing = !root.replacing; }
-            }
-            Rectangle { horizontal-stretch: 1; }
-            IconButton { glyph: Icons.close; clicked => { root.close(); } }
-        }
-        if root.show-replace: HorizontalLayout {
-            spacing: 8px;
-            FindField {
-                horizontal-stretch: 1;
-                glyph: Icons.swap;
-                hint: "替换";
-                text <=> root.replacement;
-                accepted => { if (root.has-matches) { root.replace(); } }
-            }
-            VerticalLayout { alignment: center; TextButton { text: "替换"; filled: true; enabled: root.has-matches; clicked => { root.replace(); } } }
-            VerticalLayout { alignment: center; TextButton { text: "全部替换"; filled: true; enabled: root.has-matches; clicked => { root.replace-all(); } } }
-        }
-    }
-}
-
-component EditorPage inherits Rectangle {
-    in-out property <string> title;
-    in-out property <string> text;
-    in property <bool> readonly;
-    // `EditorView`'s document still loading, or why it could not (`editorUnavailable`).
-    in property <bool> loading;
-    in property <string> error;
-    hold := LoadingHold { loading: root.loading; }
-    property <bool> ready: !hold.shown && root.error == "";
-    // `titleEditable`: the title is a field, 未命名 while empty.
-    in property <bool> title-editable;
-    // The find bar is open; the window's back closes it before the page.
-    in-out property <bool> finding;
-    property <bool> replacing;
-    property <bool> match-case;
-    property <string> query;
-    property <string> replacement;
-    property <EditorMatch> hit: { start: -1, end: -1, count: 0, label: "" };
-    callback save(string);
-    callback back();
-    background: Theme.s.page;
-    init => { root.finding = false; }
-    changed finding => {
-        if (!root.finding) {
-            root.replacing = false;
-            root.hit = { start: -1, end: -1, count: 0, label: "" };
-        }
-    }
-
-    function selection-start() -> int {
-        return min(editor.cursor-position-byte-offset, editor.anchor-position-byte-offset);
-    }
-    function seek(from: int, backward: bool) {
-        root.hit = EditorKit.find(root.text, root.query, root.match-case, from, backward);
-        if (root.hit.start >= 0) {
-            editor.set-selection-offsets(root.hit.start, root.hit.end);
-        }
-    }
-    function step(backward: bool) {
-        if (root.hit.start < 0) {
-            root.seek(root.selection-start(), backward);
-        } else {
-            root.seek(backward ? root.hit.start : root.hit.start + 1, backward);
-        }
-    }
-    function apply(e: EditorEdit) {
-        root.text = e.text;
-        editor.set-selection-offsets(e.caret, e.caret);
-    }
-    function replace-one() {
-        let e = EditorKit.replace(root.text, root.query, root.match-case, root.hit.start, root.replacement);
-        if (e.ok) {
-            root.apply(e);
-            root.seek(e.caret, false);
-        }
-    }
-    function replace-every() {
-        let e = EditorKit.replace-all(root.text, root.query, root.match-case, root.replacement);
-        if (e.ok) {
-            root.apply(e);
-            root.seek(0, false);
-        }
-    }
-    // The text input scrolls itself only while it has the focus; a match selected from the
-    // find field is brought into view here.
-    function reveal(y: length) {
-        let line = editor.font-size * 1.6;
-        let top = y + editor.y;
-        let max-y = max(0px, flick.content-height - flick.height);
-        if (top < -flick.content-y) {
-            flick.content-y = -max(0px, top - line);
-        } else if (top + line > -flick.content-y + flick.height - Dock.pad) {
-            flick.content-y = -min(max-y, top + 2 * line - flick.height + Dock.pad);
-        }
-    }
-
-    VerticalLayout {
-        AppBar {
-            title: root.title;
-            can-back: true;
-            custom-title: root.title-editable;
-            back => {
-                root.finding = false;
-                root.back();
-            }
-            if root.title-editable: Rectangle {
-                horizontal-stretch: 1;
-                if root.title == "": Text {
-                    x: 0;
-                    width: parent.width;
-                    text: "未命名";
-                    font-size: 22px * Type.scale;
-                    color: Theme.s.on-surface-variant;
-                    vertical-alignment: center;
-                }
-                TextInput {
-                    width: parent.width;
-                    text <=> root.title;
-                    single-line: true;
-                    font-size: 22px * Type.scale;
-                    color: Theme.s.on-surface;
-                    vertical-alignment: center;
-                    selection-background-color: Theme.s.primary-container;
-                }
-            }
-            if root.ready: VerticalLayout {
-                alignment: center;
-                IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.finding = true; } }
-            }
-            if !root.readonly && root.ready: VerticalLayout {
-                alignment: center;
-                TextButton { text: "保存"; clicked => { root.save(root.text); } }
-            }
-        }
-        if root.finding && root.ready: FindBar {
-            readonly: root.readonly;
-            count: root.hit.label;
-            has-matches: root.hit.count > 0;
-            replacing <=> root.replacing;
-            match-case <=> root.match-case;
-            query <=> root.query;
-            replacement <=> root.replacement;
-            edited => { root.seek(root.selection-start(), false); }
-            previous => { root.step(true); }
-            next => { root.step(false); }
-            replace => { root.replace-one(); }
-            replace-all => { root.replace-every(); }
-            close => { root.finding = false; }
-        }
-        Rectangle {
-            vertical-stretch: 1;
-            if hold.shown: Spinner { width: 32px; height: 32px; indeterminate: true; }
-            if !hold.shown && root.error != "": NullStatus { label: "编辑器不可用"; description: root.error; }
-            Rectangle {
-                visible: root.ready;
-                background: Theme.s.card;
-                flick := Flickable {
-                    content-height: max(editor.preferred-height + 24px, self.height) + Dock.pad;
-                    content-width: self.width;
-                    editor := TextInput {
-                        x: 12px;
-                        y: 12px;
-                        width: parent.width - 24px;
-                        text <=> root.text;
-                        read-only: root.readonly;
-                        single-line: false;
-                        wrap: word-wrap;
-                        font-family: "monospace";
-                        font-size: 13px * Type.scale;
-                        color: Theme.s.on-surface;
-                        selection-background-color: Theme.s.primary-container;
-                        edited => {
-                            if (root.finding && root.query != "") {
-                                root.hit = EditorKit.find(root.text, root.query, root.match-case, max(0, root.hit.start), false);
-                            }
-                        }
-                        cursor-position-changed(p) => {
-                            if (!self.has-focus) { root.reveal(p.y); }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 // `ServiceManageView`: every service with its switch, in a grouped run; a tap switches
 // it (not the last one on), a long press lifts it to drag into another place.
 component ServiceManageList inherits Rectangle {
@@ -4647,8 +4337,10 @@ component PopupRow inherits Rectangle {
     in property <bool> danger;
     // A sub item shown under its parent, indented.
     in property <bool> indent;
+    in property <bool> enabled: true;
     callback clicked();
     height: 44px;
+    opacity: root.enabled ? 1 : 0.38;
     background: pr-ta.pressed ? Theme.s.inset : transparent;
     HorizontalLayout {
         padding-left: root.indent ? 30px : 14px;
@@ -4660,7 +4352,7 @@ component PopupRow inherits Rectangle {
         if root.more: VerticalLayout { alignment: center; Icon { glyph: Icons.chevron; size: 16px; tint: Theme.s.on-surface-variant; } }
         if root.checked: VerticalLayout { alignment: center; Icon { glyph: Icons.check; size: 18px; tint: Theme.s.primary; } }
     }
-    pr-ta := TouchArea { clicked => { root.clicked(); } }
+    pr-ta := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
 }
 
 // A centered dialog card over a scrim.
@@ -9435,6 +9127,8 @@ component AnchorMenu inherits Rectangle {
     in property <length> ah;
     in property <length> menu-width: 220px;
     in property <int> max-rows: 7;
+    // Items' `enabled` greys them out; most menus leave it set on every item.
+    in property <bool> dim-disabled;
     callback picked(string);
     callback dismiss();
     property <length> row-h: 44px;
@@ -9491,11 +9185,384 @@ component AnchorMenu inherits Rectangle {
                         danger: a.danger;
                         indent: a.sub;
                         more: a.heading == "more";
+                        enabled: !root.dim-disabled || a.enabled;
                         clicked => { root.picked(a.id); }
                     }
                 }
             }
         }
+    }
+}
+
+// `FindPanel`'s field: a glyph, the text, then what trails it (the count, 区分大小写).
+component FindField inherits Rectangle {
+    in property <string> glyph;
+    in property <string> hint;
+    in property <string> count;
+    in property <bool> case-toggle;
+    in-out property <bool> match-case;
+    in-out property <string> text <=> input.text;
+    callback edited();
+    callback accepted();
+    callback case-changed();
+    public function focus-input() { input.focus(); }
+    height: 40px;
+    border-radius: 20px;
+    background: Theme.s.block;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 4px;
+        spacing: 8px;
+        VerticalLayout { alignment: center; Icon { glyph: root.glyph; size: 18px; tint: Theme.s.on-surface-variant; } }
+        Rectangle {
+            horizontal-stretch: 1;
+            Text {
+                x: 0;
+                width: parent.width;
+                height: parent.height;
+                visible: input.text == "";
+                text: root.hint;
+                font-size: 15px * Type.scale;
+                color: Theme.s.on-surface-variant;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            input := TextInput {
+                width: parent.width;
+                height: parent.height;
+                vertical-alignment: center;
+                single-line: true;
+                font-size: 15px * Type.scale;
+                color: Theme.s.on-surface;
+                selection-background-color: Theme.s.primary-container;
+                edited => { root.edited(); }
+                accepted => { root.accepted(); }
+            }
+        }
+        if root.count != "": Text {
+            text: root.count;
+            font-size: 13px * Type.scale;
+            color: Theme.s.on-surface-variant;
+            vertical-alignment: center;
+        }
+        if root.case-toggle: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.match-case ? Theme.s.primary : case-ta.pressed ? Theme.s.inset : transparent;
+                Text {
+                    text: "Aa";
+                    font-size: 13px * Type.scale;
+                    font-weight: 600;
+                    color: root.match-case ? Theme.s.on-primary : Theme.s.on-surface-variant;
+                }
+                case-ta := TouchArea {
+                    clicked => {
+                        root.match-case = !root.match-case;
+                        root.case-changed();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// `FindPanel`: the find field with its steps, 替换 and close beside it, or under it when
+// the page is narrower than `_findInlineMinWidth`; the replace row under them.
+component FindBar inherits Rectangle {
+    in property <bool> readonly;
+    in property <string> count;
+    in property <bool> has-matches;
+    in-out property <bool> replacing;
+    in-out property <bool> match-case;
+    in-out property <string> query;
+    in-out property <string> replacement;
+    callback edited();
+    callback previous();
+    callback next();
+    callback replace();
+    callback replace-all();
+    callback close();
+    property <bool> inline: root.width >= 440px * Type.scale;
+    property <bool> show-replace: root.replacing && !root.readonly;
+    background: Theme.s.page;
+    height: col.preferred-height;
+    col := VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 4px;
+            find-field := FindField {
+                horizontal-stretch: 1;
+                glyph: Icons.search;
+                hint: "搜索";
+                count: root.count;
+                case-toggle: true;
+                text <=> root.query;
+                match-case <=> root.match-case;
+                init => { self.focus-input(); }
+                edited => { root.edited(); }
+                case-changed => { root.edited(); }
+                accepted => { root.next(); }
+            }
+            if root.inline: HorizontalLayout {
+                spacing: 4px;
+                padding-left: 4px;
+                IconButton { glyph: Icons.up; enabled: root.has-matches; clicked => { root.previous(); } }
+                IconButton { glyph: Icons.down; enabled: root.has-matches; clicked => { root.next(); } }
+                if !root.readonly: IconButton {
+                    glyph: Icons.swap;
+                    tint: root.replacing ? Theme.s.on-primary : Theme.s.on-surface-variant;
+                    background: root.replacing ? Theme.s.primary : transparent;
+                    clicked => { root.replacing = !root.replacing; }
+                }
+                IconButton { glyph: Icons.close; clicked => { root.close(); } }
+            }
+        }
+        if !root.inline: HorizontalLayout {
+            spacing: 4px;
+            IconButton { glyph: Icons.up; enabled: root.has-matches; clicked => { root.previous(); } }
+            IconButton { glyph: Icons.down; enabled: root.has-matches; clicked => { root.next(); } }
+            if !root.readonly: IconButton {
+                glyph: Icons.swap;
+                tint: root.replacing ? Theme.s.on-primary : Theme.s.on-surface-variant;
+                background: root.replacing ? Theme.s.primary : transparent;
+                clicked => { root.replacing = !root.replacing; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            IconButton { glyph: Icons.close; clicked => { root.close(); } }
+        }
+        if root.show-replace: HorizontalLayout {
+            spacing: 8px;
+            FindField {
+                horizontal-stretch: 1;
+                glyph: Icons.swap;
+                hint: "替换";
+                text <=> root.replacement;
+                accepted => { if (root.has-matches) { root.replace(); } }
+            }
+            VerticalLayout { alignment: center; TextButton { text: "替换"; filled: true; enabled: root.has-matches; clicked => { root.replace(); } } }
+            VerticalLayout { alignment: center; TextButton { text: "全部替换"; filled: true; enabled: root.has-matches; clicked => { root.replace-all(); } } }
+        }
+    }
+}
+
+component EditorPage inherits Rectangle {
+    in-out property <string> title;
+    in-out property <string> text;
+    in property <bool> readonly;
+    // `EditorView`'s document still loading, or why it could not (`editorUnavailable`).
+    in property <bool> loading;
+    in property <string> error;
+    hold := LoadingHold { loading: root.loading; }
+    property <bool> ready: !hold.shown && root.error == "";
+    // `titleEditable`: the title is a field, 未命名 while empty.
+    in property <bool> title-editable;
+    // Names this editor's history in `EditorKit`.
+    in property <string> key;
+    // The find bar and the ⋮ menu are open; the window's back closes them before the page.
+    in-out property <bool> finding;
+    in-out property <bool> menu-open;
+    property <EditorState> hist;
+    property <bool> replacing;
+    property <bool> match-case;
+    property <string> query;
+    property <string> replacement;
+    property <EditorMatch> hit: { start: -1, end: -1, count: 0, label: "" };
+    callback save(string);
+    callback back();
+    background: Theme.s.page;
+    init => {
+        root.finding = false;
+        root.menu-open = false;
+        if (root.ready) { EditorKit.opened(root.key, root.text); }
+    }
+    changed ready => {
+        if (root.ready) { EditorKit.opened(root.key, root.text); }
+    }
+    changed finding => {
+        if (!root.finding) {
+            root.replacing = false;
+            root.hit = { start: -1, end: -1, count: 0, label: "" };
+        }
+    }
+
+    function selection-start() -> int {
+        return min(editor.cursor-position-byte-offset, editor.anchor-position-byte-offset);
+    }
+    function seek(from: int, backward: bool) {
+        root.hit = EditorKit.find(root.text, root.query, root.match-case, from, backward);
+        if (root.hit.start >= 0) {
+            editor.set-selection-offsets(root.hit.start, root.hit.end);
+        }
+    }
+    function step(backward: bool) {
+        if (root.hit.start < 0) {
+            root.seek(root.selection-start(), backward);
+        } else {
+            root.seek(backward ? root.hit.start : root.hit.start + 1, backward);
+        }
+    }
+    function apply(e: EditorEdit) {
+        root.text = e.text;
+        editor.set-selection-offsets(e.caret, e.caret);
+    }
+    function replace-one() {
+        let e = EditorKit.replace(root.key, root.text, root.query, root.match-case, root.hit.start, root.replacement);
+        if (e.ok) {
+            root.apply(e);
+            root.seek(e.caret, false);
+        }
+    }
+    function replace-every() {
+        let e = EditorKit.replace-all(root.key, root.text, root.query, root.match-case, root.replacement);
+        if (e.ok) {
+            root.apply(e);
+            root.seek(0, false);
+        }
+    }
+    // The text input scrolls itself only while it has the focus; a match selected from the
+    // find field is brought into view here.
+    function menu-picked(id: string) {
+        root.menu-open = false;
+        if (id == "undo") {
+            let e = EditorKit.undo(root.key, root.text);
+            if (e.ok) { root.apply(e); }
+        } else if (id == "redo") {
+            let e = EditorKit.redo(root.key, root.text);
+            if (e.ok) { root.apply(e); }
+        }
+    }
+    function reveal(y: length) {
+        let line = editor.font-size * 1.6;
+        let top = y + editor.y;
+        let max-y = max(0px, flick.content-height - flick.height);
+        if (top < -flick.content-y) {
+            flick.content-y = -max(0px, top - line);
+        } else if (top + line > -flick.content-y + flick.height - Dock.pad) {
+            flick.content-y = -min(max-y, top + 2 * line - flick.height + Dock.pad);
+        }
+    }
+
+    VerticalLayout {
+        AppBar {
+            title: root.title;
+            can-back: true;
+            custom-title: root.title-editable;
+            back => {
+                root.finding = false;
+                root.menu-open = false;
+                root.back();
+            }
+            if root.title-editable: Rectangle {
+                horizontal-stretch: 1;
+                if root.title == "": Text {
+                    x: 0;
+                    width: parent.width;
+                    text: "未命名";
+                    font-size: 22px * Type.scale;
+                    color: Theme.s.on-surface-variant;
+                    vertical-alignment: center;
+                }
+                TextInput {
+                    width: parent.width;
+                    text <=> root.title;
+                    single-line: true;
+                    font-size: 22px * Type.scale;
+                    color: Theme.s.on-surface;
+                    vertical-alignment: center;
+                    selection-background-color: Theme.s.primary-container;
+                }
+            }
+            if root.ready: VerticalLayout {
+                alignment: center;
+                IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.finding = true; } }
+            }
+            if !root.readonly && root.ready: VerticalLayout {
+                alignment: center;
+                TextButton { text: "保存"; clicked => { root.save(root.text); } }
+            }
+            if !root.readonly && root.ready: VerticalLayout {
+                alignment: center;
+                IconButton {
+                    glyph: Icons.more;
+                    tint: Theme.s.on-surface;
+                    clicked => {
+                        MenuAnchor.at(self.absolute-position.x, self.absolute-position.y, self.width, self.height);
+                        root.hist = EditorKit.history(root.key, root.text);
+                        root.menu-open = true;
+                    }
+                }
+            }
+        }
+        if root.finding && root.ready: FindBar {
+            readonly: root.readonly;
+            count: root.hit.label;
+            has-matches: root.hit.count > 0;
+            replacing <=> root.replacing;
+            match-case <=> root.match-case;
+            query <=> root.query;
+            replacement <=> root.replacement;
+            edited => { root.seek(root.selection-start(), false); }
+            previous => { root.step(true); }
+            next => { root.step(false); }
+            replace => { root.replace-one(); }
+            replace-all => { root.replace-every(); }
+            close => { root.finding = false; }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            if hold.shown: Spinner { width: 32px; height: 32px; indeterminate: true; }
+            if !hold.shown && root.error != "": NullStatus { label: "编辑器不可用"; description: root.error; }
+            Rectangle {
+                visible: root.ready;
+                background: Theme.s.card;
+                flick := Flickable {
+                    content-height: max(editor.preferred-height + 24px, self.height) + Dock.pad;
+                    content-width: self.width;
+                    editor := TextInput {
+                        x: 12px;
+                        y: 12px;
+                        width: parent.width - 24px;
+                        text <=> root.text;
+                        read-only: root.readonly;
+                        single-line: false;
+                        wrap: word-wrap;
+                        font-family: "monospace";
+                        font-size: 13px * Type.scale;
+                        color: Theme.s.on-surface;
+                        selection-background-color: Theme.s.primary-container;
+                        edited => {
+                            EditorKit.typed(root.key, root.text);
+                            if (root.finding && root.query != "") {
+                                root.hit = EditorKit.find(root.text, root.query, root.match-case, max(0, root.hit.start), false);
+                            }
+                        }
+                        cursor-position-changed(p) => {
+                            if (!self.has-focus) { root.reveal(p.y); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if root.menu-open: AnchorMenu {
+        ax: MenuAnchor.x - root.absolute-position.x;
+        ay: MenuAnchor.y - root.absolute-position.y;
+        aw: MenuAnchor.w;
+        ah: MenuAnchor.h;
+        dim-disabled: true;
+        items: [
+            { id: "undo", glyph: "undo", label: "撤销", enabled: root.hist.undo },
+            { id: "redo", glyph: "redo", label: "重做", enabled: root.hist.redo },
+        ];
+        picked(id) => { root.menu-picked(id); }
+        dismiss => { root.menu-open = false; }
     }
 }
 
@@ -9923,6 +9990,7 @@ export component AppWindow inherits Window {
     callback upload-file();
     // An editor's find bar is open (`EditorPage.finding`).
     in-out property <bool> editor-finding;
+    in-out property <bool> editor-menu-open;
     // Editor / runtime config
     in-out property <string> editor-title;
     in-out property <string> editor-text;
@@ -10540,6 +10608,7 @@ export component AppWindow inherits Window {
                 if (root.cond-open) { root.cond-open = false; return accept; }
                 if (root.res-dialog != "") { root.res-dialog = ""; return accept; }
                 if (root.req-actions-open) { root.req-actions-open = false; return accept; }
+                if (root.req-body-page == "text" && root.editor-menu-open) { root.editor-menu-open = false; return accept; }
                 if (root.req-body-page == "text" && root.editor-finding) { root.editor-finding = false; return accept; }
                 if (root.req-body-page != "") { root.req-body-page = ""; return accept; }
                 if (root.log-detail-open) { root.log-detail-open = false; return accept; }
@@ -10586,6 +10655,7 @@ export component AppWindow inherits Window {
                 if (root.tools-shown && root.tools-page == "icon-set") { root.tools-page = "icon-sets"; return accept; }
                 if (root.tools-shown && root.meta.known && root.set-searching) { root.set-query = ""; root.set-searching = false; return accept; }
                 if (root.tools-shown && root.meta.known) { root.tools-up(root.meta.parent); return accept; }
+                if (root.editor-menu-open && ((root.tools-shown && root.tools-page == "editor") || (root.profiles-shown && root.profiles-page == "editor") || ((root.tab == 2 || root.tab == 0) && root.profiles-page == "preview"))) { root.editor-menu-open = false; return accept; }
                 if (root.editor-finding && ((root.tools-shown && root.tools-page == "editor") || (root.profiles-shown && root.profiles-page == "editor") || ((root.tab == 2 || root.tab == 0) && root.profiles-page == "preview"))) { root.editor-finding = false; return accept; }
                 if (root.tools-shown && root.tools-page == "editor" && root.tools-editor-guard) { root.tools-editor-back(root.tools-editor-text); return accept; }
                 if (root.tools-shown && root.tools-page == "editor") { root.tools-page = root.tools-editor-parent; return accept; }
@@ -10872,7 +10942,9 @@ export component AppWindow inherits Window {
                     height: parent.height - root.po-y(parent.height);
                     title: root.editor-title;
                     text <=> root.editor-text;
+                    key: "profiles";
                     finding <=> root.editor-finding;
+                    menu-open <=> root.editor-menu-open;
                     readonly: root.editor-readonly;
                     loading: root.editor-loading;
                     error: root.editor-error;
@@ -11194,7 +11266,9 @@ export component AppWindow inherits Window {
                     loading: root.tools-editor-loading;
                     error: root.tools-editor-error;
                     text <=> root.tools-editor-text;
+                    key: "tools";
                     finding <=> root.editor-finding;
+                    menu-open <=> root.editor-menu-open;
                     save(t) => { root.tools-editor-save(t); }
                     back => {
                         if (root.tools-editor-guard) {
@@ -12364,7 +12438,9 @@ export component AppWindow inherits Window {
                     vertical-stretch: 1;
                     title <=> root.req-body-title;
                     text <=> root.req-body-text;
+                    key: "body";
                     finding <=> root.editor-finding;
+                    menu-open <=> root.editor-menu-open;
                     readonly: true;
                     back => { root.req-body-page = ""; }
                 }
