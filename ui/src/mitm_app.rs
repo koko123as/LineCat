@@ -2,7 +2,7 @@
 //! (lib/views/config/mitm.dart, mitm_modules.dart, `MitmModulesAction`).
 
 use crate::ca_trust::{self, TrustCheck};
-use crate::mitm::{self, Certificate, MitmModule, ModuleRead};
+use crate::mitm::{self, Certificate, HostRow, MitmModule, ModuleRead};
 use crate::mitm_network::{self, Change, Network, UserNetwork};
 use crate::settings_app::Effect;
 use crate::store::{MitmSettings, Settings};
@@ -53,6 +53,10 @@ struct State {
     editor_text: String,
     unsaved: String,
     review: Vec<String>,
+    /// The hostname page's search.
+    query: String,
+    /// Each enabled module's hosts by name; None until they are read.
+    host_modules: Option<Vec<(String, Result<Vec<HostRow>, String>)>>,
 }
 
 fn state() -> &'static Mutex<State> {
@@ -246,22 +250,60 @@ pub fn capture_sections(m: &MitmSettings, modules: &[MitmModule]) -> Vec<SetSect
 }
 
 /// `_MitmHostnameView`'s rows, each with why the Core skips it.
-pub fn hosts_sections(lines: &[String], issues: &BTreeMap<String, String>) -> Vec<SetSection> {
-    if lines.is_empty() {
-        return Vec::new();
-    }
-    let rows = lines
+/// `_MitmHostnameView`: the hosts written here, then a read-only section per enabled module.
+pub fn hosts_sections(
+    lines: &[String],
+    issues: &BTreeMap<String, String>,
+    query: &str,
+    modules: Option<&[(String, Result<Vec<HostRow>, String>)]>,
+) -> Vec<SetSection> {
+    let searching = !query.trim().is_empty();
+    let rows: Vec<SetRow> = lines
         .iter()
         .enumerate()
+        .filter(|(_, l)| !searching || crate::proxies::matches(query, l))
         .map(|(i, l)| {
             let issue = issues.get(l).map(String::as_str).unwrap_or("");
             SetRow {
                 invalid: !issue.is_empty(),
-                ..row(&format!("h:{i}"), "line", l, issue)
+                ..row(&format!("h:{i}"), "host", l, issue)
             }
         })
         .collect();
-    vec![section("", "", rows)]
+    let mut sections = Vec::new();
+    for (m, (name, read)) in modules.unwrap_or_default().iter().enumerate() {
+        let rows: Vec<SetRow> = match read {
+            Err(e) if !searching => vec![SetRow {
+                invalid: true,
+                ..row(&format!("mu:{m}"), "line", "无法读取此模块的主机名", e)
+            }],
+            Err(_) => Vec::new(),
+            Ok(hosts) => hosts
+                .iter()
+                .enumerate()
+                .filter(|(_, h)| !searching || h.matches(query))
+                .map(|(i, h)| SetRow {
+                    invalid: !h.issue.is_empty(),
+                    trailing: if h.exclude { mitm::EXCLUDED } else { "" }.into(),
+                    ..row(&format!("mh:{m}:{i}"), "host", &h.host, &h.issue)
+                })
+                .collect(),
+        };
+        if !rows.is_empty() {
+            sections.push(section(name, "", rows));
+        }
+    }
+    let mut out = Vec::new();
+    if !rows.is_empty() {
+        let title = if modules.is_none() || !sections.is_empty() {
+            "自定义"
+        } else {
+            ""
+        };
+        out.push(section(title, "", rows));
+    }
+    out.extend(sections);
+    out
 }
 
 /// `MitmModulesView`: a switch per module, a spinner while it updates.
@@ -390,15 +432,27 @@ pub fn module_sections(
     let mut rules: Vec<SetRow> = read
         .lists
         .iter()
-        .filter(|(_, lines)| !lines.is_empty())
-        .map(|(key, lines)| {
-            let invalid = lines.iter().filter(|l| !l.issue.is_empty()).count();
-            row(
-                &format!("list:{key}"),
-                "open",
-                mitm::list_label(key),
-                &mitm::count_label(lines.len(), invalid),
-            )
+        .filter_map(|(key, lines)| {
+            let (count, invalid) = if *key == "hostname" {
+                let hosts = &read.host_rows;
+                (
+                    hosts.len(),
+                    hosts.iter().filter(|h| !h.issue.is_empty()).count(),
+                )
+            } else {
+                (
+                    lines.len(),
+                    lines.iter().filter(|l| !l.issue.is_empty()).count(),
+                )
+            };
+            (count > 0).then(|| {
+                row(
+                    &format!("list:{key}"),
+                    "open",
+                    mitm::list_label(key),
+                    &mitm::count_label(count, invalid),
+                )
+            })
         })
         .collect();
     if !read.rules.is_empty() {
@@ -439,6 +493,13 @@ pub fn lines_of(read: &ModuleRead, list: &str) -> (String, Vec<(String, String, 
                 .map(|(t, why)| (t.clone(), why.clone(), false))
                 .collect(),
         ),
+        "hostname" => (
+            mitm::list_label("hostname").into(),
+            read.host_rows
+                .iter()
+                .map(|h| (h.host.clone(), h.issue.clone(), !h.issue.is_empty()))
+                .collect(),
+        ),
         key => (
             mitm::list_label(key).into(),
             read.lines(key)
@@ -457,9 +518,16 @@ pub fn lines_sections(read: &ModuleRead, list: &str) -> Vec<SetSection> {
     let rows = lines
         .iter()
         .enumerate()
-        .map(|(i, (text, note, invalid))| SetRow {
-            invalid: *invalid,
-            ..row(&format!("l:{i}"), "line", text, note)
+        .map(|(i, (text, note, invalid))| match read.host_rows.get(i) {
+            Some(h) if list == "hostname" => SetRow {
+                invalid: *invalid,
+                trailing: if h.exclude { mitm::EXCLUDED } else { "" }.into(),
+                ..row(&format!("l:{i}"), "host", text, note)
+            },
+            _ => SetRow {
+                invalid: *invalid,
+                ..row(&format!("l:{i}"), "line", text, note)
+            },
         })
         .collect();
     vec![section("", "", rows)]
@@ -482,7 +550,13 @@ pub fn page_meta(s: &Settings, page: &str) -> Option<PageMeta> {
         "mitm-hosts" => PageMeta {
             action: "add-circle".into(),
             action2: "more-circle".into(),
-            empty: "暂无主机名".into(),
+            empty: if st.query.trim().is_empty() {
+                "暂无主机名"
+            } else {
+                "暂无搜索结果"
+            }
+            .into(),
+            search: true,
             action_empty: true,
             long_press: true,
             ..meta("主机名", "mitm")
@@ -580,7 +654,12 @@ impl App {
                 main_sections(s, &st.cert, trust.as_ref(), invalid)
             }
             "mitm-capture" => capture_sections(&s.mitm, &s.mitm_modules),
-            "mitm-hosts" => hosts_sections(&s.mitm.hostname, &st.host_issues),
+            "mitm-hosts" => hosts_sections(
+                &s.mitm.hostname,
+                &st.host_issues,
+                &st.query,
+                st.host_modules.as_deref(),
+            ),
             "mitm-modules" => modules_sections(&s.mitm_modules, &st.updating),
             "mitm-module" => match s.mitm_modules.iter().find(|m| m.id == st.module) {
                 Some(m) => {
@@ -672,6 +751,13 @@ impl App {
         if page != "editor" {
             state().lock().unwrap().editor = None;
         }
+        if page != "mitm-hosts" && !state().lock().unwrap().query.is_empty() {
+            state().lock().unwrap().query.clear();
+            self.ui(|ui| {
+                ui.set_set_query("".into());
+                ui.set_set_searching(false);
+            });
+        }
         self.trust_shown(page == "mitm");
         match page {
             "mitm" => {
@@ -684,7 +770,10 @@ impl App {
                 });
                 self.spawn(|app| app.check_hosts());
             }
-            "mitm-hosts" => self.spawn(|app| app.check_hosts()),
+            "mitm-hosts" => {
+                self.spawn(|app| app.check_hosts());
+                self.spawn(|app| app.load_host_modules());
+            }
             _ => {}
         }
     }
@@ -1004,9 +1093,41 @@ impl App {
         self.spawn(|app| app.check_hosts());
     }
 
+    /// `_moduleSections`: every enabled module's hosts, read whether or not MITM is on.
+    fn load_host_modules(self: &Arc<Self>) {
+        let read = self
+            .mitm_settings()
+            .mitm_modules
+            .iter()
+            .filter(|m| m.enabled)
+            .map(|m| (m.name.clone(), self.module_read(m).map(|r| r.host_rows)))
+            .collect();
+        state().lock().unwrap().host_modules = Some(read);
+        self.mitm_publish();
+    }
+
     fn hosts_clicked(self: &Arc<Self>, id: &str) {
         let lines = self.mitm_settings().mitm.hostname;
-        if id == "action" {
+        if let Some(q) = id.strip_prefix("search:") {
+            state().lock().unwrap().query = q.to_string();
+            self.mitm_publish();
+        } else if let Some((m, i)) = id.strip_prefix("mh:").and_then(|r| r.split_once(':')) {
+            let shown = {
+                let st = state().lock().unwrap();
+                let module = m
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|m| st.host_modules.as_ref()?.get(m));
+                module.and_then(|(name, read)| {
+                    let host = read.as_ref().ok()?.get(i.parse::<usize>().ok()?)?;
+                    (!host.issue.is_empty())
+                        .then(|| (name.clone(), format!("{}\n\n{}", host.host, host.issue)))
+                })
+            };
+            if let Some((title, body)) = shown {
+                self.alert(title, body);
+            }
+        } else if id == "action" {
             self.open_input("mitm-host-add", "添加", "主机名", "");
         } else if id == "action2" {
             let mut items = vec![item("mitm-hosts:quick", "edit", "快速编辑", false)];
@@ -1429,7 +1550,8 @@ impl App {
             }
         } else if let Some(i) = id.strip_prefix("l:").and_then(|i| i.parse::<usize>().ok()) {
             let (title, lines) = lines_of(&read, &list);
-            if let Some((text, note, _)) = lines.get(i) {
+            let opens = |note: &str| list != "hostname" || !note.is_empty();
+            if let Some((text, note, _)) = lines.get(i).filter(|(_, note, _)| opens(note)) {
                 let body = if note.is_empty() {
                     text.clone()
                 } else {
@@ -1989,13 +2111,58 @@ mod tests {
     }
 
     #[test]
+    fn the_hostname_page_follows_with_each_module_s_hosts() {
+        let lines = vec!["a.com".to_string(), "b.org".to_string()];
+        let host = |host: &str, exclude: bool, issue: &str| HostRow {
+            host: host.into(),
+            exclude,
+            issue: issue.into(),
+        };
+        let modules = vec![
+            (
+                "Ads".to_string(),
+                Ok(vec![
+                    host("x.com", true, ""),
+                    host("y.org", false, "refused"),
+                ]),
+            ),
+            ("Empty".to_string(), Ok(Vec::new())),
+            ("Gone".to_string(), Err("no such file".to_string())),
+        ];
+        let s = hosts_sections(&lines, &BTreeMap::new(), "", Some(&modules));
+        let titles: Vec<String> = s.iter().map(|x| x.title.to_string()).collect();
+        assert_eq!(titles, ["自定义", "Ads", "Gone"]);
+        let x = s[1].rows.row_data(0).unwrap();
+        assert!(x.kind == "host" && x.trailing == "已排除" && !x.invalid && x.id == "mh:0:0");
+        let y = s[1].rows.row_data(1).unwrap();
+        assert!(y.invalid && y.subtitle == "refused");
+        let gone = s[2].rows.row_data(0).unwrap();
+        assert!(
+            gone.invalid
+                && gone.title == "无法读取此模块的主机名"
+                && gone.subtitle == "no such file"
+        );
+        let found = hosts_sections(&lines, &BTreeMap::new(), "org", Some(&modules));
+        let titles: Vec<String> = found.iter().map(|x| x.title.to_string()).collect();
+        assert_eq!(titles, ["自定义", "Ads"]);
+        assert_eq!(found[0].rows.row_data(0).unwrap().id, "h:1");
+        assert_eq!(found[1].rows.row_data(0).unwrap().id, "mh:0:1");
+        let excluded = hosts_sections(&lines, &BTreeMap::new(), "已排除", Some(&modules));
+        assert_eq!(excluded.len(), 1);
+        assert_eq!(excluded[0].title, "Ads");
+        let alone = hosts_sections(&lines, &BTreeMap::new(), "", Some(&modules[1..2]));
+        assert_eq!(alone[0].title, "");
+    }
+
+    #[test]
     fn hosts_and_modules_rows() {
         let lines = vec!["a.com".to_string(), "[x".to_string()];
         let issues = BTreeMap::from([("[x".to_string(), "invalid".to_string())]);
-        let s = hosts_sections(&lines, &issues);
+        let s = hosts_sections(&lines, &issues, "", Some(&[]));
         let bad = s[0].rows.row_data(1).unwrap();
-        assert!(bad.invalid && bad.subtitle == "invalid" && bad.kind == "line");
-        assert!(hosts_sections(&[], &issues).is_empty());
+        assert!(bad.invalid && bad.subtitle == "invalid" && bad.kind == "host");
+        assert_eq!(s[0].title, "");
+        assert!(hosts_sections(&[], &issues, "", None).is_empty());
         let modules = vec![
             MitmModule {
                 id: "1".into(),

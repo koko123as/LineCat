@@ -363,49 +363,50 @@ impl App {
         if !settings.mitm.enable {
             return Vec::new();
         }
-        let mut read = Vec::new();
-        for m in settings.mitm_modules.iter().filter(|m| m.enabled) {
-            let path = self.module_path(m);
-            let stamp = std::fs::metadata(&path)
-                .map(|md| {
-                    let at = md
-                        .modified()
-                        .ok()
-                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .map_or(0, |d| d.as_nanos());
-                    format!(
-                        "{}:{}:{at}:{:?}:{:?}",
-                        m.updated,
-                        md.len(),
-                        m.arguments,
-                        m.attachments()
-                    )
-                })
-                .unwrap_or_default();
-            let cached = MODULES
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|(id, s, _)| *id == m.id && *s == stamp)
-                .map(|(_, _, r)| r.clone());
-            let r = match cached {
-                Some(r) => r,
-                None => {
-                    let Ok(r) = std::fs::read_to_string(&path)
-                        .map_err(|e| e.to_string())
-                        .and_then(|text| self.read_text(&text, &m.arguments, &m.attachments()))
-                    else {
-                        continue;
-                    };
-                    let mut cache = MODULES.lock().unwrap();
-                    cache.retain(|(id, _, _)| *id != m.id);
-                    cache.push((m.id.clone(), stamp, r.clone()));
-                    r
-                }
-            };
-            read.push((m.clone(), r));
+        settings
+            .mitm_modules
+            .iter()
+            .filter(|m| m.enabled)
+            .filter_map(|m| Some((m.clone(), self.module_read(m).ok()?)))
+            .collect()
+    }
+
+    /// `mitmModuleContentProvider`: the module read once per version of its file, arguments
+    /// and attachments.
+    pub(crate) fn module_read(&self, m: &MitmModule) -> Result<ModuleRead, String> {
+        let path = self.module_path(m);
+        let stamp = std::fs::metadata(&path)
+            .map(|md| {
+                let at = md
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_nanos());
+                format!(
+                    "{}:{}:{at}:{:?}:{:?}",
+                    m.updated,
+                    md.len(),
+                    m.arguments,
+                    m.attachments()
+                )
+            })
+            .unwrap_or_default();
+        let cached = MODULES
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(id, s, _)| *id == m.id && *s == stamp)
+            .map(|(_, _, r)| r.clone());
+        if let Some(r) = cached {
+            return Ok(r);
         }
-        read
+        let r = std::fs::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|text| self.read_text(&text, &m.arguments, &m.attachments()))?;
+        let mut cache = MODULES.lock().unwrap();
+        cache.retain(|(id, _, _)| *id != m.id);
+        cache.push((m.id.clone(), stamp, r.clone()));
+        Ok(r)
     }
 
     pub(crate) fn module_exits(&self) -> Vec<(String, Vec<String>)> {

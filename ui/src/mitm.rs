@@ -564,6 +564,37 @@ pub struct ModuleRead {
     pub ignored: Vec<(String, String)>,
     only_section_skips: bool,
     pub skip_verify_hosts: Vec<String>,
+    /// `hostRows`: the hostname list one host to a row.
+    pub host_rows: Vec<HostRow>,
+}
+
+/// `MitmHostRow`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HostRow {
+    pub host: String,
+    pub exclude: bool,
+    pub issue: String,
+}
+
+impl HostRow {
+    /// `hostSearchTexts`: what a search matches in the row.
+    pub fn matches(&self, query: &str) -> bool {
+        let excluded = if self.exclude { EXCLUDED } else { "" };
+        let text = [self.host.as_str(), &self.issue, excluded].join(" ");
+        crate::proxies::matches(query, &text)
+    }
+}
+
+pub const EXCLUDED: &str = "已排除";
+
+/// `mitmHostText`.
+fn host_text(entry: &Value) -> String {
+    let host = text(entry, "host");
+    match entry.get("port").and_then(Value::as_i64) {
+        Some(port) if host.contains(':') => format!("[{host}]:{port}"),
+        Some(port) => format!("{host}:{port}"),
+        None => host,
+    }
 }
 
 fn opt_text(v: &Value, key: &str) -> Option<String> {
@@ -616,8 +647,15 @@ pub fn read_module(source: &str, read: &Value) -> ModuleRead {
             }
         })
         .collect();
+    let source_line = |i: usize| {
+        source_lines
+            .get(i.wrapping_sub(1))
+            .map(|l| l.trim().to_string())
+            .unwrap_or_default()
+    };
     let mut lists = Vec::new();
     let mut skip_verify_hosts = Vec::new();
+    let mut host_rows = Vec::new();
     for (key, _) in LISTS {
         let issues = by_index(read.get("issues"), key, "message");
         let views = by_index(read.get("views"), key, "view");
@@ -628,10 +666,37 @@ pub fn read_module(source: &str, read: &Value) -> ModuleRead {
             .into_iter()
             .map(|i| {
                 let view = views.iter().find(|(j, _)| *j == i).map(|(_, v)| v);
+                let entries = view
+                    .filter(|v| v.get("type").and_then(Value::as_str) == Some("hosts"))
+                    .map(|v| array(v, "entries"))
+                    .unwrap_or(&[]);
+                let issue = issues
+                    .iter()
+                    .find(|(j, _)| *j == i)
+                    .and_then(|(_, m)| m.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if *key == "hostname" {
+                    for e in entries {
+                        host_rows.push(HostRow {
+                            host: host_text(e),
+                            exclude: e.get("exclude").and_then(Value::as_bool) == Some(true),
+                            issue: text(e, "reason"),
+                        });
+                    }
+                    let reasons_cover = entries.iter().any(|e| opt_text(e, "reason").is_some());
+                    if !issue.is_empty() && !reasons_cover {
+                        host_rows.push(HostRow {
+                            host: source_line(i),
+                            exclude: false,
+                            issue: issue.clone(),
+                        });
+                    }
+                }
                 if *key == "skip-server-cert-verify-hostname" {
                     for e in view.map(|v| array(v, "entries")).unwrap_or(&[]) {
                         let excluded = e.get("exclude").and_then(Value::as_bool) == Some(true);
-                        if !excluded {
+                        if !excluded && opt_text(e, "reason").is_none() {
                             match e.get("port").and_then(Value::as_i64) {
                                 Some(p) => {
                                     skip_verify_hosts.push(format!("{}:{p}", text(e, "host")))
@@ -643,16 +708,8 @@ pub fn read_module(source: &str, read: &Value) -> ModuleRead {
                 }
                 Line {
                     line: i,
-                    text: source_lines
-                        .get(i.wrapping_sub(1))
-                        .map(|l| l.trim().to_string())
-                        .unwrap_or_default(),
-                    issue: issues
-                        .iter()
-                        .find(|(j, _)| *j == i)
-                        .and_then(|(_, m)| m.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                    text: source_line(i),
+                    issue,
                     task: view.and_then(task_name),
                 }
             })
@@ -715,6 +772,7 @@ pub fn read_module(source: &str, read: &Value) -> ModuleRead {
         ignored,
         only_section_skips,
         skip_verify_hosts,
+        host_rows,
     }
 }
 
@@ -1108,6 +1166,38 @@ mod tests {
         assert!(saved(&accepted, &r, None, 5).enabled);
         let moved = saved(&accepted, &r, Some("https://x/new.sgmodule"), 5);
         assert!(!moved.enabled && moved.url == "https://x/new.sgmodule");
+    }
+
+    #[test]
+    fn module_hosts_come_one_to_a_row() {
+        let source = "[MITM]\nhostname = %APPEND% a.com, -b.com, [::1]:8443, c.com\nhostname = x\n";
+        let read = json!({
+            "issues": {"hostname": [{"index": 2, "message": "refused"}, {"index": 3, "message": "bad line"}]},
+            "views": {"hostname": [{"index": 2, "view": {"type": "hosts", "entries": [
+                {"host": "a.com"},
+                {"host": "b.com", "exclude": true},
+                {"host": "::1", "port": 8443},
+                {"host": "c.com", "reason": "not a host"}
+            ]}}]}
+        });
+        let rows = read_module(source, &read).host_rows;
+        let shown: Vec<(&str, bool, &str)> = rows
+            .iter()
+            .map(|r| (r.host.as_str(), r.exclude, r.issue.as_str()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("a.com", false, ""),
+                ("b.com", true, ""),
+                ("[::1]:8443", false, ""),
+                ("c.com", false, "not a host"),
+                ("hostname = x", false, "bad line"),
+            ]
+        );
+        assert!(rows[1].matches("已排除"));
+        assert!(rows[3].matches("NOT c.com"));
+        assert!(!rows[0].matches("b.com"));
     }
 
     #[test]

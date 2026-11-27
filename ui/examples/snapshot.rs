@@ -497,7 +497,7 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
                 "[api.bad-host.example".to_string(),
                 "invalid hostname: unexpected character '['".to_string(),
             )]);
-            seasoncat_ui::mitm_hosts_sections(&s.mitm.hostname, &issues)
+            seasoncat_ui::mitm_hosts_sections(&s.mitm.hostname, &issues, "", None)
         }
         "mitm-modules" => {
             if overlay != "empty" {

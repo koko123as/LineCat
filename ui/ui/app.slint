@@ -4315,7 +4315,9 @@ component SetRowView inherits Rectangle {
             horizontal-stretch: 1;
             HorizontalLayout {
                 spacing: 6px;
-                Text { text: root.item.title; font-size: 16px * Type.scale; color: root.item.kind == "danger" ? Theme.s.error : root.item.lead == "add" ? Theme.s.primary : Theme.s.on-surface; overflow: elide; horizontal-stretch: root.item.chip == "" ? 1 : 0; }
+                if root.item.kind != "host": Text { text: root.item.title; font-size: 16px * Type.scale; color: root.item.kind == "danger" ? Theme.s.error : root.item.lead == "add" ? Theme.s.primary : Theme.s.on-surface; overflow: elide; horizontal-stretch: root.item.chip == "" ? 1 : 0; }
+                // A MITM host (`MitmHostRowItem`), in the monospaced face.
+                if root.item.kind == "host": Text { text: root.item.title; font-size: 16px * Type.scale; font-family: "monospace"; color: Theme.s.on-surface; overflow: elide; horizontal-stretch: 1; }
                 if root.item.chip != "": VerticalLayout {
                     alignment: center;
                     horizontal-stretch: 1;
@@ -4331,10 +4333,10 @@ component SetRowView inherits Rectangle {
                     }
                 }
             }
-            if root.item.subtitle != "" && !root.exit: Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: root.item.invalid && root.item.kind == "line" ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
+            if root.item.subtitle != "" && !root.exit: Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: root.item.invalid && (root.item.kind == "line" || root.item.kind == "host") ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
             if root.item.subtitle != "" && root.exit: Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
         }
-        if root.item.trailing != "" && !root.exit: Text { text: root.item.trailing; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+        if root.item.trailing != "" && !root.exit: Text { text: root.item.trailing; font-size: 13px * Type.scale; color: root.item.kind == "host" ? Theme.warning : Theme.s.on-surface-variant; vertical-alignment: center; }
         // The target in monospace, red once it names nothing the profile has.
         if root.exit: Text { text: root.item.trailing; font-size: 15px * Type.scale; font-family: "monospace"; color: root.item.invalid ? Theme.s.error : Theme.s.tertiary; vertical-alignment: center; }
         if root.item.invalid && !root.exit && root.item.kind != "issue": VerticalLayout {
