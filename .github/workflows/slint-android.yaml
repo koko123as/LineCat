@@ -1,8 +1,7 @@
 name: slint-android
 
 # Builds the Slint UI (ui/, libseasoncat_ui.so) for arm64-v8a and the arm64 release APK
-# around it. The APK keeps the Flutter build in it, since MainActivity stays for the
-# entry points other than the launcher.
+# around it with Gradle alone (android/, which also builds the Core through cargo).
 # An rs tag (v<version>-rs.N) builds the same APK and publishes it as a release under the
 # names the in-app updater (ui/src/update.rs) looks for, only when it is signed with the
 # repository release key.
@@ -22,7 +21,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: '3.50.1'
   NDK_VERSION: r28c
   # The UI library is built with its own NDK. skia-bindings 0.157.0 (Slint's Android renderer)
   # ships prebuilt Skia compiled with NDK r30's clang (r574158c), whose libc++ headers call
@@ -134,16 +132,14 @@ jobs:
           "$RUNNER_TEMP/elfcheck/bin/python" ui/tools/check_so_symbols.py --sysroot-lib "$SYSROOT_LIB" --api "$ANDROID_MIN_SDK" \
             android/app/src/main/jniLibs/arm64-v8a/libseasoncat_ui.so
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
+      - name: Gradle version
+        id: gradle-version
+        run: echo "version=$(sed -n 's/^distributionUrl=.*gradle-\(.*\)-\(all\|bin\)\.zip$/\1/p' android/gradle/wrapper/gradle-wrapper.properties)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
+          gradle-version: ${{ steps.gradle-version.outputs.version }}
           cache-read-only: true
 
       - name: Signing key
@@ -176,20 +172,25 @@ jobs:
             echo "keyPassword=$kpass"
           } >> android/local.properties
 
-      - name: Get Flutter dependencies
-        run: flutter pub get
-
       - name: Build APK
+        working-directory: android
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
-        run: flutter build apk --release --split-per-abi --target-platform android-arm64
+        run: |
+          gradle --no-daemon -q printVersion -Ptarget-platform=android-arm64 | tee ../gradle-version.txt
+          gradle --no-daemon :app:assembleRelease -Ptarget-platform=android-arm64
 
       - name: Check and hash the APK
         id: apk
         run: |
-          apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          apk=android/app/build/outputs/apk/release/app-release.apk
           unzip -l "$apk" | grep -E 'lib/arm64-v8a/lib(seasoncat_ui|core_jni|concord)\.so'
           unzip -l "$apk" | grep -q 'lib/arm64-v8a/libseasoncat_ui.so'
+          unzip -l "$apk" | grep ' assets/data/GEOIP\.metadb$'
+          unzip -l "$apk" | grep ' assets/data/GEOSITE\.dat$'
+          if unzip -l "$apk" | grep -E 'libflutter\.so|flutter_assets/'; then
+            echo "::error::the APK still carries Flutter"; exit 1
+          fi
           # Check the copy packaged in the APK too, against the libraries packaged beside it.
           rm -rf apk-libs && unzip -q -o "$apk" 'lib/arm64-v8a/*' -d apk-libs
           "$ELFCHECK_PY" ui/tools/check_so_symbols.py \
@@ -221,14 +222,18 @@ jobs:
           badging="$("$tools/aapt2" dump badging "$apk")"
           package="$(grep -m1 '^package:' <<< "$badging")"
           echo "$package"
-          name="$(sed -n "s/.* versionName='\([^']*\)'.*/\1/p" <<< "$package")"
+          name="$(sed -n 's/^versionName=//p' gradle-version.txt)"
+          code="$(sed -n 's/^versionCode=//p' gradle-version.txt)"
+          [ -n "$name" ] && [ -n "$code" ] || { echo "::error::Gradle reported no version"; exit 1; }
+          grep -q "versionCode='$code' versionName='$name'" <<< "$package" \
+            || { echo "::error::the APK does not carry Gradle's versionName $name and versionCode $code"; exit 1; }
           alias="$(sed -n 's/^keyAlias=//p' android/local.properties)"
           spass="$(sed -n 's/^storePassword=//p' android/local.properties)"
           key="$(keytool -exportcert -keystore android/app/keystore.jks -alias "$alias" -storepass "$spass" | sha256sum | cut -d' ' -f1)"
           signer="$("$tools/apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
           echo "signing key: $key"
           echo "APK signer:  $signer"
-          echo "versionName: $name, signer SHA-256: $signer" >> "$GITHUB_STEP_SUMMARY"
+          echo "versionName: $name, versionCode: $code, signer SHA-256: $signer" >> "$GITHUB_STEP_SUMMARY"
           [ -n "$signer" ] && [ "$key" = "$signer" ] || { echo "::error::APK signer is not the signing step's key"; exit 1; }
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             [ "$RELEASE_KEY" = true ] || { echo "::error::not signed with the repository release key"; exit 1; }

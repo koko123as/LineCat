@@ -45,7 +45,7 @@ import kotlin.coroutines.resume
  *
  * A frame is a u32 big-endian payload length, one channel byte and the payload. Channel 0 carries
  * the Core's JSON-RPC frames, forwarded to and from a Core session opened for the connection, as
- * ServicePlugin forwards Flutter's. Channel 1 carries shell commands and pushed state events.
+ * FlClash's ServicePlugin forwards its UI's. Channel 1 carries shell commands and pushed state events.
  */
 object UiBridge {
     private const val CH_CORE = 0
@@ -847,15 +847,15 @@ object UiBridge {
     private fun persistForQuickStart(state: SharedState) {
         runCatching {
             GlobalState.application
-                .getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                .getSharedPreferences(QUICK_START_PREFERENCES, Context.MODE_PRIVATE)
                 .edit()
-                .putString("flutter.sharedState", gson.toJson(state))
+                .putString(QUICK_START_STATE_KEY, gson.toJson(state))
                 .apply()
         }
     }
 
-    // CoreController.initGeo: the Core reads these from its home; the APK carries them in
-    // Flutter's assets.
+    // CoreController.initGeo: the Core reads these from its home; the APK carries them under
+    // `assets/data` (app/build.gradle.kts).
     private fun extractGeoAssets() {
         val home = GlobalState.application.filesDir
         GEO_ASSETS.forEach { name ->
@@ -863,7 +863,7 @@ object UiBridge {
             if (target.exists()) return@forEach
             runCatching {
                 val partial = File(home, "$name.part")
-                GlobalState.application.assets.open("flutter_assets/assets/data/$name").use { input ->
+                GlobalState.application.assets.open("data/$name").use { input ->
                     partial.outputStream().use { output -> input.copyTo(output, 1 shl 16) }
                 }
                 check(partial.renameTo(target)) { "rename failed" }

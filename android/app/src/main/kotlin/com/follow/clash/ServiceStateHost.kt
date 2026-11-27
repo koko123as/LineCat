@@ -3,13 +3,9 @@ package com.follow.clash
 import android.net.VpnService
 import com.follow.clash.common.GlobalState
 import com.follow.clash.models.SharedState
-import com.follow.clash.plugins.AppPlugin
-import com.follow.clash.plugins.ServicePlugin
-import com.follow.clash.plugins.TilePlugin
 import com.follow.clash.service.ServiceConfig
 import com.follow.clash.service.models.NotificationParams
 import com.follow.clash.service.models.VpnOptions
-import io.flutter.embedding.engine.FlutterEngine
 import kotlinx.coroutines.CoroutineScope
 
 internal data class ServiceRuntime(
@@ -66,10 +62,12 @@ internal interface AppGateway {
     fun cancelVpnPreparation(callback: (Boolean) -> Unit)
 }
 
+/**
+ * The Slint UI asks for the VPN and notification permissions itself (UiBridge `vpn.start`) and
+ * follows [ServiceState.runState] over the bridge, so no UI gateway is handed to the machine: the
+ * tile, shortcuts and quick actions start from the saved shared state.
+ */
 internal object AndroidServiceStateHost : ServiceStateHost {
-    @Volatile
-    private var flutterEngine: FlutterEngine? = null
-
     override val scope: CoroutineScope
         get() = GlobalState
 
@@ -81,16 +79,6 @@ internal object AndroidServiceStateHost : ServiceStateHost {
 
     override val sdkInt: Int
         get() = android.os.Build.VERSION.SDK_INT
-
-    fun attachFlutterEngine(engine: FlutterEngine) {
-        flutterEngine = engine
-    }
-
-    fun detachFlutterEngine(engine: FlutterEngine) {
-        if (flutterEngine === engine) {
-            flutterEngine = null
-        }
-    }
 
     override fun log(message: String) = GlobalState.log(message)
 
@@ -106,29 +94,11 @@ internal object AndroidServiceStateHost : ServiceStateHost {
     override fun isVpnPermissionGranted(): Boolean =
         VpnService.prepare(GlobalState.application) == null
 
-    override fun tile(): TileGateway? = flutterEngine?.plugin<TilePlugin>()?.let { plugin ->
-        TileGateway(plugin::handleStart)
-    }
+    override fun tile(): TileGateway? = null
 
-    override fun app(): AppGateway? = flutterEngine?.plugin<AppPlugin>()?.let { plugin ->
-        object : AppGateway {
-            override fun requestNotificationPermission(callback: (Boolean) -> Unit) =
-                plugin.requestNotificationPermission(callback)
+    override fun app(): AppGateway? = null
 
-            override fun requestLocalNetworkPermission(callback: (Boolean) -> Unit) =
-                plugin.requestLocalNetworkPermission(callback)
-
-            override fun prepareVpn(enable: Boolean, callback: (Boolean) -> Unit) =
-                plugin.prepareVpn(enable, callback)
-
-            override fun cancelVpnPreparation(callback: (Boolean) -> Unit) =
-                plugin.cancelVpnPreparation(callback)
-        }
-    }
-
-    override fun notifyStopped(failure: StartFailure?) {
-        flutterEngine?.plugin<ServicePlugin>()?.notifyStopped(failure)
-    }
+    override fun notifyStopped(failure: StartFailure?) = Unit
 
     override suspend fun quickSetup(initParams: String, setupParams: String): Result<String> =
         ServiceController.quickSetup(initParams, setupParams)
