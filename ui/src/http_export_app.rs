@@ -103,7 +103,11 @@ impl App {
     }
 
     /// `withExchange`: the whole request, read again, since a list knows only its summary.
-    fn with_exchange(self: &Arc<Self>, id: i64, f: impl FnOnce(&Arc<App>, Exchange) + Send + 'static) {
+    fn with_exchange(
+        self: &Arc<Self>,
+        id: i64,
+        f: impl FnOnce(&Arc<App>, Exchange) + Send + 'static,
+    ) {
         self.spawn(move |app| {
             let exchange = app
                 .bridge()
@@ -161,11 +165,9 @@ impl App {
         if size == 0 || e.pending {
             return Ok(None);
         }
-        let v = self.bridge()?.call(
-            "mitm.body",
-            json!({"id": e.id, "response": response}),
-            CALL,
-        )?;
+        let v =
+            self.bridge()?
+                .call("mitm.body", json!({"id": e.id, "response": response}), CALL)?;
         Ok(v.is_object().then(|| Raw::parse(&v)))
     }
 

@@ -502,7 +502,12 @@ fn varint(bytes: &[u8], at: usize) -> Option<(u64, usize)> {
 }
 
 /// `numbers` gathers only the top level's field numbers.
-fn parse_fields(bytes: &[u8], depth: usize, cut: bool, numbers: &mut Vec<u64>) -> Option<Vec<Field>> {
+fn parse_fields(
+    bytes: &[u8],
+    depth: usize,
+    cut: bool,
+    numbers: &mut Vec<u64>,
+) -> Option<Vec<Field>> {
     let mut fields = Vec::new();
     let mut offset = 0;
     let end = bytes.len();
@@ -716,7 +721,10 @@ mod tests {
     #[test]
     fn base64_round_trips() {
         for text in ["", "a", "ab", "abc", "abcd", "hello world"] {
-            assert_eq!(base64_decode(&base64_encode(text.as_bytes())), text.as_bytes());
+            assert_eq!(
+                base64_decode(&base64_encode(text.as_bytes())),
+                text.as_bytes()
+            );
         }
         assert_eq!(base64_encode(b"hello"), "aGVsbG8=");
         assert_eq!(base64_encode(&[0xff, 0xfe]), "//4=");
@@ -724,7 +732,10 @@ mod tests {
 
     #[test]
     fn json_is_indented_and_typed() {
-        let c = read(&raw(br#"{"a":[1,2],"b":{},"c":"x,{y}:"}"#), "application/json");
+        let c = read(
+            &raw(br#"{"a":[1,2],"b":{},"c":"x,{y}:"}"#),
+            "application/json",
+        );
         assert_eq!(c.kind, Kind::Text);
         assert_eq!(c.language, Language::Json);
         assert_eq!(
@@ -744,14 +755,26 @@ mod tests {
         let html = read(&raw(b"<p>hi</p>"), "text/html; charset=utf-8");
         assert_eq!(html.type_label("text/html; charset=utf-8"), "HTML");
         assert_eq!(html.charset, "");
-        assert_eq!(read(&raw(b"<a/>"), "application/xml").type_label("application/xml"), "XML");
-        assert_eq!(read(&raw(b"x=1"), "text/javascript").type_label(""), "JavaScript");
+        assert_eq!(
+            read(&raw(b"<a/>"), "application/xml").type_label("application/xml"),
+            "XML"
+        );
+        assert_eq!(
+            read(&raw(b"x=1"), "text/javascript").type_label(""),
+            "JavaScript"
+        );
         assert_eq!(read(&raw(b"plain"), "text/plain").type_label(""), "文本");
         let png = read(&raw(&[0x89, b'P', b'N', b'G']), "image/png");
-        assert_eq!((png.kind, png.type_label("")), (Kind::Image, "图片".to_string()));
+        assert_eq!(
+            (png.kind, png.type_label("")),
+            (Kind::Image, "图片".to_string())
+        );
         assert_eq!(read(&raw(b"<svg/>"), "image/svg+xml").kind, Kind::Text);
         let bin = read(&raw(&[0, 1, 2, 0xff]), "application/zip");
-        assert_eq!((bin.kind, bin.type_label("")), (Kind::Binary, BINARY.to_string()));
+        assert_eq!(
+            (bin.kind, bin.type_label("")),
+            (Kind::Binary, BINARY.to_string())
+        );
     }
 
     #[test]
@@ -797,12 +820,18 @@ mod tests {
 
     #[test]
     fn previews_stop_at_thirty_lines() {
-        let text = (0..40).map(|i| i.to_string()).collect::<Vec<_>>().join("\n");
+        let text = (0..40)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
         let c = read(&raw(text.as_bytes()), "text/plain");
         assert_eq!(c.preview.lines().count(), 30);
         assert!(c.is_cut());
         let long = "y".repeat(5000);
-        assert_eq!(read(&raw(long.as_bytes()), "text/plain").preview.len(), 3000);
+        assert_eq!(
+            read(&raw(long.as_bytes()), "text/plain").preview.len(),
+            3000
+        );
     }
 
     #[test]
@@ -812,10 +841,7 @@ mod tests {
             hex_line(&bytes, 0, 16),
             "000000  41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50  ABCDEFGHIJKLMNOP"
         );
-        assert_eq!(
-            hex_line(&[0, 0x7f, b'z'], 0, 4),
-            "000000  00 7f 7a     ..z"
-        );
+        assert_eq!(hex_line(&[0, 0x7f, b'z'], 0, 4), "000000  00 7f 7a     ..z");
         assert_eq!(hex_offset_digits(0x1234567), 7);
         assert_eq!(hex_line_length(20, 16), 6 + 2 + 48 + 1 + 16);
         assert_eq!(hex_per_line(20, 80), 16);
@@ -840,7 +866,10 @@ mod tests {
         assert_eq!(protobuf_text(&msg[..3], false, false), None);
         assert_eq!(protobuf_text(&msg[..3], true, false), None);
         assert!(protobuf_text(&msg[..5], true, false).is_some());
-        assert_eq!(protobuf_text(&[0x80, 0x80, 0x80, 0x08, 0x00], false, true), None);
+        assert_eq!(
+            protobuf_text(&[0x80, 0x80, 0x80, 0x08, 0x00], false, true),
+            None
+        );
     }
 
     #[test]

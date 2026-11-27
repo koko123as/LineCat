@@ -514,7 +514,10 @@ mod tests {
         let e = json!({"request-header": {"Accept": ["*/*", "text/html"]}});
         assert_eq!(
             header_of(&e, "request-header"),
-            vec![("Accept".to_string(), vec!["*/*".to_string(), "text/html".to_string()])]
+            vec![(
+                "Accept".to_string(),
+                vec!["*/*".to_string(), "text/html".to_string()]
+            )]
         );
         assert!(header_of(&e, "response-header").is_empty());
     }

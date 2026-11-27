@@ -182,16 +182,14 @@ fn percent_decoded(text: &str, plus_is_space: bool) -> String {
     while i < bytes.len() {
         let hex = |b: u8| (b as char).to_digit(16);
         match bytes[i] {
-            b'%' if i + 2 < bytes.len() => {
-                match (hex(bytes[i + 1]), hex(bytes[i + 2])) {
-                    (Some(h), Some(l)) => {
-                        out.push((h * 16 + l) as u8);
-                        i += 3;
-                        continue;
-                    }
-                    _ => out.push(b'%'),
+            b'%' if i + 2 < bytes.len() => match (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                (Some(h), Some(l)) => {
+                    out.push((h * 16 + l) as u8);
+                    i += 3;
+                    continue;
                 }
-            }
+                _ => out.push(b'%'),
+            },
             b'+' if plus_is_space => out.push(b' '),
             b => out.push(b),
         }
@@ -421,7 +419,10 @@ pub fn attachment_name<'a>(url: &str, taken: impl IntoIterator<Item = &'a String
 /// type.
 pub fn map_local_line(url: &str, file: Option<&str>, status: i64, content_type: &str) -> String {
     let mut params = vec![
-        ("data-type", (if file.is_some() { "file" } else { "text" }).to_string()),
+        (
+            "data-type",
+            (if file.is_some() { "file" } else { "text" }).to_string(),
+        ),
         ("data", file.unwrap_or("").to_string()),
     ];
     if status > 200 && status <= 999 {
@@ -534,7 +535,11 @@ pub const MAP_LOCAL_ITEM: &str = "http-map-local";
 
 /// `mitmExchangeMenuItems`; `modules` are the local ones a rule can be written into, by id and
 /// name, and `open` the item whose modules show.
-pub fn menu_items(t: &MenuTarget, modules: &[(String, String)], open: Option<&str>) -> Vec<ActionItem> {
+pub fn menu_items(
+    t: &MenuTarget,
+    modules: &[(String, String)],
+    open: Option<&str>,
+) -> Vec<ActionItem> {
     let item = |id: String, glyph: &str, label: &str| ActionItem {
         id: id.into(),
         glyph: glyph.into(),
@@ -649,7 +654,13 @@ mod tests {
     #[test]
     fn har_holds_one_entry() {
         let e = exchange();
-        let text = har(&e, Some(&body(b"payload")), Some(&body(b"{}")), "SeasonCat", "1.0");
+        let text = har(
+            &e,
+            Some(&body(b"payload")),
+            Some(&body(b"{}")),
+            "SeasonCat",
+            "1.0",
+        );
         let v: Value = serde_json::from_str(&text).unwrap();
         let entry = &v["log"]["entries"][0];
         assert_eq!(v["log"]["version"], "1.2");
@@ -665,12 +676,18 @@ mod tests {
         assert_eq!(entry["response"]["content"]["text"], "{}");
         assert_eq!(entry["response"]["content"]["size"], 2);
         assert_eq!(entry["response"]["redirectURL"], "/next");
-        assert_eq!(entry["timings"], json!({"send": 0, "wait": 120, "receive": 180}));
+        assert_eq!(
+            entry["timings"],
+            json!({"send": 0, "wait": 120, "receive": 180})
+        );
         assert_eq!(entry["connection"], "c1");
         let bin = har(&e, None, Some(&body(&[0, 1])), "SeasonCat", "1.0");
         let v: Value = serde_json::from_str(&bin).unwrap();
         let content = &v["log"]["entries"][0]["response"]["content"];
-        assert_eq!((content["text"].as_str(), content["encoding"].as_str()), (Some("AAE="), Some("base64")));
+        assert_eq!(
+            (content["text"].as_str(), content["encoding"].as_str()),
+            (Some("AAE="), Some("base64"))
+        );
         assert!(v["log"]["entries"][0]["request"].get("postData").is_none());
         assert_eq!(har_file_name(&e, "SeasonCat"), "a.test-7.har");
         assert_eq!(iso8601(0), "1970-01-01T00:00:00.000Z");
@@ -678,8 +695,14 @@ mod tests {
 
     #[test]
     fn rule_lines_match_the_url() {
-        assert_eq!(url_pattern("https://a.test/x.js?v=1"), "^https://a\\.test/x\\.js(\\?|$)");
-        assert_eq!(reject_line("https://a.test/a b"), "\"^https://a\\.test/a b(\\?|$)\" reject");
+        assert_eq!(
+            url_pattern("https://a.test/x.js?v=1"),
+            "^https://a\\.test/x\\.js(\\?|$)"
+        );
+        assert_eq!(
+            reject_line("https://a.test/a b"),
+            "\"^https://a\\.test/a b(\\?|$)\" reject"
+        );
         assert_eq!(
             map_local_line("https://a.test/x", Some("x.json"), 404, "application/json"),
             "^https://a\\.test/x(\\?|$) data-type=file data=x.json status-code=404 \
@@ -694,7 +717,10 @@ mod tests {
     #[test]
     fn attachments_take_free_names() {
         let taken = ["a.json".to_string(), "a-2.json".to_string()];
-        assert_eq!(attachment_name("https://a.test/v/a.json?x", &taken), "a-3.json");
+        assert_eq!(
+            attachment_name("https://a.test/v/a.json?x", &taken),
+            "a-3.json"
+        );
         assert_eq!(attachment_name("https://a.test/", &[]), "response");
         assert_eq!(attachment_name("https://a.test/.env", &[]), "response.env");
         assert_eq!(attachment_name("https://a.test/a%20b", &[]), "a_b");
@@ -711,7 +737,10 @@ mod tests {
             add_line("#!name=m\n", MAP_LOCAL, "x").unwrap(),
             "#!name=m\n\n[Map Local]\nx\n"
         );
-        assert_eq!(add_line("", URL_REWRITE, "x").unwrap(), "[URL Rewrite]\nx\n");
+        assert_eq!(
+            add_line("", URL_REWRITE, "x").unwrap(),
+            "[URL Rewrite]\nx\n"
+        );
         assert_eq!(add_line("http:\n  rewrite: []\n", URL_REWRITE, "x"), None);
     }
 
@@ -730,7 +759,16 @@ mod tests {
         let modules = vec![("m1".to_string(), "Mine".to_string())];
         assert_eq!(
             labels(menu_items(&t, &modules, None)),
-            ["复制链接", "复制为 cURL", "复制请求", "复制响应", "复制响应体", "导出 HAR", "添加拒绝规则", "添加本地映射规则"]
+            [
+                "复制链接",
+                "复制为 cURL",
+                "复制请求",
+                "复制响应",
+                "复制响应体",
+                "导出 HAR",
+                "添加拒绝规则",
+                "添加本地映射规则"
+            ]
         );
         let open = menu_items(&t, &modules, Some(REJECT));
         assert_eq!(labels(open.clone())[7..9], ["新建模块", "Mine"]);
@@ -740,7 +778,13 @@ mod tests {
         t.status = 0;
         assert_eq!(
             labels(menu_items(&t, &modules, None)),
-            ["复制链接", "复制为 cURL", "复制请求", "导出 HAR", "添加拒绝规则"]
+            [
+                "复制链接",
+                "复制为 cURL",
+                "复制请求",
+                "导出 HAR",
+                "添加拒绝规则"
+            ]
         );
     }
 }
