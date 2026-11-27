@@ -10129,6 +10129,9 @@ export component AppWindow inherits Window {
     // The profile file editor and the profile edit page leave through these, which ask
     // first when something is unsaved.
     callback profile-editor-back(string);
+    // Why the Core could not start; while set the startup error page covers the app.
+    in-out property <string> init-error;
+    callback init-error-act(string);
     callback edit-back();
     // Sort
     // The sort sheet's drop: from one index to another.
@@ -12765,6 +12768,69 @@ export component AppWindow inherits Window {
                         root.res-dialog-submit(root.res-dialog, root.res-dialog-key, root.res-dialog-value);
                         root.res-dialog = "";
                     }
+                }
+            }
+        }
+
+        // `InitErrorView`: the Core failed to start; the app goes no further.
+        if root.init-error != "": Rectangle {
+            background: Theme.s.page;
+            TouchArea { }
+            VerticalLayout {
+                padding-top: root.top-inset;
+                padding-bottom: root.bottom-inset + 16px;
+                Flickable {
+                    vertical-stretch: 1;
+                    content-height: ie-col.preferred-height;
+                    ie-col := VerticalLayout {
+                        padding: 16px;
+                        padding-top: 32px;
+                        spacing: 8px;
+                        HorizontalLayout {
+                            alignment: start;
+                            Rectangle {
+                                width: 56px;
+                                height: 56px;
+                                border-radius: 28px;
+                                background: Theme.s.error.with-alpha(0.14);
+                                Icon { glyph: Icons.warning; size: 28px; tint: Theme.s.error; }
+                            }
+                        }
+                        Rectangle { height: 12px; }
+                        Text { text: "启动失败"; font-size: 22px * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
+                        Text {
+                            text: "SeasonCat 启动时出错，无法继续运行。可以复制错误详情用于反馈；如果问题反复出现，清除数据后通常可以重新启动。";
+                            wrap: word-wrap;
+                            font-size: 15px * Type.scale;
+                            color: Theme.s.on-surface-variant;
+                        }
+                        Rectangle { height: 20px; }
+                        Text { text: "错误详情"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+                        Rectangle {
+                            background: Theme.s.error.with-alpha(0.12);
+                            border-radius: 16px;
+                            height: ie-text.preferred-height + 32px;
+                            ie-text := Text {
+                                x: 16px;
+                                y: 16px;
+                                width: parent.width - 32px;
+                                text: root.init-error;
+                                wrap: word-wrap;
+                                font-size: 15px * Type.scale;
+                                font-weight: 600;
+                                color: Theme.s.error;
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    spacing: 8px;
+                    alignment: end;
+                    TextButton { text: "复制"; clicked => { root.init-error-act("copy"); } }
+                    TextButton { text: "清除数据"; danger: true; clicked => { root.init-error-act("clear"); } }
+                    TextButton { text: "退出"; filled: true; clicked => { root.init-error-act("exit"); } }
                 }
             }
         }

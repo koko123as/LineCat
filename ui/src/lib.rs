@@ -9,6 +9,8 @@ pub mod app_icons;
 pub mod backup;
 mod backup_app;
 pub use backup_app::sections as backup_app_sections;
+mod boot_app;
+pub mod boot_guard;
 pub mod bridge;
 pub mod ca_trust;
 mod ca_trust_app;
@@ -507,7 +509,9 @@ impl App {
         while self.alive.load(Ordering::SeqCst) {
             match Bridge::connect(&name) {
                 Ok(bridge) => {
-                    match self.setup(&bridge) {
+                    let setup = self.setup(&bridge);
+                    self.boot_running();
+                    match setup {
                         Err(e) if self.bridge().is_err() => {
                             self.set_core(live_status::Core::Stopped, Some(e.clone()));
                             self.toast(format!("内核连接失败: {e}"));
@@ -622,7 +626,10 @@ impl App {
             .unwrap_or("created")
             .to_string();
         if engine == "created" || engine == "failed" {
-            bridge.call("core.init", json!({"home": home, "sdkInt": sdk}), CALL)?;
+            if let Err(e) = bridge.call("core.init", json!({"home": home, "sdkInt": sdk}), CALL) {
+                self.show_init_error(e.clone());
+                return Err(e);
+            }
         }
         if let Some(s) = hello.get("state").and_then(Value::as_str) {
             self.set_run_state(s);
@@ -653,7 +660,7 @@ impl App {
         if engine == "configured" || engine == "running" {
             self.configured.store(true, Ordering::SeqCst);
             self.refresh_groups();
-        } else if self.store.lock().unwrap().active().is_some() {
+        } else if self.store.lock().unwrap().active().is_some() && !boot_app::degraded() {
             self.apply_active()?;
         }
         self.on_connected(&hello);
@@ -2573,6 +2580,7 @@ fn locate_offset(ui: &AppWindow, group: &str) -> f32 {
 /// activity goes away.
 pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     let (ui, app) = wire(home)?;
+    app.show_boot_tip();
     let a = app.clone();
     std::thread::Builder::new()
         .name("ui-connect".into())
@@ -2586,6 +2594,7 @@ pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
         .map_err(|e| slint::PlatformError::Other(e.to_string()))?;
 
     let result = ui.run();
+    app.boot_closed();
     app.alive.store(false, Ordering::SeqCst);
     if let Some(b) = app.bridge.lock().unwrap().take() {
         b.close();
@@ -2601,7 +2610,8 @@ pub fn headless(home: PathBuf) -> Result<AppWindow, slint::PlatformError> {
 
 fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
     let ui = AppWindow::new()?;
-    let store = Store::open(&home);
+    let mut store = Store::open(&home);
+    boot_app::begin(&mut store);
     let settings = store.state.settings.clone();
     let app = Arc::new(App {
         ui: ui.as_weak(),
@@ -2705,6 +2715,15 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
     });
     let a = app.clone();
     ui.on_upload_file(move || a.upload_file());
+    let a = app.clone();
+    let w = ui.as_weak();
+    ui.on_init_error_act(move |action| {
+        let error = w
+            .upgrade()
+            .map(|ui| ui.get_init_error())
+            .unwrap_or_default();
+        a.init_error_act(&action, error.into());
+    });
     let a = app.clone();
     let w = ui.as_weak();
     ui.on_profile_editor_back(move |text| {

@@ -1300,7 +1300,8 @@ impl App {
                 self.check_update(false);
             }
             let running = self.run_state.lock().unwrap().as_str() == "STARTED";
-            if general.auto_run && !running && self.store.lock().unwrap().active().is_some() {
+            let active = self.store.lock().unwrap().active().is_some();
+            if general.auto_run && !running && active && !crate::boot_app::degraded() {
                 self.toggle_vpn();
             }
         }
