@@ -173,7 +173,9 @@ mod tests {
 
     #[test]
     fn the_menu_follows_flclash() {
-        let ids = |v: Vec<(&str, &str, &str)>| v.into_iter().map(|i| i.0).collect::<Vec<_>>();
+        fn ids(v: Vec<(&'static str, &'static str, &'static str)>) -> Vec<&'static str> {
+            v.into_iter().map(|i| i.0).collect()
+        }
         assert_eq!(ids(menu(ProviderFile::Text, false, false)), ["upload"]);
         assert_eq!(
             ids(menu(ProviderFile::RuleSet, true, true)),

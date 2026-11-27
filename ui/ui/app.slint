@@ -9618,12 +9618,12 @@ component EditorPage inherits Rectangle {
                     if root.completion.items.length > 0: pop := Rectangle {
                         property <length> row-h: editor.font-size * 2 + 4px;
                         property <length> line: editor.font-size * 1.4;
-                        property <length> view-top: -flick.viewport-y;
-                        property <length> view-bottom: -flick.viewport-y + flick.height - max(Dock.pad, root.keyboard);
+                        property <length> view-top: -flick.content-y;
+                        property <length> view-bottom: -flick.content-y + flick.height - max(Dock.pad, root.keyboard);
                         property <length> below: editor.y + root.caret-y + self.line + 2px;
                         width: min(flick.width - 16px, max(160px, root.completion.cells * editor.font-size * 0.6 + 36px));
                         height: min(6, root.completion.items.length) * self.row-h + 12px;
-                        x: max(-flick.viewport-x + 8px, min(editor.x + root.caret-x, -flick.viewport-x + flick.width - self.width - 8px));
+                        x: max(-flick.content-x + 8px, min(editor.x + root.caret-x, -flick.content-x + flick.width - self.width - 8px));
                         y: self.below + self.height <= self.view-bottom || editor.y + root.caret-y - self.height - 2px < self.view-top ? self.below : editor.y + root.caret-y - self.height - 2px;
                         background: Theme.s.card;
                         border-radius: 16px;
@@ -9637,7 +9637,7 @@ component EditorPage inherits Rectangle {
                         Flickable {
                             y: 6px;
                             height: parent.height - 12px;
-                            viewport-height: root.completion.items.length * pop.row-h;
+                            content-height: root.completion.items.length * pop.row-h;
                             for s[i] in root.completion.items: Rectangle {
                                 x: 8px;
                                 y: i * pop.row-h;
