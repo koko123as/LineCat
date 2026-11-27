@@ -1818,6 +1818,7 @@ fn main() {
         total: "228.8 MB".into(),
         app: "228.8 MB".into(),
         shared: true,
+        core_running: true,
     });
     ui.set_profile_detail(DashProfileDetail {
         groups: "12".into(),

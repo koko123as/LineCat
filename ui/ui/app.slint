@@ -243,6 +243,9 @@ export struct DashMemory {
     total: string,
     app: string,
     shared: bool,
+    // `core.stats` answered; else 内核 shows 内核未运行. Concord reports no runtime split, so
+    // a running in-process Core has no rows of its own, as in FlClash rs.
+    core-running: bool,
 }
 
 // `ProfileDetailSheet`: the counts are empty until the profile is read, "-" when it fails.
@@ -12259,6 +12262,29 @@ export component AppWindow inherits Window {
                     padding-bottom: 12px;
                     SheetRow { label: "常驻内存"; value: root.dash-mem.app; }
                     Rectangle { height: 4px; border-radius: 2px; background: Theme.s.primary; }
+                }
+            }
+            if !root.dash-mem.core-running: VerticalLayout {
+                spacing: 8px;
+                Rectangle { height: 4px; }
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    Text { text: "内核"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; horizontal-stretch: 1; }
+                    Text { text: "0 B"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+                }
+                Rectangle {
+                    background: Theme.s.card;
+                    border-radius: 16px;
+                    height: self.preferred-height;
+                    VerticalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        HorizontalLayout {
+                            height: 48px;
+                            Text { text: "内核未运行"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                        }
+                    }
                 }
             }
         }

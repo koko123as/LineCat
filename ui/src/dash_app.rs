@@ -37,6 +37,8 @@ pub(crate) struct Services {
 
 use dashboard::service_shown as shown_count;
 
+static CORE_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
 /// `ConnectionsTableCard`'s state: its feed, the header sort, the table's width, whether
 /// the dashboard shows it, and a column drag's starting widths and overrides.
 pub(crate) struct DashTable {
@@ -221,7 +223,7 @@ impl App {
         let a = self.clone();
         ui.on_release_memory(move || a.release_memory());
         let a = self.clone();
-        ui.on_open_memory(move || a.publish_memory());
+        ui.on_open_memory(move || a.open_memory());
         let a = self.clone();
         ui.on_open_profile_detail(move || {
             let custom = a
@@ -274,12 +276,27 @@ impl App {
         } else {
             String::new()
         };
+        let core_running = CORE_RUNNING.load(Ordering::SeqCst);
         self.ui(move |ui| {
             ui.set_dash_mem(crate::DashMemory {
                 total: text.clone().into(),
                 app: text.into(),
                 shared: true,
+                core_running,
             });
+        });
+    }
+
+    /// `_loadMemory`: whether the Core answers `core.stats`, then the sheet.
+    fn open_memory(self: &Arc<Self>) {
+        self.publish_memory();
+        self.spawn(|app| {
+            let running = app
+                .bridge()
+                .and_then(|b| b.call("core.stats", json!({}), Duration::from_secs(3)))
+                .is_ok();
+            CORE_RUNNING.store(running, Ordering::SeqCst);
+            app.publish_memory();
         });
     }
 
