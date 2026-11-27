@@ -145,9 +145,23 @@ Handoff items 2–7:
 
 ## Waiting on the owner
 
-- The 「语言」 row, and whether the tablet detail sheet buttons match the
-  phone's (the Core already runs in process, 12d): FlClash rs shows the same sheet content in a side sheet and a
-  bottom sheet, with no tablet-only buttons found.
-- The side bar: prism_ui's `Sidebar` is 48 wide, 220 when its toggle expands it; LineCat shows an 88 wide rail and,
-  past 840, a 200 wide bar by width alone. Where FlClash keeps the expanded state was not found, so it is unchanged.
-- CHANGELOG.md (FlClash's history to v0.9.4): keep or remove.
+- The 「语言」 row.
+
+## Owner decisions (2026-11-27): follow FlClash rs
+
+- CHANGELOG.md stays, as FlClash rs keeps it at the root; its blob equals FlClash rs 56a9cf9's, so nothing to sync.
+- Side bar (cef23c9): prism_ui `NavigationSidebar` (FlClash: plugins/prism_ui/lib/sidebar.dart at cae9a43) placed as
+  `AppSidebarContainer` (FlClash: lib/manager/app_manager.dart). Shown past 600; 48 wide, 220 expanded, toggle on top,
+  rows 40 + text growth, selection fill on-surface 8% and a 3x16 primary bar stretching to the new row (lead 192 ms
+  easeOutCubic, trail 112 ms later over 208 ms easeInOutCubic), labels fade in over the last 60% of the 250 ms
+  `Easing.standard` move. Past 840 (`canExpandSidebar`) the toggle flips `sidebarExpanded`, saved in settings,
+  default true (FlClash: lib/models/config.dart); 600–840 the toggle opens the expanded pane over the page (shadow,
+  tap outside / toggle / pick closes; widening past 840 drops it at once). Back does not close it, as in FlClash.
+  Not done: tooltips, filled glyph of the selected row (LineCat glyphs are outlines), the 300 ms slide when the bar
+  appears or leaves at 600, focus/keyboard; `chromeSurface` dark is surfaceContainerLow, approximated by `card`
+  (surfaceContainer) since the scheme has no Low level.
+- Tablet detail sheet (a55e8f7): FlClash rs opens a request's detail through `showNestedSheet` → prism `showSheet`, a
+  side sheet past 600 and a bottom sheet below, with the same title and actions; LineCat now does the same, keeping
+  the phone's title actions (⋯, ✕). FlClash's prism sheet bar has no ✕ on either layout. The detail tabs already
+  stretch only on phones (FlClash: lib/features/connection/detail_tabs.dart). Not aligned yet: `DetailHeader` on wide
+  uses a 48 well, title3 and a 16 gap (phone 40, headline, 14); LineCat uses one size.
