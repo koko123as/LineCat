@@ -1360,6 +1360,7 @@ impl App {
             ui.set_editor_title(title);
             ui.set_editor_text(text);
             ui.set_editor_readonly(false);
+            ui.set_editor_schema("proxy-group".into());
             ui.set_editor_parent("group".into());
             ui.set_profiles_page("editor".into());
         });

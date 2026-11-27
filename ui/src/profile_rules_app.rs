@@ -815,6 +815,7 @@ impl App {
             ui.set_editor_title("规则".into());
             ui.set_editor_text(text.into());
             ui.set_editor_readonly(false);
+            ui.set_editor_schema("rules".into());
             ui.set_editor_parent("rules".into());
             ui.set_profiles_page("editor".into());
         });

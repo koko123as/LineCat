@@ -839,6 +839,7 @@ impl App {
         self.ui(move |ui| {
             ui.set_tools_editor_title(title);
             ui.set_tools_editor_text(text);
+            ui.set_tools_editor_schema(SharedString::new());
             ui.set_tools_editor_guard(false);
             ui.set_tools_editor_parent(FORM.into());
             ui.set_tools_editor_readonly(false);

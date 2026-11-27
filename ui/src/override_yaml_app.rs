@@ -41,17 +41,20 @@ impl App {
             Open::Global
         };
         *OPEN.lock().unwrap() = Some((open, text.clone()));
+        let schema = oy::document_key(spec);
         if profile {
             let (title, text): (SharedString, SharedString) = (spec.title.into(), text.into());
             self.ui(move |ui| {
                 ui.set_editor_title(title);
                 ui.set_editor_text(text);
                 ui.set_editor_readonly(false);
+                ui.set_editor_schema(schema.into());
                 ui.set_editor_parent("pmore".into());
                 ui.set_profiles_page("editor".into());
             });
         } else {
             self.open_tools_editor(spec.title, &text, page);
+            self.ui(move |ui| ui.set_tools_editor_schema(schema.into()));
         }
         true
     }

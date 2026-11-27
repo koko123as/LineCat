@@ -2,9 +2,12 @@
 //! open editor's history by the page's key.
 
 use crate::editor;
+use crate::editor_complete::{self as complete, Completion};
 use crate::editor_history::History;
 use crate::settings_app::Effect;
-use crate::{App, AppWindow, EditorEdit, EditorKit, EditorMatch};
+use crate::{
+    App, AppWindow, EditorCompletion, EditorEdit, EditorKit, EditorMatch, EditorSuggestion,
+};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -61,6 +64,34 @@ fn replaced(key: &str, before: &str, after: String, caret: usize) -> EditorEdit 
     edit(after, caret)
 }
 
+fn completion_at(schema: &str, text: &str, caret: i32) -> Option<(usize, Completion)> {
+    let caret = usize::try_from(caret).ok()?;
+    complete::complete(complete::source_of(schema), text, caret).map(|c| (caret, c))
+}
+
+fn shown(found: Option<(usize, Completion)>) -> EditorCompletion {
+    let Some((caret, c)) = found else {
+        return EditorCompletion {
+            items: ModelRc::default(),
+            caret: -1,
+            cells: 0.0,
+        };
+    };
+    let items: Vec<EditorSuggestion> = c
+        .items
+        .iter()
+        .map(|s| EditorSuggestion {
+            label: s.label.as_str().into(),
+            detail: s.detail.as_str().into(),
+        })
+        .collect();
+    EditorCompletion {
+        items: ModelRc::new(VecModel::from(items)),
+        caret: caret as i32,
+        cells: complete::cells(&c.items),
+    }
+}
+
 impl App {
     pub(crate) fn bind_editor(self: &Arc<Self>, ui: &AppWindow) {
         let kit = ui.global::<EditorKit>();
@@ -95,6 +126,17 @@ impl App {
                 s.editor_line_wrap = wrap;
                 s.editor_font_size = level as i32;
             });
+        });
+        kit.on_complete(|schema, text, caret| shown(completion_at(&schema, &text, caret)));
+        kit.on_accept(|key, schema, text, caret, index| {
+            let picked = completion_at(&schema, &text, caret).and_then(|(at, c)| {
+                let s = c.items.get(usize::try_from(index).ok()?)?;
+                Some(complete::accept(&text, at, &c.prefix, s))
+            });
+            match picked {
+                Some((after, caret)) => replaced(&key, &text, after, caret),
+                None => EditorEdit::default(),
+            }
         });
         kit.on_opened(|key, text| {
             histories()

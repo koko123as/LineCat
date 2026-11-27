@@ -658,6 +658,18 @@ export struct EditorEdit {
     ok: bool,
 }
 
+export struct EditorSuggestion {
+    label: string,
+    detail: string,
+}
+
+// The suggestions for the caret at byte `caret`; `cells` is the widest row in monospace cells.
+export struct EditorCompletion {
+    items: [EditorSuggestion],
+    caret: int,
+    cells: float,
+}
+
 // Each callback past `find` names the editor by its page's `key`, which owns one history.
 export global EditorKit {
     in-out property <bool> wrap;
@@ -665,6 +677,9 @@ export global EditorKit {
     in-out property <length> font-px: 16px;
     callback menu(string, string, bool) -> [ActionItem];
     callback style(bool, int);
+    // The page's schema name (`editor_complete::source_of`), the text and the caret.
+    callback complete(string, string, int) -> EditorCompletion;
+    callback accept(string, string, string, int, int) -> EditorEdit;
     callback opened(string, string);
     callback typed(string, string);
     callback undo(string, string) -> EditorEdit;
@@ -9366,10 +9381,15 @@ component EditorPage inherits Rectangle {
     in property <bool> title-editable;
     // Names this editor's history in `EditorKit`.
     in property <string> key;
+    in property <string> schema;
+    in property <length> keyboard;
     // The find bar and the ⋮ menu are open; the window's back closes them before the page.
     in-out property <bool> finding;
     in-out property <bool> menu-open;
     property <[ActionItem]> menu-items;
+    property <EditorCompletion> completion: { items: [], caret: -1, cells: 0 };
+    property <length> caret-x;
+    property <length> caret-y;
     property <bool> sizes-open;
     property <bool> replacing;
     property <bool> match-case;
@@ -9388,6 +9408,7 @@ component EditorPage inherits Rectangle {
         if (root.ready) { EditorKit.opened(root.key, root.text); }
     }
     changed finding => {
+        root.close-completion();
         if (!root.finding) {
             root.replacing = false;
             root.hit = { start: -1, end: -1, count: 0, label: "" };
@@ -9411,8 +9432,26 @@ component EditorPage inherits Rectangle {
         }
     }
     function apply(e: EditorEdit) {
+        root.close-completion();
         root.text = e.text;
         editor.set-selection-offsets(e.caret, e.caret);
+    }
+    function close-completion() {
+        root.completion = { items: [], caret: -1, cells: 0 };
+    }
+    function suggest() {
+        if (root.readonly) {
+            return;
+        }
+        root.completion = EditorKit.complete(root.schema, root.text, editor.cursor-position-byte-offset);
+    }
+    function pick(i: int) {
+        let e = EditorKit.accept(root.key, root.schema, root.text, root.completion.caret, i);
+        root.close-completion();
+        if (e.ok) {
+            root.text = e.text;
+            editor.set-selection-offsets(e.caret, e.caret);
+        }
     }
     function replace-one() {
         let e = EditorKit.replace(root.key, root.text, root.query, root.match-case, root.hit.start, root.replacement);
@@ -9554,9 +9593,72 @@ component EditorPage inherits Rectangle {
                             if (root.finding && root.query != "") {
                                 root.hit = EditorKit.find(root.text, root.query, root.match-case, max(0, root.hit.start), false);
                             }
+                            root.suggest();
                         }
                         cursor-position-changed(p) => {
+                            root.caret-x = p.x;
+                            root.caret-y = p.y;
+                            if (self.cursor-position-byte-offset != root.completion.caret) { root.close-completion(); }
                             if (!self.has-focus) { root.reveal(p.y); }
+                        }
+                    }
+                    // `EditorCompletionPopup`: under the caret, or over it when the rest of the
+                    // view is too short; rows untinted, since a phone highlights none.
+                    if root.completion.items.length > 0: pop := Rectangle {
+                        property <length> row-h: editor.font-size * 2 + 4px;
+                        property <length> line: editor.font-size * 1.4;
+                        property <length> view-top: -flick.viewport-y;
+                        property <length> view-bottom: -flick.viewport-y + flick.height - max(Dock.pad, root.keyboard);
+                        property <length> below: editor.y + root.caret-y + self.line + 2px;
+                        width: min(flick.width - 16px, max(160px, root.completion.cells * editor.font-size * 0.6 + 36px));
+                        height: min(6, root.completion.items.length) * self.row-h + 12px;
+                        x: max(-flick.viewport-x + 8px, min(editor.x + root.caret-x, -flick.viewport-x + flick.width - self.width - 8px));
+                        y: self.below + self.height <= self.view-bottom || editor.y + root.caret-y - self.height - 2px < self.view-top ? self.below : editor.y + root.caret-y - self.height - 2px;
+                        background: Theme.s.card;
+                        border-radius: 16px;
+                        border-width: 1px;
+                        border-color: Theme.s.outline-variant.with-alpha(0.5);
+                        drop-shadow-blur: 16px;
+                        drop-shadow-color: #00000030;
+                        drop-shadow-offset-y: 4px;
+                        clip: true;
+                        TouchArea { }
+                        Flickable {
+                            y: 6px;
+                            height: parent.height - 12px;
+                            viewport-height: root.completion.items.length * pop.row-h;
+                            for s[i] in root.completion.items: Rectangle {
+                                x: 8px;
+                                y: i * pop.row-h;
+                                width: parent.width - 16px;
+                                height: pop.row-h;
+                                border-radius: 8px;
+                                background: sug-ta.pressed ? Theme.s.inset : transparent;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    spacing: 16px;
+                                    Text {
+                                        text: s.label;
+                                        font-family: "monospace";
+                                        font-size: editor.font-size;
+                                        color: Theme.s.on-surface;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                        horizontal-stretch: 1;
+                                    }
+                                    if s.detail != "": Text {
+                                        text: s.detail;
+                                        font-family: "monospace";
+                                        font-size: editor.font-size * 0.85;
+                                        color: Theme.s.on-surface-variant;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: right;
+                                        overflow: elide;
+                                    }
+                                }
+                                sug-ta := TouchArea { clicked => { root.pick(i); } }
+                            }
                         }
                     }
                 }
@@ -10003,6 +10105,9 @@ export component AppWindow inherits Window {
     // Editor / runtime config
     in-out property <string> editor-title;
     in-out property <string> editor-text;
+    // `EditorSchema` of the editors, as `editor_complete::source_of` names them.
+    in property <string> editor-schema;
+    in property <string> tools-editor-schema;
     in-out property <bool> editor-readonly;
     in-out property <bool> editor-loading;
     in-out property <string> editor-error;
@@ -10952,6 +11057,8 @@ export component AppWindow inherits Window {
                     title: root.editor-title;
                     text <=> root.editor-text;
                     key: "profiles";
+                    schema: root.editor-schema;
+                    keyboard: root.keyboard;
                     finding <=> root.editor-finding;
                     menu-open <=> root.editor-menu-open;
                     readonly: root.editor-readonly;
@@ -11276,6 +11383,8 @@ export component AppWindow inherits Window {
                     error: root.tools-editor-error;
                     text <=> root.tools-editor-text;
                     key: "tools";
+                    schema: root.tools-editor-schema;
+                    keyboard: root.keyboard;
                     finding <=> root.editor-finding;
                     menu-open <=> root.editor-menu-open;
                     save(t) => { root.tools-editor-save(t); }

@@ -267,6 +267,7 @@ impl App {
         self.ui(move |ui| {
             ui.set_tools_editor_title(title);
             ui.set_tools_editor_text(text.into());
+            ui.set_tools_editor_schema("provider".into());
             ui.set_tools_editor_guard(true);
             ui.set_tools_editor_readonly(false);
             ui.set_tools_editor_title_editable(true);
@@ -282,6 +283,7 @@ impl App {
         self.ui(move |ui| {
             ui.set_tools_editor_title(title);
             ui.set_tools_editor_text(SharedString::new());
+            ui.set_tools_editor_schema(SharedString::new());
             ui.set_tools_editor_guard(false);
             ui.set_tools_editor_readonly(true);
             ui.set_tools_editor_title_editable(false);

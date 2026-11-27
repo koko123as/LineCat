@@ -105,6 +105,7 @@ impl App {
         self.ui(move |ui| {
             ui.set_tools_editor_title("代理".into());
             ui.set_tools_editor_text(SharedString::new());
+            ui.set_tools_editor_schema("share-links".into());
             ui.set_tools_editor_guard(false);
             ui.set_tools_editor_parent(LIST.into());
             ui.set_tools_editor_readonly(false);
