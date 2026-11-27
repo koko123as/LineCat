@@ -7,7 +7,7 @@ not defects.
 Sizes are pt on the iOS side and dp on the FlClash side. FlClash's current behaviour is documented in
 `.agents/architecture.md` (App Bar Actions, Popup Motion, Bottom Sheet Motion, Liquid Glass including the banner glass)
 and `.agents/surfaces.md` (Press); this file records the measured values and the differences those documents do not
-cover. All symbols live under `plugins/prism_ui/lib/` (the components formerly in `lib/ui` moved there and lost the
+cover. All symbols live under `prism_ui/lib/` in FlClash's `prism_ui` package (`chen08209/prism_ui`, not carried in this repository; the components formerly in `lib/ui` moved there and lost the
 `Common*` prefix).
 
 ## Alerts (UIAlertController)

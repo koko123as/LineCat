@@ -60,7 +60,7 @@ val cargoAbiByPlatform =
 val cargoAbis =
     (rootProject.findProperty("target-platform") as String?)
         ?.split(",")
-        ?.map { cargoAbiByPlatform[it.trim()] ?: throw GradleException("No Core for Flutter target platform $it") }
+        ?.map { cargoAbiByPlatform[it.trim()] ?: throw GradleException("No Core for target platform $it") }
         ?: cargoAbiByPlatform.values.toList()
 
 val cargoExecutablePath =
@@ -197,7 +197,7 @@ abstract class CargoBuild : DefaultTask() {
         }
     }
 
-    // Mirrors plugins/setup/setup_hooks/lib/src/path_remap.dart, which the desktop Core and Helper builds use.
+    // Build paths map to placeholders, so the libraries carry no checkout, home or toolchain path.
     private fun pathPrefixes(): List<Pair<String, String>> {
         val cargo = File(cargoExecutable.get())
         val rustcPath = cargo.resolveSibling(cargo.name.replace("cargo", "rustc")).path

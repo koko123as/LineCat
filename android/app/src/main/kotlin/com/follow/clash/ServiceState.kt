@@ -1,7 +1,6 @@
 package com.follow.clash
 
 import com.follow.clash.models.SharedState
-import io.flutter.embedding.engine.FlutterEngine
 import kotlinx.coroutines.Deferred
 
 object ServiceState {
@@ -11,12 +10,6 @@ object ServiceState {
 
     val isRunRequested: Boolean
         get() = machine.isRunRequested
-
-    fun attachFlutterEngine(engine: FlutterEngine) =
-        AndroidServiceStateHost.attachFlutterEngine(engine)
-
-    fun detachFlutterEngine(engine: FlutterEngine) =
-        AndroidServiceStateHost.detachFlutterEngine(engine)
 
     suspend fun handleToggleAction() = machine.handleToggleAction()
 

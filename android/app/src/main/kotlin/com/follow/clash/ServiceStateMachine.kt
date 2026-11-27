@@ -188,6 +188,7 @@ internal class ServiceStateMachine(private val host: ServiceStateHost) {
 
     private fun applySharedState() {
         host.updateNotificationParams(notificationParams(sharedState))
+        host.updateMitm(sharedState.mitm)
     }
 
     private suspend fun setupCore(): Boolean {
@@ -265,8 +266,8 @@ internal class ServiceStateMachine(private val host: ServiceStateHost) {
         }
     }
 
-    // Flutter's startListener and the native quickSetup both open the Core's listeners before any
-    // service exists to answer for them, and Flutter may be gone before it hears of the failure.
+    // The UI's apply and the native quickSetup both open the Core's listeners before any service
+    // exists to answer for them, and the UI may be gone before it hears of the failure.
     private suspend fun reconcileStopped() = transitionLock.withLock {
         when {
             isRunRequested -> publish()

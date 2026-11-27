@@ -1,10 +1,27 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
+import javax.inject.Inject
 
 plugins {
     id("com.android.application")
-    id("dev.flutter.flutter-gradle-plugin")
 }
+
+// The release this build is. The code stays at or above v0.9.5-rs.2's, which the Flutter build
+// numbered 2026112701 plus 2000 for its arm64-v8a split, so an APK installs over it.
+val appVersionName = "0.9.5-rs.2"
+val appVersionCode = 2026114701
+
+val abiByPlatform =
+    mapOf(
+        "android-arm" to "armeabi-v7a",
+        "android-arm64" to "arm64-v8a",
+        "android-x64" to "x86_64",
+    )
+
+val targetAbis =
+    (rootProject.findProperty("target-platform") as String?)
+        ?.split(",")
+        ?.map { abiByPlatform[it.trim()] ?: throw GradleException("Unknown target platform $it") }
 
 val localProperties = Properties().apply {
     val localPropertiesFile = rootProject.file("local.properties")
@@ -34,10 +51,11 @@ android {
 
     defaultConfig {
         applicationId = "season.us.ci.cat"
-        minSdk = flutter.minSdkVersion
+        minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        versionCode = appVersionCode
+        versionName = appVersionName
+        targetAbis?.let { ndk { abiFilters += it } }
     }
 
     signingConfigs {
@@ -93,16 +111,60 @@ kotlin {
     }
 }
 
-flutter {
-    source = "../.."
+abstract class GeoAssets : DefaultTask() {
+    @get:Inject
+    abstract val fileSystem: FileSystemOperations
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NAME_ONLY)
+    abstract val sources: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        fileSystem.sync {
+            from(sources)
+            into(outputDirectory.dir("data"))
+        }
+    }
+}
+
+// UiBridge.extractGeoAssets copies these out of the APK's assets/data into the Core's home.
+val geoAssets =
+    tasks.register<GeoAssets>("geoAssets") {
+        val data = rootProject.layout.projectDirectory.dir("../assets/data")
+        sources.from(data.file("GEOIP.metadb"), data.file("GEOSITE.dat"))
+        outputDirectory.set(layout.buildDirectory.dir("generated/geoAssets"))
+    }
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(geoAssets, GeoAssets::outputDirectory)
+    }
+}
+
+tasks.register("printVersion") {
+    val name = appVersionName
+    val code = appVersionCode
+    doLast {
+        println("versionName=$name")
+        println("versionCode=$code")
+    }
 }
 
 dependencies {
     implementation(project(":service"))
     implementation(project(":common"))
     implementation(project(":core"))
-    implementation(libs.core.splashscreen)
+    implementation(libs.androidx.core)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.gson)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.mlkit.barcode.scanning)
     implementation(libs.smali.dexlib2) {
         exclude(group = "com.google.guava", module = "guava")
     }

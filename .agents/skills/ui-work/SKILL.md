@@ -23,7 +23,7 @@ dialogs, and interaction behavior.
 - `.agents/rules.md` is binding here: the lint set (`child:` last, `const`, final locals), the superellipse corner API,
   and the widget-test facts under Testing Rules (`pumpAndSettle` never returns on `EditorView`, `dispose()` must not
   await, auto-dispose providers need a container-level hold, platform decisions are passed in as parameters).
-- A component that knows nothing of FlClash goes in the `prism_ui` package, the submodule `plugins/prism_ui`; what FlClash adds to it without reading app
+- A component that knows nothing of FlClash goes in FlClash's `prism_ui` package (`chen08209/prism_ui`, not carried in this repository); what FlClash adds to it without reading app
   state (its glyphs, fonts, page illustrations) goes in `lib/ui/`; one built for an app feature goes in
   `lib/widgets/`. The UI Layer section of `.agents/architecture.md` draws the boundary and says how a `prism_ui`
   component gets app state.

@@ -112,7 +112,14 @@ nothing has to be flipped back before a normal run. See the safe mode section of
 
 ## Code Generation
 
-Run code generation after modifying models, providers, or database schema:
+`ui/src/theme.rs`, the vivid palette of each default accent, is generated from `ui/src/hct.rs` through
+`colors::theme_source`; regenerate it after changing either, and `theme_rs_is_what_gen_theme_writes` fails until then:
+
+```bash
+cd ui && cargo run --example gen_theme > src/theme.rs
+```
+
+Run Flutter code generation after modifying models, providers, or database schema:
 
 ```bash
 dart run build_runner build --delete-conflicting-outputs

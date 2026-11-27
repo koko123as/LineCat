@@ -1,7 +1,7 @@
 # Project Context
 
 FlClash is a multi-platform proxy client built with Flutter around Concord, a Rust core in `concord/` that reads
-Clash configuration. It supports Android, Windows, macOS, and Linux, drawing its own components in `plugins/prism_ui`: a Material You color scheme with Apple's Human Interface interaction conventions.
+Clash configuration. It supports Android, Windows, macOS, and Linux, drawing its own components in its `prism_ui` package (`chen08209/prism_ui`, not carried in this repository): a Material You color scheme with Apple's Human Interface interaction conventions.
 
 ## Version Notes
 

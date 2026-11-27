@@ -1,0 +1,290 @@
+name: slint-android
+
+# Builds the Slint UI (ui/, libseasoncat_ui.so) for arm64-v8a and the arm64 release APK
+# around it with Gradle alone (android/, which also builds the Core through cargo).
+# An rs tag (v<version>-rs.N) builds the same APK and publishes it as a release under the
+# names the in-app updater (ui/src/update.rs) looks for, only when it is signed with the
+# repository release key.
+on:
+  push:
+    branches:
+      - slint-ui
+    tags:
+      - 'v*-rs.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NDK_VERSION: r28c
+  # The UI library is built with its own NDK. skia-bindings 0.157.0 (Slint's Android renderer)
+  # ships prebuilt Skia compiled with NDK r30's clang (r574158c), whose libc++ headers call
+  # std::__ndk1::__hash_memory. Only r30's libc++_static.a defines it; linked against r28c's,
+  # the symbol stayed undefined and libseasoncat_ui.so failed at dlopen. Keep this in step
+  # with the NDK skia-binaries was built with when skia-bindings is updated.
+  UI_NDK_VERSION: r30
+  ANDROID_MIN_SDK: '24'
+  CARGO_NDK_VERSION: 4.1.2
+  CA_BUNDLE: cacert-2026-09-25.pem
+  CA_BUNDLE_SHA256: a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apk:
+    name: Android arm64 APK (Slint UI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Fetch CA certificates
+        shell: bash
+        run: |
+          bundle=concord/assets/ca-certificates.crt
+          curl -fsSL --retry 3 -o "$bundle" "https://curl.se/ca/$CA_BUNDLE"
+          echo "$CA_BUNDLE_SHA256  $bundle" | sha256sum -c -
+
+      # JDK 17: the Slint Android backend compiles its Java helper with javac and d8.
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          link-to-sdk: true
+
+      - name: Setup NDK for the UI library
+        uses: nttld/setup-ndk@v1
+        id: ui-ndk
+        with:
+          ndk-version: ${{ env.UI_NDK_VERSION }}
+          link-to-sdk: false
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: slint-android
+          workspaces: |
+            ui
+            concord
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@${{ env.CARGO_NDK_VERSION }}
+
+      - name: Check and test the UI crate
+        working-directory: ui
+        run: |
+          rustup show active-toolchain
+          sudo apt-get update -q && sudo apt-get install -y -q libfontconfig-dev
+          cargo fmt --check || echo "::warning::ui is not rustfmt-formatted"
+          cargo test --locked
+
+      - name: Build libseasoncat_ui.so (arm64-v8a)
+        working-directory: ui
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ui-ndk.outputs.ndk-path }}
+        run: |
+          rustup target add aarch64-linux-android
+          # Slint's backend compiles a Java helper against android.jar and dexes it with d8.
+          # cargo-ndk exports ANDROID_PLATFORM=<minSdk>, which android-build would look up
+          # as a platform directory, so the jar is named outright.
+          sdkmanager="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin | sort -V | tail -1)/sdkmanager"
+          yes | "$sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
+          export ANDROID_JAR="$ANDROID_HOME/platforms/android-36/android.jar"
+          export ANDROID_BUILD_TOOLS_VERSION=36.0.0
+          # rquickjs generates its bindings with bindgen on Android, which loads the NDK's libclang.
+          llvm="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+          export LIBCLANG_PATH="$(dirname "$(ls "$llvm"/lib/libclang.so* "$llvm"/lib64/libclang.so* 2>/dev/null | head -1)")"
+          echo "LIBCLANG_PATH=$LIBCLANG_PATH"
+          # The NDK headers refuse an unversioned target. cargo-ndk sets the underscore form of
+          # this variable without one; bindgen reads the hyphen form first.
+          bindgen_args="--target=aarch64-linux-android$ANDROID_MIN_SDK --sysroot=$llvm/sysroot -I$llvm/sysroot/usr/include/aarch64-linux-android"
+          ls -l "$ANDROID_JAR" "$ANDROID_HOME/build-tools/36.0.0/lib/d8.jar"
+          grep -H 'Pkg.Revision' "$ANDROID_NDK_HOME/source.properties"
+          env "BINDGEN_EXTRA_CLANG_ARGS_aarch64-linux-android=$bindgen_args" \
+            cargo ndk -t arm64-v8a --platform "$ANDROID_MIN_SDK" -o ../android/app/src/main/jniLibs build --release --locked
+          ls -l ../android/app/src/main/jniLibs/arm64-v8a/
+          echo "libseasoncat_ui.so: $(stat -c %s ../android/app/src/main/jniLibs/arm64-v8a/libseasoncat_ui.so) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      # Every strong undefined symbol must come from a library in DT_NEEDED, so a missing
+      # one fails here rather than at dlopen on a phone.
+      - name: Check libseasoncat_ui.so for unresolved symbols
+        env:
+          SYSROOT_LIB: ${{ steps.ui-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android
+        run: |
+          python3 -m venv "$RUNNER_TEMP/elfcheck"
+          "$RUNNER_TEMP/elfcheck/bin/pip" install --quiet pyelftools==0.33
+          echo "ELFCHECK_PY=$RUNNER_TEMP/elfcheck/bin/python" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/elfcheck/bin/python" ui/tools/check_so_symbols.py --sysroot-lib "$SYSROOT_LIB" --api "$ANDROID_MIN_SDK" \
+            android/app/src/main/jniLibs/arm64-v8a/libseasoncat_ui.so
+
+      - name: Gradle version
+        id: gradle-version
+        run: echo "version=$(sed -n 's/^distributionUrl=.*gradle-\(.*\)-\(all\|bin\)\.zip$/\1/p' android/gradle/wrapper/gradle-wrapper.properties)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: ${{ steps.gradle-version.outputs.version }}
+          cache-read-only: true
+
+      - name: Signing key
+        id: signing
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE" ] && [ -n "$KEY_ALIAS" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "$KEYSTORE" | base64 --decode > android/app/keystore.jks
+            alias="$KEY_ALIAS"; spass="$STORE_PASSWORD"; kpass="$KEY_PASSWORD"
+            echo "Signing with the repository release key"
+            echo "release-key=true" >> "$GITHUB_OUTPUT"
+          else
+            spass="$(openssl rand -hex 16)"; kpass="$spass"; alias=seasoncat-ci
+            keytool -genkeypair -v -keystore android/app/keystore.jks -alias "$alias" \
+              -storepass "$spass" -keypass "$kpass" -keyalg RSA -keysize 2048 -validity 3650 \
+              -dname "CN=SeasonCat CI throwaway"
+            echo "::warning::No signing secrets; this APK will not install over one from another run"
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+              echo "::error::A release tag needs KEYSTORE, KEY_ALIAS, STORE_PASSWORD and KEY_PASSWORD; not publishing an APK signed with a throwaway key"
+              exit 1
+            fi
+          fi
+          {
+            echo "keyAlias=$alias"
+            echo "storePassword=$spass"
+            echo "keyPassword=$kpass"
+          } >> android/local.properties
+
+      - name: Build APK
+        working-directory: android
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          gradle --no-daemon -q printVersion -Ptarget-platform=android-arm64 | tee ../gradle-version.txt
+          gradle --no-daemon :app:assembleRelease -Ptarget-platform=android-arm64
+
+      - name: Check and hash the APK
+        id: apk
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          unzip -l "$apk" | grep -E 'lib/arm64-v8a/lib(seasoncat_ui|core_jni|concord)\.so'
+          unzip -l "$apk" | grep -q 'lib/arm64-v8a/libseasoncat_ui.so'
+          unzip -l "$apk" | grep ' assets/data/GEOIP\.metadb$'
+          unzip -l "$apk" | grep ' assets/data/GEOSITE\.dat$'
+          if unzip -l "$apk" | grep -E 'libflutter\.so|flutter_assets/'; then
+            echo "::error::the APK still carries Flutter"; exit 1
+          fi
+          # Check the copy packaged in the APK too, against the libraries packaged beside it.
+          rm -rf apk-libs && unzip -q -o "$apk" 'lib/arm64-v8a/*' -d apk-libs
+          "$ELFCHECK_PY" ui/tools/check_so_symbols.py \
+            --sysroot-lib "${{ steps.ui-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android" \
+            --api "$ANDROID_MIN_SDK" --extra-dir apk-libs/lib/arm64-v8a \
+            apk-libs/lib/arm64-v8a/libseasoncat_ui.so
+          mkdir -p dist
+          cp "$apk" dist/SeasonCat-slint-arm64-v8a.apk
+          (cd dist && sha256sum SeasonCat-slint-arm64-v8a.apk > SeasonCat-slint-arm64-v8a.apk.sha256)
+          cat dist/*.sha256
+          {
+            echo "APK: $(stat -c %s "$apk") bytes"
+            echo '```'
+            unzip -l "$apk" | grep 'lib/arm64-v8a/'
+            cat dist/*.sha256
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Every run reports the APK's version and checks its signer is the key the signing step
+      # set up; a release tag also needs the repository key and a versionName equal to the
+      # tag's version, so the updater sees it as that version and it installs over the
+      # previous release.
+      - name: Check the APK version and signer
+        env:
+          RELEASE_KEY: ${{ steps.signing.outputs.release-key }}
+        run: |
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          apk=dist/SeasonCat-slint-arm64-v8a.apk
+          badging="$("$tools/aapt2" dump badging "$apk")"
+          package="$(grep -m1 '^package:' <<< "$badging")"
+          echo "$package"
+          name="$(sed -n 's/^versionName=//p' gradle-version.txt)"
+          code="$(sed -n 's/^versionCode=//p' gradle-version.txt)"
+          [ -n "$name" ] && [ -n "$code" ] || { echo "::error::Gradle reported no version"; exit 1; }
+          grep -q "versionCode='$code' versionName='$name'" <<< "$package" \
+            || { echo "::error::the APK does not carry Gradle's versionName $name and versionCode $code"; exit 1; }
+          alias="$(sed -n 's/^keyAlias=//p' android/local.properties)"
+          spass="$(sed -n 's/^storePassword=//p' android/local.properties)"
+          key="$(keytool -exportcert -keystore android/app/keystore.jks -alias "$alias" -storepass "$spass" | sha256sum | cut -d' ' -f1)"
+          signer="$("$tools/apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          echo "signing key: $key"
+          echo "APK signer:  $signer"
+          echo "versionName: $name, versionCode: $code, signer SHA-256: $signer" >> "$GITHUB_STEP_SUMMARY"
+          [ -n "$signer" ] && [ "$key" = "$signer" ] || { echo "::error::APK signer is not the signing step's key"; exit 1; }
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            [ "$RELEASE_KEY" = true ] || { echo "::error::not signed with the repository release key"; exit 1; }
+            tag="${GITHUB_REF#refs/tags/}"
+            [ "$name" = "${tag#v}" ] || { echo "::error::versionName $name does not match tag $tag"; exit 1; }
+          fi
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: seasoncat-slint-arm64-v8a
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: apk
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-rs.')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download the APK
+        uses: actions/download-artifact@v4
+        with:
+          name: seasoncat-slint-arm64-v8a
+          path: dist
+
+      # Names from update.rs: asset_name / checksums_name, the tag without its v and with
+      # '+' as '.'; the sums file holds "<sha256>  <name>" lines.
+      - name: Name the release files
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"; version="${version//+/.}"
+          notes="release-notes/$tag.md"
+          [ -s "$notes" ] || { echo "::error::$notes is missing"; exit 1; }
+          mkdir -p release
+          cp dist/SeasonCat-slint-arm64-v8a.apk "release/FlClash-$version-android-arm64.apk"
+          (cd dist && sha256sum -c SeasonCat-slint-arm64-v8a.apk.sha256)
+          (cd release && sha256sum "FlClash-$version-android-arm64.apk" > "FlClash-$version-SHA256SUMS")
+          cat "release/FlClash-$version-SHA256SUMS"
+          ls -l release
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "NOTES=$notes" >> "$GITHUB_ENV"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "SeasonCat $TAG" --notes-file "$NOTES" --latest

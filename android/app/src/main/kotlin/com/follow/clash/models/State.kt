@@ -10,7 +10,8 @@ data class SharedState(
     val stopText: String = "Stop",
     val onlyStatisticsProxy: Boolean = false,
     val showStopAction: Boolean = true,
+    val mitm: Boolean = false,
     val vpnOptions: VpnOptions? = null,
-    // The Core's own setup params, handed on as Flutter wrote them.
+    // The Core's own setup params, handed on as the UI wrote them.
     val setupParams: JsonObject? = null,
 )
