@@ -421,7 +421,7 @@ impl App {
                 }
                 "about" => settings_view::about(&settings),
                 "backup" => app.backup_sections(&settings),
-                "advanced" => settings_view::advanced(&settings),
+                "advanced" => settings_view::advanced(&settings, app.mitm_invalid_hosts(&settings)),
                 "network" => settings_view::network(&settings),
                 "on-demand" => Vec::new(),
                 "user-agents" => settings_view::user_agents(&settings),

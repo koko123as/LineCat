@@ -365,7 +365,7 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             }
             seasoncat_ui::overrides::DNS.sections(&s.dns_override)
         }
-        "advanced" => settings_view::advanced(&s),
+        "advanced" => settings_view::advanced(&s, 0),
         "network" => settings_view::network(&s),
         "user-agents" => {
             s.general.global_ua = s.general.user_agents.first().cloned();
@@ -447,7 +447,7 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             )
             .unwrap_or_default()
         }
-        "mitm" => {
+        "mitm-options" => {
             s.mitm.hostname = sample_hosts();
             s.mitm.enable = true;
             s.mitm_modules = sample_modules();
@@ -489,12 +489,7 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
                 }
                 _ => None,
             };
-            seasoncat_ui::mitm_sections(&s, &cert, trust.as_ref(), 1)
-        }
-        "mitm-capture" => {
-            s.mitm.enable = true;
-            s.mitm.capture = true;
-            seasoncat_ui::mitm_capture_sections(&s.mitm, &[])
+            seasoncat_ui::mitm_sections(&s, &cert, trust.as_ref())
         }
         "mitm-hosts" => {
             if overlay != "empty" {
@@ -2717,26 +2712,53 @@ fn main() {
         ("set-rulesets-wide", 3, "", "rule-sets", 1, ""),
         ("set-rulesets-tablet", 3, "", "rule-sets", 1, ""),
         ("set-rulesets-empty", 3, "", "rule-sets", 1, "empty"),
-        ("set-mitm", 3, "", "mitm", 1, ""),
-        ("set-mitm-small", 3, "", "mitm", 1, ""),
-        ("set-mitm-wide", 3, "", "mitm", 1, ""),
-        ("set-mitm-tablet", 3, "", "mitm", 1, ""),
-        ("set-mitm-nocert", 3, "", "mitm", 1, "nocert"),
-        ("set-mitm-loading", 3, "", "mitm", 1, "loading"),
-        ("set-mitm-trust", 3, "", "mitm", 1, "trust-user"),
-        ("set-mitm-trust-small", 3, "", "mitm", 1, "trust-user"),
-        ("set-mitm-trust-wide", 3, "", "mitm", 1, "trust-user"),
-        ("set-mitm-trust-tablet", 3, "", "mitm", 1, "trust-none"),
-        ("set-mitm-trust-remove", 3, "", "mitm", 1, "trust-remove"),
+        ("set-mitm", 3, "", "mitm-options", 1, ""),
+        ("set-mitm-small", 3, "", "mitm-options", 1, ""),
+        ("set-mitm-wide", 3, "", "mitm-options", 1, ""),
+        ("set-mitm-tablet", 3, "", "mitm-options", 1, ""),
+        ("set-mitm-nocert", 3, "", "mitm-options", 1, "nocert"),
+        ("set-mitm-loading", 3, "", "mitm-options", 1, "loading"),
+        ("set-mitm-trust", 3, "", "mitm-options", 1, "trust-user"),
+        (
+            "set-mitm-trust-small",
+            3,
+            "",
+            "mitm-options",
+            1,
+            "trust-user",
+        ),
+        (
+            "set-mitm-trust-wide",
+            3,
+            "",
+            "mitm-options",
+            1,
+            "trust-user",
+        ),
+        (
+            "set-mitm-trust-tablet",
+            3,
+            "",
+            "mitm-options",
+            1,
+            "trust-none",
+        ),
+        (
+            "set-mitm-trust-remove",
+            3,
+            "",
+            "mitm-options",
+            1,
+            "trust-remove",
+        ),
         (
             "set-mitm-trust-remove-small",
             3,
             "",
-            "mitm",
+            "mitm-options",
             1,
             "trust-remove",
         ),
-        ("set-mitm-capture", 3, "", "mitm-capture", 1, ""),
         ("set-mitm-hosts", 3, "", "mitm-hosts", 1, ""),
         ("set-mitm-hosts-small", 3, "", "mitm-hosts", 1, ""),
         ("set-mitm-hosts-wide", 3, "", "mitm-hosts", 1, ""),

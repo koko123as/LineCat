@@ -636,7 +636,7 @@ global Glyphs {
             : k == "block" ? Icons.block : k == "eye-off" ? Icons.eye-off : k == "toggle" ? Icons.toggle : k == "toggle-on" ? Icons.toggle-on
             : k == "sparkle" ? Icons.sparkle : k == "paste" ? Icons.paste
             : k == "undo" ? Icons.undo : k == "redo" ? Icons.redo
-            : k == "text-size" ? Icons.text-size : k == "wrap" ? Icons.wrap : "";
+            : k == "text-size" ? Icons.text-size : k == "wrap" ? Icons.wrap : k == "target" ? Icons.target : "";
     }
 }
 
@@ -11344,7 +11344,7 @@ export component AppWindow inherits Window {
                     }
                     clicked(id) => { root.set-clicked(root.tools-page, id); }
                     toggled(id, on) => { root.set-toggled(root.tools-page, id, on); }
-                    if root.mitm-loading != "" && (root.tools-page == "mitm" || root.tools-page == "mitm-modules" || root.tools-page == "mitm-module" || root.tools-page == "mitm-lines"): HorizontalLayout {
+                    if root.mitm-loading != "" && (root.tools-page == "advanced" || root.tools-page == "mitm-options" || root.tools-page == "mitm-modules" || root.tools-page == "mitm-module" || root.tools-page == "mitm-lines"): HorizontalLayout {
                         padding-left: 16px;
                         padding-right: 16px;
                         padding-top: 8px;

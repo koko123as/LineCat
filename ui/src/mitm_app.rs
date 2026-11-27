@@ -5,7 +5,7 @@ use crate::ca_trust::{self, TrustCheck};
 use crate::mitm::{self, Certificate, HostRow, MitmModule, ModuleRead};
 use crate::mitm_network::{self, Change, Network, UserNetwork};
 use crate::settings_app::Effect;
-use crate::store::{MitmSettings, Settings};
+use crate::store::Settings;
 use crate::{ActionItem, Anchor, App, PageMeta, SetRow, SetSection, CALL};
 use serde_json::{json, Value};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
@@ -16,15 +16,13 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 pub const PAGES: &[&str] = &[
-    "mitm",
-    "mitm-capture",
+    "mitm-options",
     "mitm-hosts",
     "mitm-modules",
     "mitm-module",
     "mitm-lines",
 ];
 
-const HOSTNAME_DESC: &str = "以 - 开头表示排除，第一条匹配的生效。";
 const EXPORT_TIP: &str = "导出后在要解密的设备上信任此证书。";
 const TRUST_TIP: &str =
     "无法检查本机是否信任此证书；本机信任后，打开“本机未信任时也解密”才会解密 HTTPS。";
@@ -145,12 +143,11 @@ pub fn certificate_rows(
     }
 }
 
-/// `MitmView`.
-pub fn main_sections(
+/// `MitmOptionsView`: the certificate, then the switches.
+pub fn options_sections(
     s: &Settings,
     cert: &Option<Result<Option<Certificate>, String>>,
     trust: Trust,
-    invalid_hosts: usize,
 ) -> Vec<SetSection> {
     let m = &s.mitm;
     let cert_footer = match (cert, trust) {
@@ -159,46 +156,9 @@ pub fn main_sections(
         _ => EXPORT_TIP.to_string(),
     };
     vec![
+        section("", &cert_footer, certificate_rows(cert, trust)),
         section(
             "",
-            "",
-            vec![
-                toggle("enable", "HTTPS 解密", m.enable),
-                row(
-                    "capture",
-                    "open",
-                    "抓包",
-                    if m.enable && m.capture {
-                        "已开启"
-                    } else {
-                        "已关闭"
-                    },
-                ),
-            ],
-        ),
-        section("证书", &cert_footer, certificate_rows(cert, trust)),
-        section(
-            "模块",
-            "",
-            vec![row(
-                "modules",
-                "open",
-                "模块",
-                &modules_count(s.mitm_modules.len()),
-            )],
-        ),
-        section(
-            "",
-            HOSTNAME_DESC,
-            vec![row(
-                "hosts",
-                "open",
-                "主机名",
-                &mitm::count_label(m.hostname.len(), invalid_hosts),
-            )],
-        ),
-        section(
-            "选项",
             "",
             vec![
                 toggle(
@@ -214,39 +174,6 @@ pub fn main_sections(
                     m.decrypt_untrusted,
                 ),
             ],
-        ),
-    ]
-}
-
-/// `_MitmCaptureView` on Android.
-pub fn capture_sections(m: &MitmSettings, modules: &[MitmModule]) -> Vec<SetSection> {
-    let no_host = m.enable
-        && m.capture
-        && crate::http_capture::has_no_host(m)
-        && !modules.iter().any(|x| x.enabled);
-    let footer = if no_host {
-        "未列出任何主机，不会记录内容。请在 MITM 页的“主机名”中添加，或在连接详情中加入。"
-    } else {
-        "记录“主机名”中列出的主机的请求，在连接详情中查看。记录只保存在内存中。"
-    };
-    vec![
-        section(
-            "",
-            footer,
-            vec![SetRow {
-                enabled: m.enable,
-                ..toggle("capture", "抓包", m.capture)
-            }],
-        ),
-        section(
-            "",
-            "达到此条数或占满 16 MB 内存后，先丢弃最早的记录。每段内容只保留前 2 MB。",
-            vec![row(
-                "limit",
-                "value",
-                "最多记录条数",
-                &crate::http_capture::limit(m).to_string(),
-            )],
         ),
     ]
 }
@@ -547,8 +474,7 @@ pub fn page_meta(s: &Settings, page: &str) -> Option<PageMeta> {
     };
     let st = state().lock().unwrap();
     Some(match page {
-        "mitm" => meta("MITM", "advanced"),
-        "mitm-capture" => meta("抓包", "mitm"),
+        "mitm-options" => meta("选项", "advanced"),
         "mitm-hosts" => PageMeta {
             action: "add-circle".into(),
             action2: "more-circle".into(),
@@ -561,7 +487,7 @@ pub fn page_meta(s: &Settings, page: &str) -> Option<PageMeta> {
             search: true,
             action_empty: true,
             long_press: true,
-            ..meta("主机名", "mitm")
+            ..meta("主机名", "advanced")
         },
         "mitm-modules" => PageMeta {
             action: "add-circle".into(),
@@ -573,7 +499,7 @@ pub fn page_meta(s: &Settings, page: &str) -> Option<PageMeta> {
             empty: "暂无模块".into(),
             action_empty: true,
             long_press: true,
-            ..meta("模块", "mitm")
+            ..meta("模块", "advanced")
         },
         "mitm-module" => {
             let name = s
@@ -631,6 +557,15 @@ impl App {
             .find(|m| m.id == id)
     }
 
+    pub(crate) fn mitm_invalid_hosts(&self, s: &Settings) -> usize {
+        let st = state().lock().unwrap();
+        s.mitm
+            .hostname
+            .iter()
+            .filter(|l| st.host_issues.contains_key(*l))
+            .count()
+    }
+
     /// The sections of a MITM page, None for any other page.
     pub(crate) fn mitm_sections(&self, s: &Settings, page: &str) -> Option<Vec<SetSection>> {
         if !PAGES.contains(&page) {
@@ -646,16 +581,7 @@ impl App {
         let st = state().lock().unwrap();
         let read = st.read.as_ref().and_then(|r| r.as_ref().ok());
         Some(match page {
-            "mitm" => {
-                let invalid = s
-                    .mitm
-                    .hostname
-                    .iter()
-                    .filter(|l| st.host_issues.contains_key(*l))
-                    .count();
-                main_sections(s, &st.cert, trust.as_ref(), invalid)
-            }
-            "mitm-capture" => capture_sections(&s.mitm, &s.mitm_modules),
+            "mitm-options" => options_sections(s, &st.cert, trust.as_ref()),
             "mitm-hosts" => hosts_sections(
                 &s.mitm.hostname,
                 &st.host_issues,
@@ -760,9 +686,10 @@ impl App {
                 ui.set_set_searching(false);
             });
         }
-        self.trust_shown(page == "mitm");
+        self.trust_shown(page == "mitm-options");
         match page {
-            "mitm" => {
+            "advanced" => self.spawn(|app| app.check_hosts()),
+            "mitm-options" => {
                 let loaded = matches!(state().lock().unwrap().cert, Some(Ok(_)));
                 self.spawn(move |app| {
                     if !loaded {
@@ -770,7 +697,6 @@ impl App {
                     }
                     app.refresh_trust();
                 });
-                self.spawn(|app| app.check_hosts());
             }
             "mitm-hosts" => {
                 self.spawn(|app| app.check_hosts());
@@ -860,33 +786,29 @@ impl App {
     }
 
     pub(crate) fn mitm_clicked(self: &Arc<Self>, page: &str, id: &str) -> bool {
-        if page == "advanced" && id == "mitm" {
-            self.mitm_go("mitm");
+        if page == "advanced" && matches!(id, "mitm-modules" | "mitm-hosts" | "mitm-options") {
+            self.mitm_go(id);
             return true;
         }
         if !PAGES.contains(&page) {
             return false;
         }
         match (page, id) {
-            ("mitm", "capture") => self.mitm_go("mitm-capture"),
-            ("mitm", "modules") => self.mitm_go("mitm-modules"),
-            ("mitm", "hosts") => self.mitm_go("mitm-hosts"),
-            ("mitm", "cert-generate") => self.spawn(|app| {
+            ("mitm-options", "cert-generate") => self.spawn(|app| {
                 app.generate_certificate("生成证书");
             }),
-            ("mitm", "cert") => self.certificate_tapped(),
-            ("mitm", "cert-export") => {
+            ("mitm-options", "cert") => self.certificate_tapped(),
+            ("mitm-options", "cert-export") => {
                 if let Some(c) = self.current_certificate() {
                     self.export_certificate(c);
                 }
             }
-            ("mitm", "cert-regen") => self.confirm(
+            ("mitm-options", "cert-regen") => self.confirm(
                 "重新生成证书",
                 "新证书会替换当前证书，SeasonCat 会尽量把当前证书从本机信任的根证书中移除。信任当前证书的其他设备都需要安装新证书。".into(),
                 "mitm-regen",
                 String::new(),
             ),
-            ("mitm-capture", "limit") => self.open_limit_choice(),
             ("mitm-hosts", id) => self.hosts_clicked(id),
             ("mitm-modules", id) => self.modules_clicked(id),
             ("mitm-module", id) => self.module_clicked(id),
@@ -898,17 +820,17 @@ impl App {
 
     pub(crate) fn mitm_toggled(self: &Arc<Self>, page: &str, id: &str, on: bool) -> bool {
         match (page, id) {
-            ("mitm", "enable") if on => self.confirm(
+            ("advanced", "mitm-enable") if on => self.confirm(
                 "HTTPS 解密",
                 ENABLE_TIP.into(),
                 "mitm-enable",
                 String::new(),
             ),
-            ("mitm", "enable") => {
+            ("advanced", "mitm-enable") => {
                 self.update_settings(Effect::Reapply, |s| s.mitm.enable = false);
                 self.publish_mitm_consent();
             }
-            ("mitm", key) => self.update_settings(Effect::Reapply, |s| {
+            ("mitm-options", key) => self.update_settings(Effect::Reapply, |s| {
                 let m = &mut s.mitm;
                 match key {
                     "skip-verify" => m.skip_server_cert_verify = on,
@@ -918,11 +840,6 @@ impl App {
                     _ => {}
                 }
             }),
-            ("mitm-capture", "capture") => {
-                self.update_settings(Effect::None, |s| s.mitm.capture = on);
-                let s = self.mitm_settings();
-                self.patch(json!({"options": crate::profile::options(&s, on && s.mitm.enable)}));
-            }
             ("mitm-modules", id) => {
                 if let Some(mid) = id.strip_prefix("m:") {
                     self.set_module_enabled(mid, on);
@@ -1004,27 +921,6 @@ impl App {
             }
             _ => self.mitm_publish(),
         }
-    }
-
-    fn open_limit_choice(self: &Arc<Self>) {
-        let m = self.mitm_settings().mitm;
-        let current = crate::http_capture::limit(&m);
-        let items: Vec<ActionItem> = crate::http_capture::options(&m)
-            .into_iter()
-            .map(|o| ActionItem {
-                id: format!("mitm-limit:{o}").into(),
-                label: o.to_string().into(),
-                check: true,
-                checked: o == current,
-                enabled: true,
-                ..Default::default()
-            })
-            .collect();
-        self.ui(move |ui| {
-            ui.set_choice_title("最多记录条数".into());
-            ui.set_choice_items(ModelRc::new(VecModel::from(items)));
-            ui.set_choice_open(true);
-        });
     }
 
     fn open_choice_items(self: &Arc<Self>, title: &str, items: Vec<ActionItem>) {
@@ -2077,11 +1973,6 @@ impl App {
 
     pub(crate) fn mitm_picked(self: &Arc<Self>, key: &str, value: &str) -> bool {
         match key {
-            "mitm-limit" => {
-                if let Ok(n) = value.parse::<i64>() {
-                    self.update_settings(Effect::Reapply, |s| s.mitm.capture_entries = Some(n));
-                }
-            }
             "mitm-hosts" => match value {
                 "quick" => {
                     let text = self.mitm_settings().mitm.hostname.join("\n");
@@ -2194,31 +2085,30 @@ mod tests {
     }
 
     #[test]
-    fn main_page_follows_the_certificate() {
+    fn options_follow_the_certificate() {
         let s = Settings::default();
-        let none = main_sections(&s, &Some(Ok(None)), None, 0);
-        assert_eq!(none.len(), 5);
-        assert_eq!(titles(&none[1]), vec!["生成证书"]);
+        let none = options_sections(&s, &Some(Ok(None)), None);
+        assert_eq!(none.len(), 2);
+        assert_eq!(titles(&none[0]), vec!["生成证书"]);
         let cert = Certificate {
             subject: "SeasonCat CA".into(),
             ..Default::default()
         };
         let cert = Some(Ok(Some(cert)));
-        let some = main_sections(&s, &cert, None, 0);
+        let some = options_sections(&s, &cert, None);
         assert_eq!(
-            titles(&some[1]),
+            titles(&some[0]),
             vec!["SeasonCat CA", "导出证书", "重新生成证书"]
         );
-        assert!(some[1].footer.contains("本机未信任时也解密"));
-        assert_eq!(some[3].rows.row_data(0).unwrap().subtitle, "无");
-        assert!(some[4].rows.row_data(1).unwrap().on);
+        assert!(some[0].footer.contains("本机未信任时也解密"));
+        assert!(some[1].rows.row_data(1).unwrap().on);
         let user = Some(Ok(TrustCheck {
             user: true,
             ..Default::default()
         }));
-        let trusted = main_sections(&s, &cert, Some(&user), 0);
-        assert_eq!(trusted[1].rows.row_data(0).unwrap().subtitle, "已信任");
-        assert_eq!(trusted[1].footer, ca_trust::ANDROID_READY_TIP);
+        let trusted = options_sections(&s, &cert, Some(&user));
+        assert_eq!(trusted[0].rows.row_data(0).unwrap().subtitle, "已信任");
+        assert_eq!(trusted[0].footer, ca_trust::ANDROID_READY_TIP);
     }
 
     #[test]
@@ -2339,23 +2229,11 @@ mod tests {
     }
 
     #[test]
-    fn capture_page_warns_without_hosts() {
-        let m = MitmSettings {
-            enable: true,
-            capture: true,
-            ..Default::default()
-        };
-        let s = capture_sections(&m, &[]);
-        assert!(s[0].footer.contains("未列出任何主机"));
-        assert_eq!(s[1].rows.row_data(0).unwrap().subtitle, "500");
-        let off = capture_sections(&MitmSettings::default(), &[]);
-        assert!(!off[0].rows.row_data(0).unwrap().enabled);
-    }
-
-    #[test]
     fn page_meta_covers_the_pages() {
         let s = Settings::default();
-        assert_eq!(page_meta(&s, "mitm").unwrap().parent, "advanced");
+        assert_eq!(page_meta(&s, "mitm-options").unwrap().parent, "advanced");
+        assert_eq!(page_meta(&s, "mitm-hosts").unwrap().parent, "advanced");
+        assert!(page_meta(&s, "mitm").is_none());
         assert_eq!(page_meta(&s, "mitm-modules").unwrap().action2, "");
         assert_eq!(page_meta(&s, "mitm-hosts").unwrap().empty, "暂无主机名");
         assert!(page_meta(&s, "rule-sets").is_none());

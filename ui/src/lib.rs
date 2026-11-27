@@ -101,9 +101,9 @@ pub mod mitm;
 mod mitm_app;
 pub mod mitm_network;
 pub use mitm_app::{
-    capture_sections as mitm_capture_sections, hosts_sections as mitm_hosts_sections,
-    lines_sections as mitm_lines_sections, main_sections as mitm_sections,
+    hosts_sections as mitm_hosts_sections, lines_sections as mitm_lines_sections,
     module_sections as mitm_module_sections, modules_sections as mitm_modules_sections,
+    options_sections as mitm_sections,
 };
 mod custom_proxies_app;
 pub mod share_links;

@@ -235,7 +235,10 @@ pub fn map(entries: &std::collections::BTreeMap<String, String>, desc: &str) -> 
 }
 
 /// `AdvancedConfigView`: the pages built so far.
-pub fn advanced(_settings: &Settings) -> Vec<SetSection> {
+/// `AdvancedConfigView` on Android; `invalid_hosts` of the hostnames the Core refuses.
+pub fn advanced(settings: &Settings, invalid_hosts: usize) -> Vec<SetSection> {
+    let m = &settings.mitm;
+    let modules = settings.mitm_modules.len();
     vec![
         section(
             "",
@@ -245,17 +248,41 @@ pub fn advanced(_settings: &Settings) -> Vec<SetSection> {
                 open("dns", "dns", "DNS"),
                 open("rules", "rules", "附加规则"),
                 open("scripts", "code", "脚本"),
-                open("mitm", "lock-open", "MITM"),
             ],
         ),
         section(
             "自定义",
             "",
             vec![
+                open("custom-proxies", "proxies", "代理"),
                 open("rule-sets", "resources", "规则集"),
                 open("filters", "filter", "筛选"),
                 open("icon-sets", "photos", "图标集"),
-                open("custom-proxies", "proxies", "代理"),
+            ],
+        ),
+        section(
+            "MITM",
+            "未 root 时只解密信任用户证书的应用。",
+            vec![
+                SetRow {
+                    glyph: "lock-open".into(),
+                    ..toggle("mitm-enable", "HTTPS 解密", m.enable)
+                },
+                row(
+                    "mitm-modules",
+                    "open",
+                    "puzzle",
+                    "模块",
+                    &crate::mitm::count_label(modules, 0),
+                ),
+                row(
+                    "mitm-hosts",
+                    "open",
+                    "target",
+                    "主机名",
+                    &crate::mitm::count_label(m.hostname.len(), invalid_hosts),
+                ),
+                open("mitm-options", "sliders", "选项"),
             ],
         ),
     ]
