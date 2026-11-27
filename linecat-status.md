@@ -131,8 +131,10 @@ method it calls is one the Flutter UI's `rpc_core_api.dart` calls too. 修前 is
   `appVersionName` / `appVersionCode`; the shell's hello sends versionName to `update.rs`.
 - `slint-android.yaml` also runs on `v*-rs.*` tags. Every run checks the APK's signer against the signing step's key;
   a tag also needs all four signing secrets and Gradle's versionName equal to the tag, then the `release` job publishes
-  `FlClash-<ver>-android-arm64.apk` and `FlClash-<ver>-SHA256SUMS` (names from `update.rs`) as a full release, notes
-  from `release-notes/<tag>.md`.
+  `SeasonCat-<ver>-android-arm64.apk` and `SeasonCat-<ver>-SHA256SUMS` (names from `update.rs`) as a full release, notes
+  from `release-notes/<tag>.md`. Up to v0.9.5-rs.3 the files were named `FlClash-`; `update.rs` prefers `SeasonCat-`
+  and falls back to `FlClash-`, and the release job also uploads `FlClash-` copies of the APK and its sums so
+  v0.9.5-rs.3 installs can update (drop them once the SeasonCat- updater has been out a while).
 - v0.9.5-rs.3 (2026-11-27, owner approved): first release built by Gradle alone, versionCode 2026114702
   (2026112702 plus the arm64 split's 2000), published by `slint-android.yaml` on the tag.
 - Next release: bump `appVersionName` and `appVersionCode` (above 2026114702) in `android/app/build.gradle.kts`, add

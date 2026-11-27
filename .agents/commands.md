@@ -160,13 +160,16 @@ its workspaces; setup-gradle writes only on `main` and `dev` in `build.yaml` and
 
 1. Raise `appVersionName` and `appVersionCode` in `android/app/build.gradle.kts`; the code only ever goes up, or the
    APK does not install over the previous one.
-2. Write `release-notes/<tag>.md`; the release job fails without it.
+2. Write `release-notes/<tag>.md`; the release job fails without it. Name the files there `SeasonCat-<version>-…`
+   (the v0.9.5-rs.2 and rs.3 notes name `FlClash-` files, as those releases had).
 3. Push, wait for `slint-android.yaml` to pass, then push the tag `v<appVersionName>` (an `-rs.N` version, so the tag
    matches `v*-rs.*`).
 
 On the tag the `apk` job needs the four signing secrets and a versionName equal to the tag, and the `release` job
-publishes `FlClash-<version>-android-arm64.apk` and `FlClash-<version>-SHA256SUMS`, the names the in-app updater
-(`ui/src/update.rs`) looks for, with the notes file as the release body. Push the tag by name: `--follow-tags` skips a
+publishes `SeasonCat-<version>-android-arm64.apk` and `SeasonCat-<version>-SHA256SUMS`, the names the in-app updater
+(`ui/src/update.rs`) looks for, with the notes file as the release body. It also publishes the same APK as
+`FlClash-<version>-android-arm64.apk` with `FlClash-<version>-SHA256SUMS` for v0.9.5-rs.3 and older, whose updater
+knows only that name; the workflow says when that copy can go. Push the tag by name: `--follow-tags` skips a
 lightweight tag.
 
 ## Worktree Tooling

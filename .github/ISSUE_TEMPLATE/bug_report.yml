@@ -32,8 +32,8 @@ body:
     attributes:
       label: 安装包 / Package
       description: >-
-        从 Releases 下载的文件名里有架构，如 `FlClash-0.9.4-windows-amd64-setup.exe`。/
-        The file name from Releases carries the architecture, such as `FlClash-0.9.4-windows-amd64-setup.exe`.
+        从 Releases 下载的文件名里有架构，如 `SeasonCat-<版本>-android-arm64.apk`。/
+        The file name from Releases carries the architecture, such as `SeasonCat-<version>-android-arm64.apk`.
       options:
         - Android APK arm64
         - Android APK armv7
