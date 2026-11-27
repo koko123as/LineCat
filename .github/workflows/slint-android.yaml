@@ -263,7 +263,7 @@ jobs:
           path: dist
 
       # Names from update.rs: asset_name / checksums_name, the tag without its v and with
-      # '+' as '.'; each sums file holds "<sha256>  <name>" for the APK of its own prefix.
+      # '+' as '.'; the sums file holds "<sha256>  <name>" lines.
       - name: Name the release files
         run: |
           tag="${GITHUB_REF#refs/tags/}"
@@ -271,14 +271,10 @@ jobs:
           notes="release-notes/$tag.md"
           [ -s "$notes" ] || { echo "::error::$notes is missing"; exit 1; }
           mkdir -p release
+          cp dist/SeasonCat-slint-arm64-v8a.apk "release/SeasonCat-$version-android-arm64.apk"
           (cd dist && sha256sum -c SeasonCat-slint-arm64-v8a.apk.sha256)
-          # FlClash- copies are for v0.9.5-rs.3 and older, whose updater knows no other name;
-          # drop that prefix once a release with the SeasonCat- updater has been out a while.
-          for prefix in SeasonCat FlClash; do
-            cp dist/SeasonCat-slint-arm64-v8a.apk "release/$prefix-$version-android-arm64.apk"
-            (cd release && sha256sum "$prefix-$version-android-arm64.apk" > "$prefix-$version-SHA256SUMS")
-            cat "release/$prefix-$version-SHA256SUMS"
-          done
+          (cd release && sha256sum "SeasonCat-$version-android-arm64.apk" > "SeasonCat-$version-SHA256SUMS")
+          cat "release/SeasonCat-$version-SHA256SUMS"
           ls -l release
           echo "TAG=$tag" >> "$GITHUB_ENV"
           echo "NOTES=$notes" >> "$GITHUB_ENV"

@@ -6,8 +6,8 @@ use serde_json::Value;
 use std::cmp::Ordering;
 
 pub const REPOSITORY: &str = "koko123as/LineCat";
-/// Release file prefixes, preferred first: releases up to v0.9.5-rs.3 carry FlClash- files only.
-const FILE_PREFIXES: [&str; 2] = ["SeasonCat", "FlClash"];
+/// Releases up to v0.9.5-rs.3 name their files FlClash- and so are never offered.
+const FILE_PREFIX: &str = "SeasonCat";
 
 pub const STARTED: &str = "已开始下载更新，可在首页查看进度";
 pub const READY: &str = "更新已下载，可在首页安装";
@@ -59,47 +59,12 @@ pub fn names_release_files(tag: &str) -> bool {
     is_file_version(&version_of_tag(tag))
 }
 
-fn apk_named(prefix: &str, tag: &str, arch: &str) -> String {
-    format!("{prefix}-{}-android-{arch}.apk", version_of_tag(tag))
-}
-
-fn checksums_named(prefix: &str, tag: &str) -> String {
-    format!("{prefix}-{}-SHA256SUMS", version_of_tag(tag))
-}
-
 pub fn asset_name(tag: &str, arch: &str) -> String {
-    apk_named(FILE_PREFIXES[0], tag, arch)
+    format!("{FILE_PREFIX}-{}-android-{arch}.apk", version_of_tag(tag))
 }
 
 pub fn checksums_name(tag: &str) -> String {
-    checksums_named(FILE_PREFIXES[0], tag)
-}
-
-/// Every checksums file name a release may carry, preferred first.
-pub fn checksums_names(tag: &str) -> Vec<String> {
-    FILE_PREFIXES
-        .iter()
-        .map(|p| checksums_named(p, tag))
-        .collect()
-}
-
-/// The APK and its SHA-256 from the first checksums file that lists it under the same
-/// prefix; `fetch` answers None for a file the release lacks.
-pub fn expected_file<E>(
-    tag: &str,
-    arch: &str,
-    mut fetch: impl FnMut(&str) -> Result<Option<String>, E>,
-) -> Result<Option<(String, String)>, E> {
-    for prefix in FILE_PREFIXES {
-        let Some(sums) = fetch(&checksums_named(prefix, tag))? else {
-            continue;
-        };
-        let apk = apk_named(prefix, tag, arch);
-        if let Some(hash) = checksum(&sums, &apk) {
-            return Ok(Some((apk, hash)));
-        }
-    }
-    Ok(None)
+    format!("{FILE_PREFIX}-{}-SHA256SUMS", version_of_tag(tag))
 }
 
 pub fn asset_url(tag: &str, name: &str) -> String {
@@ -219,12 +184,12 @@ pub fn newest_of(releases: &Value) -> Option<String> {
         .filter_map(|r| {
             let tag = r.get("tag_name")?.as_str()?.to_string();
             let v = Version::parse(&tag).filter(Version::is_rs)?;
-            let sums = checksums_names(&tag);
-            let has_sums = r.get("assets")?.as_array()?.iter().any(|a| {
-                a.get("name")
-                    .and_then(Value::as_str)
-                    .is_some_and(|n| sums.iter().any(|s| s == n))
-            });
+            let sums = checksums_name(&tag);
+            let has_sums = r
+                .get("assets")?
+                .as_array()?
+                .iter()
+                .any(|a| a.get("name").and_then(Value::as_str) == Some(sums.as_str()));
             (has_sums && names_release_files(&tag)).then_some((v, tag))
         })
         .collect();
@@ -427,61 +392,13 @@ mod tests {
             "SeasonCat-0.9.4-rs.1.2-android-arm64.apk"
         );
         assert_eq!(checksums_name("v1.0.0"), "SeasonCat-1.0.0-SHA256SUMS");
-        assert_eq!(
-            checksums_names("v1.0.0"),
-            vec!["SeasonCat-1.0.0-SHA256SUMS", "FlClash-1.0.0-SHA256SUMS"]
-        );
         assert!(names_release_files("v1.2.0-rs.3"));
         assert!(!names_release_files("nightly"));
         assert!(!names_release_files("v1.2.0-beta-1"));
         let hash = "A".repeat(64);
-        let sums = format!("{hash}  other.apk\n{hash} *FlClash-1.apk\n");
-        assert_eq!(checksum(&sums, "FlClash-1.apk"), Some("a".repeat(64)));
+        let sums = format!("{hash}  other.apk\n{hash} *SeasonCat-1.apk\n");
+        assert_eq!(checksum(&sums, "SeasonCat-1.apk"), Some("a".repeat(64)));
         assert_eq!(checksum(&sums, "missing"), None);
-    }
-
-    #[test]
-    fn season_cat_files_before_flclash_ones() {
-        let hash = |c: char| c.to_string().repeat(64);
-        let both = |name: &str| -> Result<Option<String>, ()> {
-            Ok(Some(match name {
-                "SeasonCat-1.0.0-rs.1-SHA256SUMS" => {
-                    format!("{}  SeasonCat-1.0.0-rs.1-android-arm64.apk\n", hash('a'))
-                }
-                "FlClash-1.0.0-rs.1-SHA256SUMS" => {
-                    format!("{}  FlClash-1.0.0-rs.1-android-arm64.apk\n", hash('b'))
-                }
-                _ => return Ok(None),
-            }))
-        };
-        assert_eq!(
-            expected_file("v1.0.0-rs.1", "arm64", both),
-            Ok(Some((
-                "SeasonCat-1.0.0-rs.1-android-arm64.apk".into(),
-                hash('a')
-            )))
-        );
-        let old = |name: &str| -> Result<Option<String>, ()> {
-            Ok(name
-                .starts_with("FlClash-")
-                .then(|| format!("{}  FlClash-0.9.5-rs.3-android-arm64.apk\n", hash('c'))))
-        };
-        assert_eq!(
-            expected_file("v0.9.5-rs.3", "arm64", old),
-            Ok(Some((
-                "FlClash-0.9.5-rs.3-android-arm64.apk".into(),
-                hash('c')
-            )))
-        );
-        let other_arch = |_: &str| -> Result<Option<String>, ()> {
-            Ok(Some(format!(
-                "{}  SeasonCat-1-android-armv7.apk\n",
-                hash('d')
-            )))
-        };
-        assert_eq!(expected_file("v1", "arm64", other_arch), Ok(None));
-        let refused = |_: &str| -> Result<Option<String>, &'static str> { Err("HTTP 500") };
-        assert_eq!(expected_file("v1", "arm64", refused), Err("HTTP 500"));
     }
 
     #[test]
@@ -498,28 +415,28 @@ mod tests {
 
     #[test]
     fn newest_rs_release_with_checksums() {
-        let rel = |tag: &str, sums: Option<&str>, draft: bool| {
-            let assets = match sums {
-                Some(prefix) => json!([{"name": checksums_named(prefix, tag)}]),
-                None => json!([]),
+        let rel = |tag: &str, sums: bool, draft: bool| {
+            let assets = if sums {
+                json!([{"name": checksums_name(tag)}])
+            } else {
+                json!([])
             };
             json!({"tag_name": tag, "draft": draft, "assets": assets})
         };
         let list = json!([
-            rel("v0.9.5-rs.1", None, false),
-            rel("v0.9.6-rs.1", Some("SeasonCat"), true),
-            rel("v0.9.4-rs.2", Some("FlClash"), false),
-            rel("v0.9.4", Some("SeasonCat"), false),
-            rel("v0.9.4-rs.1", Some("SeasonCat"), false),
+            rel("v0.9.5-rs.1", false, false),
+            rel("v0.9.6-rs.1", true, true),
+            rel("v0.9.4-rs.2", true, false),
+            rel("v0.9.4", true, false),
+            rel("v0.9.4-rs.1", true, false),
         ]);
         assert_eq!(newest_of(&list).as_deref(), Some("v0.9.4-rs.2"));
-        let renamed = json!([
-            rel("v0.9.4-rs.1", Some("FlClash"), false),
-            rel("v0.9.4-rs.3", Some("SeasonCat"), false)
-        ]);
-        assert_eq!(newest_of(&renamed).as_deref(), Some("v0.9.4-rs.3"));
-        let other = json!([rel("v0.9.4-rs.3", Some("Other"), false)]);
-        assert_eq!(newest_of(&other), None);
+        let old_names = json!([{
+            "tag_name": "v0.9.5-rs.3",
+            "draft": false,
+            "assets": [{"name": "FlClash-0.9.5-rs.3-SHA256SUMS"}]
+        }]);
+        assert_eq!(newest_of(&old_names), None);
         assert!(install_failed(1) && !install_failed(0) && !install_failed(3));
     }
 
