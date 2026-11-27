@@ -10112,6 +10112,10 @@ export component AppWindow inherits Window {
     in-out property <bool> editor-loading;
     in-out property <string> editor-error;
     callback editor-save(string);
+    // The profile file editor and the profile edit page leave through these, which ask
+    // first when something is unsaved.
+    callback profile-editor-back(string);
+    callback edit-back();
     // Sort
     // The sort sheet's drop: from one index to another.
     callback sort-move(int, int);
@@ -10783,7 +10787,7 @@ export component AppWindow inherits Window {
                 if (root.profiles-shown && root.profiles-page == "rules" && root.pr-searching && !root.pr-selecting && !root.pr-sorting) { root.pr-query = ""; root.pr-searching = false; return accept; }
                 if (root.profiles-shown && root.profiles-page == "rules") { root.pr-act("back"); return accept; }
                 if (root.profiles-shown && (root.profiles-page == "rule" || root.profiles-page == "rule-presets")) { root.pr-form("back"); return accept; }
-                if (root.profiles-shown && root.profiles-page == "editor") { root.profiles-page = "edit"; return accept; }
+                if (root.profiles-shown && root.profiles-page == "editor") { root.profile-editor-back(root.editor-text); return accept; }
                 if (root.profiles-shown && root.profiles-page == "group") { root.pg-back(); return accept; }
                 if (root.profiles-shown && root.profiles-page == "pmore") { root.pm-back(); return accept; }
                 if (root.profiles-shown && root.profiles-page == "ext" && root.ext-searching) { root.ext-query = ""; root.ext-searching = false; return accept; }
@@ -10796,6 +10800,7 @@ export component AppWindow inherits Window {
                 if (root.tab == 0 && !root.custom-open && root.profiles-page == "preview") { root.profiles-page = ""; root.profile-sheet-open = true; return accept; }
                 if (root.profiles-shown && root.custom-open && root.profiles-page == "preview") { root.profiles-page = "custom"; return accept; }
                 if (root.profiles-shown && root.profiles-page == "custom") { root.custom-back(); return accept; }
+                if (root.profiles-shown && root.profiles-page == "edit") { root.edit-back(); return accept; }
                 if (root.profiles-shown && root.profiles-page != "") { root.profiles-page = ""; return accept; }
                 if (root.tab == 0 && root.dash-editing) { root.dash-editing = false; return accept; }
                 if (root.is-tv && root.tab != 0) {
@@ -11045,7 +11050,7 @@ export component AppWindow inherits Window {
                     file-info: root.edit-file-info;
                     busy: root.adding;
                     save => { root.edit-save(); }
-                    back => { root.profiles-page = ""; }
+                    back => { root.edit-back(); }
                     edit-file => { root.edit-file(); }
                     upload-file => { root.upload-file(); }
                 }
@@ -11084,7 +11089,11 @@ export component AppWindow inherits Window {
                             root.profiles-page = "pmore";
                             return;
                         }
-                        root.profiles-page = root.profiles-page == "editor" ? "edit" : root.custom-open ? "custom" : "";
+                        if (root.profiles-page == "editor") {
+                            root.profile-editor-back(root.editor-text);
+                            return;
+                        }
+                        root.profiles-page = root.custom-open ? "custom" : "";
                     }
                 }
                 if root.profiles-shown && root.profiles-page == "custom": CustomProfilePage {

@@ -1966,6 +1966,7 @@ impl App {
 
     /// The profile editor or 运行时配置 opens at once on its spinner; the document follows.
     fn open_profile_editor(self: &Arc<Self>, id: &str, page: &'static str, readonly: bool) {
+        items_app::set_profile_editor_opened(String::new());
         let title = self.label_of(id);
         self.ui(move |ui| {
             ui.set_editor_title(title.into());
@@ -2000,6 +2001,22 @@ impl App {
                 Err(e) => app.alert("提示", e),
             }
         });
+    }
+
+    /// `EditorPage.onPop` for the profile file: unchanged text leaves, else 是否缓存修改.
+    fn profile_editor_back(self: &Arc<Self>, title: String, text: String) {
+        if text == items_app::profile_editor_opened() {
+            return self.ui(|ui| ui.set_profiles_page("edit".into()));
+        }
+        self.confirm(&title, "是否缓存修改".into(), "editor-cache", text);
+    }
+
+    fn edit_back(self: &Arc<Self>, file_changed: bool) {
+        if file_changed {
+            let text = "文件有修改，是否保存修改".into();
+            return self.confirm("提示", text, "edit-back", String::new());
+        }
+        self.ui(|ui| ui.set_profiles_page("".into()));
     }
 
     /// The profile file row's upload.
@@ -2228,6 +2245,10 @@ impl App {
                 app.ui(|ui| ui.set_adding(false));
             }),
             ("edit-save", _) => self.save_edit(form, yes),
+            ("edit-back", true) => self.request_edit_save(form),
+            ("edit-back", false) => self.ui(|ui| ui.set_profiles_page("".into())),
+            ("editor-cache", true) => self.save_editor(arg),
+            ("editor-cache", false) => self.ui(|ui| ui.set_profiles_page("edit".into())),
             ("color-reset" | "color-delete", true) => self.theme_confirmed(&action, &arg),
             _ => {}
         }
@@ -2682,6 +2703,21 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
     });
     let a = app.clone();
     ui.on_upload_file(move || a.upload_file());
+    let a = app.clone();
+    let w = ui.as_weak();
+    ui.on_profile_editor_back(move |text| {
+        let title = w
+            .upgrade()
+            .map(|ui| ui.get_editor_title())
+            .unwrap_or_default();
+        a.profile_editor_back(title.into(), text.into());
+    });
+    let a = app.clone();
+    let w = ui.as_weak();
+    ui.on_edit_back(move || {
+        let changed = w.upgrade().is_some_and(|ui| ui.get_edit_file_changed());
+        a.edit_back(changed);
+    });
     let a = app.clone();
     ui.on_editor_save(move |text| {
         if !a.group_yaml_save(&text)

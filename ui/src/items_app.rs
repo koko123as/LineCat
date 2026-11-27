@@ -438,7 +438,10 @@ impl App {
                 return;
             }
             match text {
-                Ok(text) => ui.set_editor_text(text.into()),
+                Ok(text) => {
+                    set_profile_editor_opened(text.clone());
+                    ui.set_editor_text(text.into());
+                }
                 Err(e) => ui.set_editor_error(e.into()),
             }
             ui.set_editor_loading(false);
@@ -671,6 +674,16 @@ impl App {
 }
 
 static EDITOR_LOAD: AtomicU64 = AtomicU64::new(0);
+static PROFILE_EDITOR_TEXT: Mutex<String> = Mutex::new(String::new());
+
+/// The text the profile file editor opened on, for `_isDirty`.
+pub(crate) fn profile_editor_opened() -> String {
+    PROFILE_EDITOR_TEXT.lock().unwrap().clone()
+}
+
+pub(crate) fn set_profile_editor_opened(text: String) {
+    *PROFILE_EDITOR_TEXT.lock().unwrap() = text;
+}
 
 /// A new editor load; a result carrying an older one is dropped.
 pub(crate) fn editor_load() -> u64 {
