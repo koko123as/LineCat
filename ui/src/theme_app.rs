@@ -95,6 +95,7 @@ pub fn apply(ui: &AppWindow, settings: &store::Settings) {
     ui.set_theme_mode(settings.theme_mode);
     ui.set_pure_black(settings.pure_black);
     ui.set_floating_bar(settings.floating_navigation_bar);
+    ui.set_sidebar_expanded(settings.sidebar_expanded);
     ui.set_tab_fade(settings.tab_animation == 1);
     let standard = colors::palette(seeds.1, style, true);
     ui.set_scheme_dark_standard(scheme(&standard));
@@ -257,6 +258,8 @@ impl App {
         ui.on_set_pure_black(move |on| a.update_theme(|s| s.pure_black = on));
         let a = self.clone();
         ui.on_set_floating_bar(move |on| a.update_theme(|s| s.floating_navigation_bar = on));
+        let a = self.clone();
+        ui.on_set_sidebar_expanded(move |on| a.update_theme(|s| s.sidebar_expanded = on));
         let a = self.clone();
         ui.on_set_tab_animation(move |i| a.update_theme(|s| s.tab_animation = i));
         let a = self.clone();

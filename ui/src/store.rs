@@ -67,6 +67,8 @@ pub struct Settings {
     pub floating_navigation_bar: bool,
     /// `AppSettingProps.tabAnimation`: 0 slide, 1 fade.
     pub tab_animation: i32,
+    /// `AppSettingProps.sidebarExpanded`: the side bar widened past the laptop width.
+    pub sidebar_expanded: bool,
     pub font_family: Option<String>,
     pub text_scale: TextScale,
     /// `ClashProvider`s, in the page's order.
@@ -266,6 +268,7 @@ impl Default for Settings {
             exclude_ssids: Vec::new(),
             floating_navigation_bar: true,
             tab_animation: 1,
+            sidebar_expanded: true,
             font_family: None,
             text_scale: TextScale::default(),
             rule_sets: Vec::new(),
@@ -606,7 +609,7 @@ mod tests {
     #[test]
     fn older_settings_float_the_dock_and_fade_tabs() {
         let s: Settings = serde_json::from_str(r#"{"accent":2}"#).unwrap();
-        assert!(s.floating_navigation_bar);
+        assert!(s.floating_navigation_bar && s.sidebar_expanded);
         assert_eq!(s.tab_animation, 1);
         assert_eq!(s.font_family, None);
         assert_eq!(s.text_scale, TextScale::default());
