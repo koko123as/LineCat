@@ -55,6 +55,17 @@ pub fn is_package(name: &str) -> bool {
     name.contains('.') && !name.contains('/') && !name.starts_with('.')
 }
 
+/// `decode_png` for a picture of at most `max_pixels`, which its header tells before any
+/// pixel is decoded.
+pub fn decode_png_within(bytes: &[u8], max_pixels: u64) -> Option<Pixels> {
+    let reader = png::Decoder::new(bytes).read_info().ok()?;
+    let info = reader.info();
+    if info.width as u64 * info.height as u64 > max_pixels {
+        return None;
+    }
+    decode_png(bytes)
+}
+
 pub fn decode_png(bytes: &[u8]) -> Option<Pixels> {
     let mut decoder = png::Decoder::new(bytes);
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
@@ -107,6 +118,8 @@ mod tests {
             Rgba8Pixel::new(9, 8, 7, 255)
         );
         assert!(decode_png(b"not a png").is_none());
+        assert!(decode_png_within(&rgba, 2).is_some());
+        assert!(decode_png_within(&rgba, 1).is_none());
     }
 
     #[test]

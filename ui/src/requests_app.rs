@@ -1,16 +1,61 @@
 //! The requests and resources pages' side of `App`: the Core's streams they read, the calls
 //! they make (FlClash: lib/core/api/rpc_core_api.dart) and what they publish to the window.
 
-use crate::requests_view::{self, Ctx, CONNECTIONS, DNS, HTTP};
+use crate::requests_view::{self, Ctx, ShownBody, CONNECTIONS, DNS, HTTP};
 use crate::{
-    http_capture, profile, proxies, resources, store, ActionItem, App, AppWindow, ResourceItem,
-    CALL,
+    http_body, http_capture, profile, proxies, resources, store, ActionItem, App, AppWindow,
+    ResourceItem, CALL,
 };
 use serde_json::{json, Value};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// An image body larger than this shows by its bytes alone.
+const MAX_PREVIEW_PIXELS: u64 = 4 << 20;
+
+fn shown_body(raw: &http_body::Raw, content_type: &str) -> ShownBody {
+    let content = http_body::read(raw, content_type);
+    let image = if content.kind == http_body::Kind::Image {
+        crate::app_icons::decode_png_within(&content.bytes, MAX_PREVIEW_PIXELS)
+    } else {
+        None
+    };
+    ShownBody {
+        content: Ok(content),
+        image,
+    }
+}
+
+/// The hex page's lines, each formatted only when the list asks for it.
+struct HexLines {
+    bytes: Arc<Vec<u8>>,
+    per_line: usize,
+}
+
+impl Model for HexLines {
+    type Data = SharedString;
+
+    fn row_count(&self) -> usize {
+        self.bytes.len().div_ceil(self.per_line)
+    }
+
+    fn row_data(&self, row: usize) -> Option<SharedString> {
+        (row < self.row_count())
+            .then(|| http_body::hex_line(&self.bytes, row * self.per_line, self.per_line).into())
+    }
+
+    fn model_tracker(&self) -> &dyn slint::ModelTracker {
+        &()
+    }
+}
+
+fn hex_lines(bytes: Arc<Vec<u8>>, columns: usize) -> ModelRc<SharedString> {
+    let columns = if columns == 0 { usize::MAX } else { columns };
+    let per_line = http_body::hex_per_line(bytes.len(), columns);
+    ModelRc::new(HexLines { bytes, per_line })
+}
 
 pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
@@ -303,14 +348,31 @@ impl App {
                 let mut bodies = [None, None];
                 if let Some(e) = &exchange {
                     let pending = e.get("pending").and_then(Value::as_bool).unwrap_or(false);
-                    for (i, key) in ["request-size", "response-size"].iter().enumerate() {
-                        let size = e.get(*key).and_then(Value::as_i64).unwrap_or(0);
+                    let sides = [
+                        ("request-size", "request-header"),
+                        ("response-size", "response-header"),
+                    ];
+                    for (i, (size_key, header_key)) in sides.iter().enumerate() {
+                        let size = e.get(*size_key).and_then(Value::as_i64).unwrap_or(0);
                         if size > 0 && !pending {
-                            bodies[i] = bridge
-                                .call("mitm.body", json!({"id": id, "response": i == 1}), CALL)
-                                .ok()
-                                .filter(Value::is_object)
-                                .map(|b| http_capture::body_text(&b, crate::size));
+                            let content_type = http_body::header_value(
+                                &http_capture::header_of(e, header_key),
+                                "Content-Type",
+                            );
+                            bodies[i] = match bridge.call(
+                                "mitm.body",
+                                json!({"id": id, "response": i == 1}),
+                                CALL,
+                            ) {
+                                Ok(b) if b.is_object() => {
+                                    Some(shown_body(&http_body::Raw::parse(&b), &content_type))
+                                }
+                                Ok(_) => None,
+                                Err(e) => Some(ShownBody {
+                                    content: Err(e),
+                                    image: None,
+                                }),
+                            };
                         }
                     }
                 }
@@ -376,6 +438,12 @@ impl App {
             self.copy(text.to_string());
             return;
         }
+        if let Some(side) = arg.strip_prefix("body-open:") {
+            return self.open_body(side == "response", false);
+        }
+        if let Some(side) = arg.strip_prefix("body-hex:") {
+            return self.open_body(side == "response", true);
+        }
         if let Some(change) = arg.strip_prefix("mitm-host:") {
             return self.ask_mitm_host(change);
         }
@@ -398,6 +466,36 @@ impl App {
         }
         self.load_selection();
         self.republish();
+    }
+
+    /// `EditorPage` with the whole text, or `_MitmHexView` with every byte.
+    fn open_body(self: &Arc<Self>, response: bool, hex: bool) {
+        let mut req = self.req.lock().unwrap();
+        let Some(Ok(c)) = req.bodies[response as usize]
+            .as_ref()
+            .map(|b| b.content.clone())
+        else {
+            return;
+        };
+        let title = if response { "响应体" } else { "请求体" };
+        if hex {
+            req.hex = Some(c.bytes.clone());
+            let columns = req.hex_columns;
+            drop(req);
+            self.ui(move |ui| {
+                ui.set_req_body_title(title.into());
+                ui.set_req_body_truncated(c.truncated);
+                ui.set_req_hex_lines(hex_lines(c.bytes, columns));
+                ui.set_req_body_page("hex".into());
+            });
+        } else {
+            drop(req);
+            self.ui(move |ui| {
+                ui.set_req_body_title(title.into());
+                ui.set_req_body_text(c.text.into());
+                ui.set_req_body_page("text".into());
+            });
+        }
     }
 
     fn action(self: &Arc<Self>, id: &str) {
@@ -499,6 +597,12 @@ impl App {
                     .and_then(|e| e.get("url").and_then(Value::as_str).map(String::from));
                 if let Some(url) = url {
                     self.copy(url);
+                }
+            }
+            "body-base64" => {
+                let bytes = self.req.lock().unwrap().hex.clone();
+                if let Some(bytes) = bytes {
+                    self.copy(http_body::base64_encode(&bytes));
                 }
             }
             "only-app" | "hide-host" | "only-domain" => {
@@ -1047,6 +1151,34 @@ impl App {
         });
         let a = self.clone();
         ui.on_req_detail_row(move |arg| a.open_link(&arg));
+        let a = self.clone();
+        ui.on_req_body_menu(move || {
+            let item = ActionItem {
+                id: "body-base64".into(),
+                glyph: "copy".into(),
+                label: "复制为 Base64".into(),
+                enabled: true,
+                ..Default::default()
+            };
+            a.show_actions(String::new(), vec![item]);
+        });
+        let a = self.clone();
+        let w = ui.as_weak();
+        ui.on_req_hex_columns(move |columns| {
+            let columns = columns.max(1) as usize;
+            let bytes = {
+                let mut req = a.req.lock().unwrap();
+                let old = std::mem::replace(&mut req.hex_columns, columns);
+                req.hex.clone().filter(|b| {
+                    old == 0
+                        || http_body::hex_per_line(b.len(), old)
+                            != http_body::hex_per_line(b.len(), columns)
+                })
+            };
+            if let (Some(bytes), Some(ui)) = (bytes, w.upgrade()) {
+                ui.set_req_hex_lines(hex_lines(bytes, columns));
+            }
+        });
         let a = self.clone();
         ui.on_req_sheet_closed(move || {
             a.req.lock().unwrap().selected = [None; 3];

@@ -110,9 +110,16 @@ fn sample_requests(now: i64) -> requests_view::ReqState {
         "actions": [{"kind": "header-rewrite", "phase": "response", "detail": "Cache-Control", "module": ""}],
         "route": {"rule": "DOMAIN-SUFFIX", "rule-payload": "google.com", "chains": ["香港 01", "节点选择"]}}),
     );
+    let body = http_body::Raw {
+        data: http_body::base64_encode(br#"["slint",["slint ui","slint rust","slint android"]]"#),
+        ..Default::default()
+    };
     st.bodies = [
         None,
-        Some("[\"slint\",[\"slint ui\",\"slint rust\",\"slint android\"]]".into()),
+        Some(requests_view::ShownBody {
+            content: Ok(http_body::read(&body, "application/json; charset=UTF-8")),
+            image: None,
+        }),
     ];
     st
 }

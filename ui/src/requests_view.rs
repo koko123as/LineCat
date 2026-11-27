@@ -3,6 +3,7 @@
 //! lib/views/connection/requests_detail_pane.dart, lib/features/connection.
 
 use crate::dns_queries::{self, Query};
+use crate::http_body::{self, Kind};
 use crate::http_capture::{self, Summary};
 use crate::proxies::Groups;
 use crate::requests::{self, Condition, Conn, Filters};
@@ -43,7 +44,7 @@ pub struct ReqState {
     pub tab: [i32; 3],
     /// `mitm.exchange` and the bodies (request, response) of the selected request.
     pub exchange: Option<Value>,
-    pub bodies: [Option<String>; 2],
+    pub bodies: [Option<ShownBody>; 2],
     /// `mitm.exchanges` of the selected connection.
     pub conn_http: Option<(i64, Vec<Summary>)>,
     pub draft: Option<Draft>,
@@ -52,6 +53,9 @@ pub struct ReqState {
     pub cond_width: f32,
     /// The requests tab's view while the dashboard's sheet (`openDashboardFeed`) shows its own.
     pub tab_view: Option<ReqView>,
+    /// The bytes the hex page shows, and how many characters its lines hold.
+    pub hex: Option<std::sync::Arc<Vec<u8>>>,
+    pub hex_columns: usize,
 }
 
 #[derive(Default)]
@@ -62,10 +66,18 @@ pub struct ReqView {
     selected: [Option<i64>; 3],
     tab: [i32; 3],
     exchange: Option<Value>,
-    bodies: [Option<String>; 2],
+    bodies: [Option<ShownBody>; 2],
     conn_http: Option<(i64, Vec<Summary>)>,
     draft: Option<Draft>,
     limit_open: bool,
+}
+
+/// A body of the selected request as read for its detail, or why it could not be.
+#[derive(Clone)]
+pub struct ShownBody {
+    pub content: Result<http_body::Content, String>,
+    /// The picture of an image body, when it decodes.
+    pub image: Option<crate::app_icons::Pixels>,
 }
 
 /// What a page build reads besides the state.
@@ -1317,16 +1329,14 @@ impl ReqState {
                 if size > 0 && pending {
                     out.push(section(title, vec![text_row("进行中", "", false)]));
                 } else if let Some(body) = &self.bodies[response as usize] {
-                    if !body.is_empty() {
-                        out.push(section(
-                            title,
-                            vec![DetailRow {
-                                kind: s("code"),
-                                value: s(body),
-                                ..Default::default()
-                            }],
-                        ));
-                    }
+                    let key = if response {
+                        "response-header"
+                    } else {
+                        "request-header"
+                    };
+                    let content_type =
+                        http_body::header_value(&http_capture::header_of(e, key), "Content-Type");
+                    out.extend(body_section(title, response, size, &content_type, body));
                 }
                 out
             }
@@ -1388,10 +1398,101 @@ pub fn row_y(rows: impl IntoIterator<Item = RecordRow>, id: i32) -> Option<f32> 
 fn section(title: &str, rows: Vec<DetailRow>) -> DetailSection {
     DetailSection {
         title: s(title),
+        caption: SharedString::new(),
         plain: false,
         rows: model(rows),
         footer: SharedString::new(),
     }
+}
+
+/// `MitmBodySection`: the body in place (text from its start, an image), then its every byte
+/// in hex; its size on the wire and type head it, what was not kept is said under it.
+fn body_section(
+    title: &str,
+    response: bool,
+    size: i64,
+    content_type: &str,
+    body: &ShownBody,
+) -> Option<DetailSection> {
+    let c = match &body.content {
+        Err(e) => {
+            let failed = if response {
+                "无法读取响应体"
+            } else {
+                "无法读取请求体"
+            };
+            return Some(section(
+                title,
+                vec![DetailRow {
+                    kind: s("stacked"),
+                    title: s(failed),
+                    value: s(e),
+                    ..Default::default()
+                }],
+            ));
+        }
+        Ok(c) => c,
+    };
+    if c.bytes.is_empty() {
+        return c.truncated.then(|| {
+            section(
+                title,
+                vec![DetailRow {
+                    kind: s("stacked"),
+                    title: s(http_body::NOT_KEPT),
+                    ..Default::default()
+                }],
+            )
+        });
+    }
+    let side = if response { "response" } else { "request" };
+    let kept = crate::size(c.bytes.len() as i64);
+    let link = |title: &str, trailing: &str, arg: String| DetailRow {
+        kind: s("link"),
+        title: s(title),
+        trailing: s(trailing),
+        arg: s(arg),
+        ..Default::default()
+    };
+    let hex = link("十六进制", &kept, format!("body-hex:{side}"));
+    let rows = match c.kind {
+        Kind::Text => {
+            let mut rows = vec![DetailRow {
+                kind: s("code"),
+                value: s(&c.preview),
+                arg: s(format!("body-open:{side}")),
+                ..Default::default()
+            }];
+            if c.is_cut() {
+                rows.push(link("查看全部", "", format!("body-open:{side}")));
+            }
+            rows.push(hex);
+            rows
+        }
+        Kind::Image => vec![
+            match &body.image {
+                Some(pixels) => DetailRow {
+                    kind: s("image"),
+                    image: slint::Image::from_rgba8(pixels.clone()),
+                    ..Default::default()
+                },
+                None => text_row(http_body::BINARY, "", false),
+            },
+            hex,
+        ],
+        Kind::Binary => vec![link(http_body::BINARY, &kept, format!("body-hex:{side}"))],
+    };
+    Some(DetailSection {
+        title: s(title),
+        caption: s(format!(
+            "{} · {}",
+            crate::size(size),
+            c.type_label(content_type)
+        )),
+        plain: false,
+        rows: model(rows),
+        footer: s(c.footer()),
+    })
 }
 
 fn rail(title: String, note: String, trailing: String, mark: i32) -> DetailRow {

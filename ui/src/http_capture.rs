@@ -428,52 +428,23 @@ pub fn status_text(status: i64, reason: &str) -> String {
     }
 }
 
-/// A body as `mitm.body` keeps it: Base64 data, and whether it was cut short. Text is
-/// shown as text, anything else by its size.
-pub fn body_text(v: &Value, size: fn(i64) -> String) -> String {
-    let data = v.get("data").and_then(Value::as_str).unwrap_or("");
-    let bytes = base64(data);
-    let encoding = v.get("encoding").and_then(Value::as_str).unwrap_or("");
-    let truncated = v.get("truncated").and_then(Value::as_bool).unwrap_or(false);
-    let mut out = match std::str::from_utf8(&bytes) {
-        Ok(t) if encoding.is_empty() && !t.contains('\0') => t.chars().take(64 * 1024).collect(),
-        _ => format!(
-            "{} {}",
-            if encoding.is_empty() {
-                "二进制"
-            } else {
-                encoding
-            },
-            size(bytes.len() as i64)
-        ),
-    };
-    if truncated {
-        out.push_str("\n…");
-    }
-    out
-}
-
-fn base64(s: &str) -> Vec<u8> {
-    let mut out = Vec::with_capacity(s.len() * 3 / 4);
-    let mut acc = 0u32;
-    let mut bits = 0;
-    for c in s.bytes() {
-        let v = match c {
-            b'A'..=b'Z' => c - b'A',
-            b'a'..=b'z' => c - b'a' + 26,
-            b'0'..=b'9' => c - b'0' + 52,
-            b'+' | b'-' => 62,
-            b'/' | b'_' => 63,
-            _ => continue,
-        };
-        acc = (acc << 6) | v as u32;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push((acc >> bits) as u8);
-        }
-    }
-    out
+pub fn header_of(exchange: &Value, key: &str) -> Vec<(String, Vec<String>)> {
+    exchange
+        .get(key)
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .map(|(name, values)| {
+            let values = values
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect();
+            (name.clone(), values)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -539,10 +510,12 @@ mod tests {
     }
 
     #[test]
-    fn bodies_decode() {
-        let text = body_text(&json!({"data": "aGVsbG8="}), crate::size);
-        assert_eq!(text, "hello");
-        let bin = body_text(&json!({"data": "AAEC", "truncated": true}), crate::size);
-        assert_eq!(bin, "二进制 3 B\n…");
+    fn headers_read_as_pairs() {
+        let e = json!({"request-header": {"Accept": ["*/*", "text/html"]}});
+        assert_eq!(
+            header_of(&e, "request-header"),
+            vec![("Accept".to_string(), vec!["*/*".to_string(), "text/html".to_string()])]
+        );
+        assert!(header_of(&e, "response-header").is_empty());
     }
 }

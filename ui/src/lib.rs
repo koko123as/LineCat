@@ -22,6 +22,7 @@ pub mod extend;
 mod extend_app;
 pub use extend_app::{exit_section, global_view as extend_global_view, main_view as extend_view};
 pub mod fonts;
+pub mod http_body;
 pub mod http_capture;
 pub mod icon_picker;
 pub mod icon_sets;

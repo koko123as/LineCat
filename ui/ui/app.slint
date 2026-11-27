@@ -367,10 +367,13 @@ export struct DetailRow {
     last: bool,
     arg: string,
     labels: [RecordLabel],
+    image: image,
 }
 
 export struct DetailSection {
     title: string,
+    // `ListHeader.caption`: a body's size and type after its title.
+    caption: string,
     plain: bool,
     rows: [DetailRow],
     footer: string,
@@ -8151,7 +8154,18 @@ component DetailRowView inherits Rectangle {
         }
         if root.item.kind == "code": HorizontalLayout {
             padding: 12px;
-            Text { text: root.item.value; font-size: 12px * Type.scale; color: Theme.s.on-surface; wrap: word-wrap; }
+            Text { text: root.item.value; font-family: "monospace"; font-size: 12px * Type.scale; color: Theme.s.on-surface; wrap: word-wrap; }
+        }
+        if root.item.kind == "image": Rectangle {
+            height: min(240px, root.item.image.height * 1px) + 24px;
+            Image {
+                x: 12px;
+                y: 12px;
+                width: parent.width - 24px;
+                height: parent.height - 24px;
+                source: root.item.image;
+                image-fit: contain;
+            }
         }
         if root.item.kind == "traffic": HorizontalLayout {
             spacing: 8px;
@@ -8174,6 +8188,46 @@ component DetailRowView inherits Rectangle {
             }
         }
         if root.divider: Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+    }
+}
+
+// `_MitmHexView`: every byte of a body, as many bytes a line, in fours, as the width holds.
+component HexPage inherits Rectangle {
+    in property <string> title;
+    in property <[string]> lines;
+    in property <bool> truncated;
+    callback back();
+    callback menu();
+    callback columns(int);
+    property <length> margin: 16px;
+    property <int> cols: floor((root.width - 2 * root.margin) / max(1px, probe.preferred-width / 10));
+    changed cols => { root.columns(root.cols); }
+    init => { root.columns(root.cols); }
+    background: Theme.s.page;
+    probe := Text { visible: false; text: "0000000000"; font-family: "monospace"; font-size: 12px * Type.scale; }
+    VerticalLayout {
+        AppBar {
+            title: root.title;
+            can-back: true;
+            back => { root.back(); }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { MenuAnchor.at(self.absolute-position.x, self.absolute-position.y, self.width, self.height); root.menu(); } } }
+        }
+        if root.truncated: HorizontalLayout {
+            padding-left: root.margin;
+            padding-right: root.margin;
+            padding-bottom: 12px;
+            Text { text: "只记录了这段内容的开头部分。"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+        }
+        ListView {
+            vertical-stretch: 1;
+            for line in root.lines: HorizontalLayout {
+                height: probe.preferred-height + 4px;
+                padding-left: root.margin;
+                padding-right: root.margin;
+                Text { text: line; font-family: "monospace"; font-size: 12px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; overflow: clip; }
+            }
+        }
+        Rectangle { height: Dock.pad; }
     }
 }
 
@@ -8234,7 +8288,10 @@ component DetailView inherits Rectangle {
                 for sec in root.detail.sections: VerticalLayout {
                     if sec.title != "": HorizontalLayout {
                         padding-left: 14px;
-                        Text { text: sec.title; height: 40px; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; vertical-alignment: bottom; }
+                        padding-right: 14px;
+                        spacing: 8px;
+                        Text { text: sec.title; height: 40px; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; vertical-alignment: bottom; horizontal-stretch: 1; }
+                        if sec.caption != "": Text { text: sec.caption; height: 40px; min-width: self.preferred-width * 1.1; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: bottom; horizontal-alignment: right; }
                     }
                     if sec.title != "": Rectangle { height: 6px; }
                     if sec.title == "": Rectangle { height: 12px; }
@@ -9728,6 +9785,14 @@ export component AppWindow inherits Window {
     in-out property <bool> req-searching;
     in-out property <string> req-query;
     in-out property <bool> req-sheet-open;
+    // A body of the selected request pushed over it: "text" in the editor, "hex" its bytes.
+    in-out property <string> req-body-page;
+    in-out property <string> req-body-title;
+    in-out property <string> req-body-text;
+    in property <bool> req-body-truncated;
+    in property <[string]> req-hex-lines;
+    callback req-body-menu();
+    callback req-hex-columns(int);
     in-out property <bool> req-actions-open;
     in property <string> req-actions-title;
     in property <[ActionItem]> req-actions;
@@ -10163,6 +10228,7 @@ export component AppWindow inherits Window {
                 if (root.cond-open) { root.cond-open = false; return accept; }
                 if (root.res-dialog != "") { root.res-dialog = ""; return accept; }
                 if (root.req-actions-open) { root.req-actions-open = false; return accept; }
+                if (root.req-body-page != "") { root.req-body-page = ""; return accept; }
                 if (root.log-detail-open) { root.log-detail-open = false; return accept; }
                 if (root.ip-sheet-open) { root.ip-sheet-open = false; return accept; }
                 if (root.mem-sheet-open) { root.mem-sheet-open = false; return accept; }
@@ -11969,6 +12035,30 @@ export component AppWindow inherits Window {
                         menu => { root.req-detail-menu(); }
                         open-row(a) => { root.req-detail-row(a); }
                     }
+                }
+            }
+        }
+
+        if root.req-body-page != "": Rectangle {
+            background: Theme.s.page;
+            TouchArea { }
+            VerticalLayout {
+                padding-top: root.top-inset;
+                if root.req-body-page == "text": EditorPage {
+                    vertical-stretch: 1;
+                    title <=> root.req-body-title;
+                    text <=> root.req-body-text;
+                    readonly: true;
+                    back => { root.req-body-page = ""; }
+                }
+                if root.req-body-page == "hex": HexPage {
+                    vertical-stretch: 1;
+                    title: root.req-body-title;
+                    lines: root.req-hex-lines;
+                    truncated: root.req-body-truncated;
+                    back => { root.req-body-page = ""; }
+                    menu => { root.req-body-menu(); }
+                    columns(n) => { root.req-hex-columns(n); }
                 }
             }
         }
