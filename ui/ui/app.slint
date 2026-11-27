@@ -4427,7 +4427,9 @@ component SetRowView inherits Rectangle {
     property <bool> leading: !root.pictured && root.item.glyph != "" && root.item.kind != "value" && root.item.kind != "check";
     // `_buildExit`: the subtitle keeps every line, so the row grows with them.
     property <bool> exit: root.item.kind == "exit";
-    height: root.exit ? max(64px, row-lay.preferred-height) : root.item.subtitle != "" ? 64px : 52px;
+    // A row follows the text size down to a 44 tap target as it follows it up (FlClash: lib/ui/list_item.dart);
+    // a 16 title adds about 19 a line, a 13 subtitle about 16.
+    height: root.exit ? max(64px, row-lay.preferred-height) : max(44px, root.item.subtitle != "" ? 64px + 35px * (Type.scale - 1) : 52px + 19px * (Type.scale - 1));
     background: ta.pressed && root.item.kind != "person" ? Theme.s.inset : transparent;
     opacity: root.item.enabled ? 1 : 0.45;
     row-lay := HorizontalLayout {
