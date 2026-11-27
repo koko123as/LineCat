@@ -1,6 +1,6 @@
-//! The custom profile's dialers (lib/views/profiles/custom/dialers.dart and the dialer part
-//! of lib/providers/state/custom.dart): a custom proxy a profile names may dial through
-//! another of its proxies or groups, as long as that dial does not lead back to it.
+//! The custom profile's dialers: a custom proxy a profile names may dial through another of
+//! its proxies or groups, as long as that dial does not lead back to it.
+//! FlClash: lib/views/profiles/custom/dialers.dart, lib/providers/state/custom.dart.
 
 use crate::custom_profile::ProxyDialer;
 use crate::proxy_groups::{self as pg, Data, Issue};

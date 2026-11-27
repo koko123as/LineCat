@@ -1,5 +1,5 @@
-//! 代理 on `App`'s side (lib/views/profiles/custom/custom_proxies.dart): the list, its search
-//! and sort, the form (`_EditCustomProxyView`) and the Core's verdicts (`validate.proxies`).
+//! 代理 on `App`'s side: the list, its search and sort, the form (`_EditCustomProxyView`) and
+//! the Core's verdicts (`validate.proxies`). FlClash: lib/views/profiles/custom/custom_proxies.dart.
 
 use crate::custom_proxies::{
     self as cp, issues, issues_message, CustomProxy, Draft, Issue, Kind, Section,

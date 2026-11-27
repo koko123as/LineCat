@@ -815,7 +815,7 @@ impl App {
     }
 
     // ------------------------------------------------------------ dashboard
-    // lib/views/dashboard.
+    // FlClash: lib/views/dashboard.
 
     fn on_traffic(self: &Arc<Self>, up: i64, down: i64, total_up: i64, total_down: i64) {
         let push = |q: &Mutex<VecDeque<i64>>, v: i64| {
@@ -1093,7 +1093,7 @@ impl App {
     }
 
     // ------------------------------------------------------------ profiles
-    // lib/views/profiles and lib/providers/actions/profiles.dart.
+    // FlClash: lib/views/profiles, lib/providers/actions/profiles.dart.
 
     fn profile_item(
         &self,
@@ -1238,7 +1238,7 @@ impl App {
             .map(String::from))
     }
 
-    /// `validateProfile` in lib/core/controller.dart, on the file at `path`: an age-encrypted
+    /// `validateProfile` (FlClash: lib/core/controller.dart) on the file at `path`: an age-encrypted
     /// file is decrypted in place, and a file the Core cannot load as a config is tried as a
     /// share-link list and rewritten into a config of its proxies.
     fn ingest(&self, path: &std::path::Path, age_key: &str) -> Result<(), Ingest> {
@@ -1783,7 +1783,7 @@ impl App {
         }
     }
 
-    // Edit (lib/views/profiles/edit.dart)
+    // Edit. FlClash: lib/views/profiles/edit.dart.
 
     fn open_edit(self: &Arc<Self>, id: String) {
         let custom = self
@@ -2224,7 +2224,7 @@ impl App {
     }
 
     // ------------------------------------------------------------ proxies
-    // lib/views/proxies and lib/providers/actions/proxies.dart.
+    // FlClash: lib/views/proxies, lib/providers/actions/proxies.dart.
 
     fn refresh_groups(self: &Arc<Self>) {
         let Ok(bridge) = self.bridge() else { return };

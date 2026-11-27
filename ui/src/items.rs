@@ -1,5 +1,5 @@
-//! The filters (lib/views/config/filters.dart) and scripts (lib/views/config/scripts.dart)
-//! as the settings keep them, and the checks their forms make.
+//! The filters and scripts as the settings keep them, and the checks their forms make.
+//! FlClash: lib/views/config/filters.dart, lib/views/config/scripts.dart.
 
 use serde::{Deserialize, Serialize};
 

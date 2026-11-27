@@ -1,5 +1,5 @@
-//! lib/common/mitm_network.dart: the DNS, TUN and system proxy settings a module changes, as
-//! `mitm.readModule` reports them under `network`, merged over the enabled modules.
+//! The DNS, TUN and system proxy settings a module changes, as `mitm.readModule` reports them
+//! under `network`, merged over the enabled modules. FlClash: lib/common/mitm_network.dart.
 
 use serde_json::{Map, Value};
 

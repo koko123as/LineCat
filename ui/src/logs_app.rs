@@ -1,5 +1,5 @@
-//! The logs page (lib/views/logs.dart) wired to the window: the records, search, level
-//! filters, the menu and a record's details.
+//! The logs page wired to the window: the records, search, level filters, the menu and a
+//! record's details. FlClash: lib/views/logs.dart.
 
 use crate::logs::{self, Payload, Record};
 use crate::settings_app::Effect;

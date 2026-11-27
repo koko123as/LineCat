@@ -1,5 +1,5 @@
 //! The requests and resources pages' side of `App`: the Core's streams they read, the calls
-//! they make (lib/core/api/rpc_core_api.dart) and what they publish to the window.
+//! they make (FlClash: lib/core/api/rpc_core_api.dart) and what they publish to the window.
 
 use crate::requests_view::{self, Ctx, CONNECTIONS, DNS, HTTP};
 use crate::{

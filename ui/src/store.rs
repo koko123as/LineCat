@@ -40,7 +40,7 @@ pub struct Settings {
     pub dav: Option<crate::backup::Dav>,
     /// `restoreStrategy`: false compatible, true override.
     pub restore_override: bool,
-    /// lib/views/config/network.dart on Android.
+    /// FlClash: lib/views/config/network.dart, its Android rows.
     pub network: Network,
     /// `PatchClashConfig.dns` with `dnsOverrideKeys`: what the DNS page writes over
     /// every URL and file profile.
@@ -113,8 +113,8 @@ pub struct Network {
     pub route_exclude_address: Vec<String>,
 }
 
-/// `minTunMtu`, `maxTunMtu`, `defaultTunMtu` and `congestionControllers` in
-/// lib/models/clash_config.dart.
+/// `minTunMtu`, `maxTunMtu`, `defaultTunMtu` and `congestionControllers`.
+/// FlClash: lib/models/clash_config.dart.
 pub const TUN_MTU: (i64, i64, i64) = (1280, 65535, 9000);
 pub const CONGESTION_CONTROLLERS: [&str; 3] = ["cubic", "reno", "bbr"];
 
@@ -139,8 +139,8 @@ impl Default for Network {
     }
 }
 
-/// What lib/views/config/general.dart sets: `AppSettingProps`, `PatchClashConfig` and
-/// `NetworkProps` fields.
+/// The `AppSettingProps`, `PatchClashConfig` and `NetworkProps` fields the general settings
+/// set. FlClash: lib/views/config/general.dart.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct General {
@@ -215,9 +215,9 @@ pub struct Authentication {
     pub password: String,
 }
 
-/// `defaultUserAgents` in lib/models/config.dart.
+/// FlClash: lib/models/config.dart (`defaultUserAgents`).
 pub const DEFAULT_USER_AGENTS: [&str; 2] = ["clash-verge/v2.4.2", "ClashforWindows/0.19.23"];
-/// `delayTestTimeoutOptions` and `defaultDelayTestTimeout` in lib/common/constant.dart.
+/// FlClash: lib/common/constant.dart (`delayTestTimeoutOptions`, `defaultDelayTestTimeout`).
 pub const DELAY_TEST_TIMEOUTS: [i64; 5] = [500, 1000, 2000, 5000, 8000];
 pub const DEFAULT_DELAY_TEST_TIMEOUT: i64 = 8000;
 
@@ -276,7 +276,7 @@ impl Default for Settings {
     }
 }
 
-/// `Mitm` in lib/models/clash_config.dart.
+/// FlClash: lib/models/clash_config.dart (`Mitm`).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct MitmSettings {
@@ -308,7 +308,7 @@ impl Default for MitmSettings {
     }
 }
 
-/// `ProxiesStyleProps` in lib/models/config.dart.
+/// FlClash: lib/models/config.dart (`ProxiesStyleProps`).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ProxiesStyle {
@@ -341,7 +341,7 @@ impl Default for ProxiesStyle {
     }
 }
 
-/// `SubscriptionInfo` in lib/models/profile.dart, from the `subscription-userinfo` header.
+/// From the `subscription-userinfo` header. FlClash: lib/models/profile.dart (`SubscriptionInfo`).
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Subscription {
@@ -382,7 +382,7 @@ impl Subscription {
     }
 }
 
-/// `defaultUpdateDuration` in lib/common/constant.dart: one day.
+/// One day. FlClash: lib/common/constant.dart (`defaultUpdateDuration`).
 pub const DEFAULT_UPDATE_MINUTES: u64 = 24 * 60;
 
 fn yes() -> bool {

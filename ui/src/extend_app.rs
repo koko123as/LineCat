@@ -1,4 +1,4 @@
-//! 扩展 on `App`'s side (lib/views/profiles/extend): the page, 编辑全局规则, the added rules
+//! 扩展 on `App`'s side (FlClash: lib/views/profiles/extend): the page, 编辑全局规则, the added rules
 //! pages it hosts for the profile's own rules and the app's, the exit picker (also under a
 //! custom profile's 更多), 立即应用, and the MITM modules' exits read through the Core.
 

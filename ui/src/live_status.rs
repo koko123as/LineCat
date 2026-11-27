@@ -1,5 +1,5 @@
-//! `LiveStatusButton` and the deck of lib/views/dashboard/widgets/live_status*.dart: what
-//! is happening now and still needs the user, in order of importance.
+//! `LiveStatusButton` and its deck: what is happening now and still needs the user, in order
+//! of importance. FlClash: lib/views/dashboard/widgets/live_status*.
 
 use serde_json::Value;
 

@@ -1,5 +1,5 @@
-//! The theme page and the custom colour page on `App`'s side (lib/views/theme.dart,
-//! lib/widgets/palette.dart).
+//! The theme page and the custom colour page on `App`'s side.
+//! FlClash: lib/views/theme.dart, lib/widgets/palette.dart.
 
 use crate::colors::{self, STYLES};
 use crate::theme::Palette;

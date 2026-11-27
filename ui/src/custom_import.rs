@@ -1,4 +1,4 @@
-//! What a config brings into a custom profile (lib/providers/state/custom_import.dart,
+//! What a config brings into a custom profile (FlClash: lib/providers/state/custom_import.dart,
 //! `readCustomProfileImport`), read from the mapping the Core's `config.read` gives: its
 //! names moved off the app's. A provider whose source the app has is used under the app's
 //! label, a proxy the app holds unchanged under the app's name, one keeping an app proxy's

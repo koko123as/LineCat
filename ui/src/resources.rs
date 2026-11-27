@@ -1,4 +1,4 @@
-//! The resources page (lib/views/resources.dart): the geo files the Core keeps, its
+//! The resources page (FlClash: lib/views/resources.dart): the geo files the Core keeps, its
 //! auto update and the update interval, then the remote icon sets, rule sets, scripts and modules.
 
 use crate::icon_sets::IconSet;

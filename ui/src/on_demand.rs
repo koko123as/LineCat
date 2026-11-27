@@ -1,4 +1,5 @@
-//! lib/views/config/on_demand.dart and the suspend it drives (`suspendProvider`, `syncSuspend`).
+//! On-demand rules and the suspend they drive (`suspendProvider`, `syncSuspend`).
+//! FlClash: lib/views/config/on_demand.dart.
 
 use std::collections::BTreeSet;
 

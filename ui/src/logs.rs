@@ -1,7 +1,7 @@
-//! The logs page's logic (lib/views/logs.dart): the payload's routing line
-//! (lib/common/log_payload.dart), search, the level filters (`logFacets`) and the export text.
+//! The logs page's logic: the payload's routing line, search, the level filters
+//! (`logFacets`) and the export text. FlClash: lib/views/logs.dart, lib/common/log_payload.dart.
 
-/// `LogLevel` in lib/enum/enum.dart, in order.
+/// In order. FlClash: lib/enum/enum.dart (`LogLevel`).
 pub const LEVELS: [&str; 5] = ["debug", "info", "warning", "error", "silent"];
 
 /// `maxLogsLength`.
@@ -248,7 +248,7 @@ pub fn toggle(picked: &mut Vec<String>, level: &str) {
     }
 }
 
-/// `Log.toString()` as the Dart model prints it, one record per line (`_encodeLogsTask`).
+/// A record as FlClash's `Log.toString()` prints it, one record per line (`_encodeLogsTask`).
 pub fn line(r: &Record) -> String {
     format!(
         "Log(logLevel: LogLevel.{}, payload: {}, dateTime: {})",

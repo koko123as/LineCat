@@ -1,5 +1,5 @@
-//! The tools page and the settings pages under it (lib/views/tools.dart,
-//! lib/views/config/general.dart, developer.dart, about.dart), as sections of rows.
+//! The tools page and the settings pages under it, as sections of rows. FlClash:
+//! lib/views/tools.dart, lib/views/config/general.dart, lib/views/developer.dart, lib/views/about.dart.
 
 use crate::store::{Settings, DELAY_TEST_TIMEOUTS};
 use crate::{SetRow, SetSection};

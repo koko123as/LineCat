@@ -1,4 +1,4 @@
-//! The icon sets of 进阶配置 → 图标集 (lib/views/config/icon_sets.dart, `IconSetsAction`):
+//! The icon sets of 进阶配置 → 图标集 (FlClash: lib/views/config/icon_sets.dart, `IconSetsAction`):
 //! galleries in the Quantumult X / Loon format, kept in the settings with their icons.
 
 use serde::{Deserialize, Serialize};

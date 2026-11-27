@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 
 //! HCT colour space and the dynamic scheme roles FlClash's `seededColorScheme` reads, ported
-//! from prism_ui's lib/hct (itself trimmed from Google's material-color-utilities).
+//! from FlClash: plugins/prism_ui/lib/hct (itself trimmed from Google's material-color-utilities).
 //! Only the roles the app's palette takes are kept.
 
 use std::f64::consts::PI;

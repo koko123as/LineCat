@@ -1,4 +1,4 @@
-//! The group form's icon picker (lib/views/profiles/custom/icon.dart, `IconPickerView`):
+//! The group form's icon picker (FlClash: lib/views/profiles/custom/icon.dart, `IconPickerView`):
 //! icons recommended for the group's name from the icon sets and the icons used before
 //! (`IconRecords`), the sets one at a time, the search across them, and the current icon.
 

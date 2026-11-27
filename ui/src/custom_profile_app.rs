@@ -1,5 +1,5 @@
-//! The custom profile page (lib/views/profiles/custom/custom.dart) and the profile rename
-//! dialog (`renameProfile`), on `App`'s side.
+//! The custom profile page and the profile rename dialog (`renameProfile`), on `App`'s side.
+//! FlClash: lib/views/profiles/custom/custom.dart.
 
 use crate::custom_profile as cp;
 use crate::{now_secs, App, AppWindow, CustomRow};

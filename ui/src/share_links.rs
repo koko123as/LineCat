@@ -1,5 +1,5 @@
-//! Share link quick edit of 进阶配置 → 自定义 → 代理 (`ShareLinkEdit`, `withUnlinkedFields` in
-//! lib/providers/state/custom.dart, `_confirmReplaced` and `_fillFromLink` in
+//! Share link quick edit of 进阶配置 → 自定义 → 代理 (`ShareLinkEdit`, `withUnlinkedFields`,
+//! `_confirmReplaced`, `_fillFromLink`; FlClash: lib/providers/state/custom.dart,
 //! lib/views/profiles/custom/custom_proxies.dart). The Core's `convert.encodeLinks` and
 //! `convert.decodeLinks` do the encoding; this is what the page makes of their answers.
 

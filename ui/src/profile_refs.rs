@@ -1,4 +1,4 @@
-//! What a custom profile's DNS, NTP and sniffer settings name (lib/models/references.dart):
+//! What a custom profile's DNS, NTP and sniffer settings name (FlClash: lib/models/references.dart):
 //! the proxies a DNS server dials through or sits behind, the NTP dialer, and the rule sets
 //! the DNS policies, the Fake-IP filter and the sniffer lists read. mihomo refuses the whole
 //! config for a rule set it lacks, so these join the rules' own in every check.

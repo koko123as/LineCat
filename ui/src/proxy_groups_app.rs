@@ -1,4 +1,4 @@
-//! The custom profile's 策略组 on `App`'s side (lib/views/profiles/custom/groups.dart): the
+//! The custom profile's 策略组 on `App`'s side (FlClash: lib/views/profiles/custom/groups.dart): the
 //! section's rows, selection, sort mode and menu (`CustomProxyGroupsSection`), and the form
 //! (`EditProxyGroupView`) with its options, quick edit and save.
 

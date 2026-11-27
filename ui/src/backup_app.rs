@@ -1,5 +1,5 @@
-//! The backup and restore page on `App`'s side (lib/views/backup_and_restore.dart): its
-//! sections, the WebDAV form, and backing up or restoring locally or on the server.
+//! The backup and restore page on `App`'s side: its sections, the WebDAV form, and backing
+//! up or restoring locally or on the server. FlClash: lib/views/backup_and_restore.dart.
 
 use crate::backup::{self, Dav, DavClient, RestoreOption};
 use crate::{ActionItem, App, AppWindow, SetRow, SetSection};

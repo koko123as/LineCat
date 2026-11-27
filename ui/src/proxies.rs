@@ -1,5 +1,5 @@
 //! The proxies page: what `proxy.groups` holds, shaped as FlClash's proxies views show it
-//! (lib/views/proxies and lib/providers/state/proxies.dart).
+//! FlClash: lib/views/proxies, lib/providers/state/proxies.dart.
 
 use crate::store::ProxiesStyle;
 use crate::{NodeItem, ProxyGroup};

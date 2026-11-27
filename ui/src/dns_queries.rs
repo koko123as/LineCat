@@ -1,5 +1,5 @@
-//! The DNS queries `dns.watch` reports (lib/features/connection/dns_queries.dart and
-//! dns_query_detail.dart).
+//! The DNS queries `dns.watch` reports. FlClash: lib/features/connection/dns_queries.dart,
+//! lib/features/connection/dns_query_detail.dart.
 
 use crate::requests::{conditions_match, matches_terms, terms, Filters, Record};
 use serde_json::Value;

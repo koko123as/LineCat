@@ -3,7 +3,7 @@ use crate::profile::{is_share_link, is_url, percent_decode};
 /// `protocolSchemes`: the app's own schemes, whose `install-config` link carries a URL.
 const PROTOCOL_SCHEMES: &[&str] = &["clash", "clashmeta", "flclash"];
 
-/// `profileUrlFromQrCodes` in lib/common/link.dart.
+/// FlClash: lib/common/link.dart (`profileUrlFromQrCodes`).
 pub fn profile_url_from_qr_codes<'a>(values: impl IntoIterator<Item = &'a str>) -> Option<String> {
     for value in values {
         let text = value.trim();

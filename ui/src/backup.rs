@@ -1,6 +1,6 @@
-//! Backup and restore (lib/views/backup_and_restore.dart, lib/providers/actions/backup.dart,
-//! lib/common/dav_client.dart): the settings and profiles packed into one zip, kept on the
-//! device or on a WebDAV server.
+//! Backup and restore: the settings and profiles packed into one zip, kept on the device or
+//! on a WebDAV server. FlClash: lib/views/backup_and_restore.dart,
+//! lib/providers/actions/backup.dart, lib/common/dav_client.dart.
 //!
 //! FlClash's archive carries its database; this app keeps its state in `ui/state.json`, so
 //! the archive holds that file and the profiles beside it.

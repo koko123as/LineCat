@@ -1,4 +1,4 @@
-//! The custom profile's 外部资源 (lib/views/profiles/custom/providers.dart): the proxy
+//! The custom profile's 外部资源 (FlClash: lib/views/profiles/custom/providers.dart): the proxy
 //! providers its groups use and the rule sets its rules and settings name, and each proxy
 //! provider's options (`ProxyProviderOptions`), kept in the profile's overrides by name.
 

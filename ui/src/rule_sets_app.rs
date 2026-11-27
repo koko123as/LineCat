@@ -1,4 +1,4 @@
-//! 规则集 on `App`'s side (lib/views/config/providers.dart and `ClashProvidersAction`).
+//! 规则集 on `App`'s side. FlClash: lib/views/config/providers.dart (`ClashProvidersAction`).
 
 use crate::items::ScriptSave;
 use crate::rule_sets::{self, RuleSet};

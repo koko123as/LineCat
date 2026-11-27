@@ -1,6 +1,6 @@
 //! Whether this Android device trusts the MITM CA, and the replies to installing or
-//! removing it (lib/common/mitm_trust.dart `AndroidMitmTrustStore`, the dialogs of
-//! lib/views/config/mitm.dart).
+//! removing it. FlClash: lib/common/mitm_trust.dart (`AndroidMitmTrustStore`), the dialogs
+//! of lib/views/config/mitm.dart.
 
 use serde_json::Value;
 

@@ -1,7 +1,6 @@
-//! Reads a QR code out of a grayscale picture, as `mobile_scanner` and `analyzeImage` do for
-//! lib/pages/scan.dart and `picker.pickerConfigQRCode`: binarize, find the three finder
-//! patterns, sample the grid through a perspective transform, then the format, the
-//! Reed-Solomon blocks and the segments (ISO/IEC 18004).
+//! Reads a QR code out of a grayscale picture: binarize, find the three finder patterns,
+//! sample the grid through a perspective transform, then the format, the Reed-Solomon blocks
+//! and the segments (ISO/IEC 18004). FlClash: lib/pages/scan.dart (`picker.pickerConfigQRCode`).
 
 /// Table 9 of ISO/IEC 18004 by version, in L M Q H order: EC codewords per block.
 const EC_PER_BLOCK: [[u8; 4]; 40] = [

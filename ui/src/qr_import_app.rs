@@ -1,4 +1,4 @@
-//! The add menu's 二维码 and, on a TV, 从手机发送 (views/profiles/add.dart).
+//! The add menu's 二维码 and, on a TV, 从手机发送. FlClash: lib/views/profiles/add.dart.
 
 use crate::link_receiver::LinkReceiver;
 use crate::qr_decode;

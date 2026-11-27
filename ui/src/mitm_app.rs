@@ -1,5 +1,5 @@
-//! MITM on `App`'s side: the page, 抓包, 主机名, 模块 and a module's page
-//! (lib/views/config/mitm.dart, mitm_modules.dart, `MitmModulesAction`).
+//! MITM on `App`'s side: the page, 抓包, 主机名, 模块 and a module's page.
+//! FlClash: lib/views/config/mitm.dart, lib/views/config/mitm_modules.dart (`MitmModulesAction`).
 
 use crate::ca_trust::{self, TrustCheck};
 use crate::mitm::{self, Certificate, HostRow, MitmModule, ModuleRead};

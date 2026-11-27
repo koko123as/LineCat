@@ -1,5 +1,6 @@
-//! A profile's extensions (lib/views/profiles/extend): its own added rules, the app's added
-//! rules it leaves out (`disabled_rules`), and where each custom exit goes (`exitTargets`).
+//! A profile's extensions: its own added rules, the app's added rules it leaves out
+//! (`disabled_rules`), and where each custom exit goes (`exitTargets`).
+//! FlClash: lib/views/profiles/extend.
 
 use crate::custom_profile::{self as cp, DisabledRule, ProfileRule};
 use crate::rules::{self, Rule, TARGETS};

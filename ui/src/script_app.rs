@@ -1,4 +1,5 @@
-//! Profile scripts on `App`'s side (lib/providers/actions/setup.dart, state/profile.dart).
+//! Profile scripts on `App`'s side. FlClash: lib/providers/actions/setup.dart,
+//! lib/providers/state/profile.dart.
 
 use crate::bridge::Bridge;
 use crate::{script, App, CALL};

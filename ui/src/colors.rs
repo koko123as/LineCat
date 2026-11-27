@@ -1,6 +1,6 @@
-//! The theme's colours: FlClash's `seededColorScheme` (prism_ui's lib/color.dart) for
-//! the palette roles the app draws, `toPureBlack`, the accent list the theme page edits
-//! (lib/views/theme.dart) and the colour picker's maths (lib/widgets/palette.dart).
+//! The theme's colours: `seededColorScheme` for the palette roles the app draws,
+//! `toPureBlack`, the accent list the theme page edits and the colour picker's maths.
+//! FlClash: plugins/prism_ui/lib/color.dart, lib/views/theme.dart, lib/widgets/palette.dart.
 
 use crate::hct::{DynamicScheme, Hct, Role, TonalPalette, Variant};
 use crate::theme::{Palette, ACCENTS};
@@ -99,7 +99,7 @@ pub fn palette(seed: u32, style: i32, dark: bool) -> Palette {
     }
 }
 
-/// `defaultPrimaryColors` in FlClash's lib/common/constant.dart, the seeds of `theme.rs`.
+/// The seeds of `theme.rs`. FlClash: lib/common/constant.dart (`defaultPrimaryColors`).
 const DEFAULT_PRIMARY_COLORS: [u32; 8] = [
     0x007AFF, 0xCB30E0, 0xFF2D55, 0xFF383C, 0xFF8D28, 0xFFCC00, 0x34C759, 0x8E8E93,
 ];
@@ -324,7 +324,7 @@ fn hue_of(r: f64, g: f64, b: f64, max: f64, delta: f64) -> f64 {
     }
 }
 
-/// Flutter's `HSVColor.fromColor`: (hue, saturation, value).
+/// (hue in degrees, saturation, value), saturation and value in 0..=1.
 pub fn to_hsv(rgb: u32) -> (f64, f64, f64) {
     let (r, g, b) = channels(rgb);
     let max = r.max(g).max(b);
@@ -474,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn check_ink_follows_flutter_brightness_estimate() {
+    fn check_ink_follows_the_brightness_estimate() {
         assert!(is_dark(0x007aff) && !is_dark(0xffcc00) && !is_dark(0xffffff));
     }
 }

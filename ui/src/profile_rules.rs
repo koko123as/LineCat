@@ -1,7 +1,7 @@
-//! A custom profile's own rules (lib/views/profiles/custom/rules.dart): `Rule.parse`, its
-//! payload and target checks (`customRuleIssues`), the rule sets it names
-//! (lib/models/references.dart), the quick edit text (`encodeRuleList` / `decodeRuleList`)
-//! and `ProfileRules`' writes, over the `profile_rules` rows of the state.
+//! A custom profile's own rules: `Rule.parse`, its payload and target checks
+//! (`customRuleIssues`), the rule sets it names, the quick edit text (`encodeRuleList` /
+//! `decodeRuleList`) and `ProfileRules`' writes, over the `profile_rules` rows of the state.
+//! FlClash: lib/views/profiles/custom/rules.dart, lib/models/references.dart.
 
 use crate::custom_profile::{self as cp, ProfileRule};
 use crate::proxy_groups::{self as pg, Data};

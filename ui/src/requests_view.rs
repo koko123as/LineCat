@@ -1,6 +1,6 @@
-//! The requests page's state and what it shows (lib/views/connection/requests.dart,
-//! requests_detail_pane.dart and the rows and details of lib/features/connection): the
-//! three logs, the segment, search and filters, the selection and the condition dialog.
+//! The requests page's state and what it shows: the three logs, the segment, search and
+//! filters, the selection and the condition dialog. FlClash: lib/views/connection/requests.dart,
+//! lib/views/connection/requests_detail_pane.dart, lib/features/connection.
 
 use crate::dns_queries::{self, Query};
 use crate::http_capture::{self, Summary};

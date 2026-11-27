@@ -1,4 +1,4 @@
-//! The rule sets of 进阶配置 → 规则集 (lib/views/config/providers.dart, `ClashProvider`):
+//! The rule sets of 进阶配置 → 规则集 (FlClash: lib/views/config/providers.dart, `ClashProvider`):
 //! kept in the settings, their files under the Core's `providers/rules`, where
 //! `ruleSet.compile` downloads and compiles them.
 

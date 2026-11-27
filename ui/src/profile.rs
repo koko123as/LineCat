@@ -1,12 +1,12 @@
-//! Subscription download and the `config.apply` arguments, the minimum of what
-//! lib/models/profile.dart and lib/common/task.dart (`_makeRealProfileTask`) do on Android.
+//! Subscription download and the `config.apply` arguments, the minimum FlClash does for
+//! them on Android. FlClash: lib/models/profile.dart, lib/common/task.dart (`_makeRealProfileTask`).
 
 use serde_json::{json, Map, Value};
 use std::io::Read;
 use std::time::Duration;
 
-/// `PackageInfoExtension.ua` in lib/common/package.dart: `productName` stays `FlClash`
-/// so subscription servers answer as they answer FlClash. The version is pubspec's.
+/// `productName` and the version stay FlClash's v0.9.4, not the app's (Gradle's versionName),
+/// so subscription servers answer as they answer FlClash. FlClash: lib/common/package.dart.
 pub const USER_AGENT: &str = "FlClash/v0.9.4 clash-verge Platform/android";
 pub const DEFAULT_TEST_URL: &str = "https://www.gstatic.com/generate_204";
 const MAX_PROFILE_BYTES: u64 = 32 << 20;
@@ -19,10 +19,10 @@ pub struct Download {
     pub userinfo: Option<String>,
 }
 
-/// `_ageArmorHeader` in lib/common/file.dart.
+/// FlClash: lib/common/file.dart (`_ageArmorHeader`).
 pub const AGE_ARMOR_HEADER: &[u8] = b"-----BEGIN AGE ENCRYPTED FILE-----";
 
-/// `shareLinkSchemes` in lib/common/constant.dart.
+/// FlClash: lib/common/constant.dart (`shareLinkSchemes`).
 const SHARE_LINK_SCHEMES: &[&str] = &[
     "hysteria",
     "hysteria2",
@@ -42,7 +42,7 @@ const SHARE_LINK_SCHEMES: &[&str] = &[
     "mierus",
 ];
 
-/// `String.isShareLink` in lib/common/string.dart.
+/// FlClash: lib/common/string.dart (`isShareLink`).
 pub fn is_share_link(s: &str) -> bool {
     match s.find("://") {
         Some(i) if i > 0 && s.len() > i + 3 && !s.contains('\n') => {
@@ -59,7 +59,7 @@ pub fn is_url(s: &str) -> bool {
         && crate::store::host_of(s).is_some()
 }
 
-/// `reservedCustomProxyNames` in lib/providers/state/custom.dart.
+/// FlClash: lib/providers/state/custom.dart (`reservedCustomProxyNames`).
 const RESERVED_NAMES: &[&str] = &[
     "DIRECT",
     "REJECT",
@@ -108,7 +108,7 @@ pub(crate) fn free_proxy_name(base: &str, taken: &mut std::collections::HashSet<
     name
 }
 
-/// `_fromShareLinks` in lib/providers/actions/profiles.dart: the decoded proxies, renamed
+/// `_fromShareLinks` (FlClash: lib/providers/actions/profiles.dart): the decoded proxies, renamed
 /// apart, and the profile's label. `decoded` is `convert.decodeLinks`' results, one list per
 /// link.
 pub fn share_link_proxies(
@@ -151,7 +151,7 @@ pub fn share_link_proxies(
     Ok((proxies, label))
 }
 
-/// `check` off is `checkCertificate` off: the certificate goes unverified (lib/common/http.dart).
+/// `check` off is `checkCertificate` off: the certificate goes unverified.
 pub fn download(url: &str, check: bool) -> Result<Download, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(30)))
@@ -190,7 +190,7 @@ pub fn download(url: &str, check: bool) -> Result<Download, String> {
     })
 }
 
-/// `decompressUnlabeled` in lib/common/request.dart: a gzip or zlib body the server did not label.
+/// A gzip or zlib body the server did not label. FlClash: lib/common/request.dart.
 pub fn decompress_unlabeled(bytes: Vec<u8>) -> Vec<u8> {
     let mut out = Vec::new();
     let ok = match bytes.as_slice() {
@@ -551,7 +551,7 @@ pub fn vpn_options(
     })
 }
 
-/// `defaultBypassDomain` in lib/models/config.dart.
+/// FlClash: lib/models/config.dart (`defaultBypassDomain`).
 pub const BYPASS_DOMAIN: [&str; 26] = [
     "*zhihu.com",
     "*zhimg.com",

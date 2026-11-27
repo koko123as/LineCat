@@ -1,6 +1,6 @@
-//! A custom profile's proxy groups (lib/views/profiles/custom/groups.dart and the group
-//! checks of lib/providers/state/custom.dart): types, the form's options, the config
-//! definition a stored group gives, the issues the list and the form show, and loops.
+//! A custom profile's proxy groups: types, the form's options, the config definition a
+//! stored group gives, the issues the list and the form show, and loops.
+//! FlClash: lib/views/profiles/custom/groups.dart, lib/providers/state/custom.dart.
 
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};

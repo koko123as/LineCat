@@ -1,5 +1,5 @@
-//! Profile scripts on QuickJS, as FlClash's rust_api `script` module and
-//! lib/common/javascript.dart run them.
+//! Profile scripts on QuickJS, as FlClash runs them. FlClash: the rust_api `script` module,
+//! lib/common/javascript.dart.
 
 mod console;
 

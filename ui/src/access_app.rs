@@ -1,5 +1,5 @@
-//! The access control page on `App`'s side (lib/views/access.dart): the installed apps from
-//! the shell's `packages.*` ops, the draft selection, and saving it into `vpnOptions`.
+//! The access control page on `App`'s side: the installed apps from the shell's `packages.*`
+//! ops, the draft selection, and saving it into `vpnOptions`. FlClash: lib/views/access.dart.
 
 use crate::access::{self, AccessControl, Mode, Package, Sort};
 use crate::{AccessRow, ActionItem, App, AppWindow, CALL};

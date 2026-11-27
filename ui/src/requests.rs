@@ -1,6 +1,6 @@
-//! The connections of this run (lib/views/connection/requests.dart and
-//! lib/features/connection): the log `connection.watch` keeps, the search
+//! The connections of this run: the log `connection.watch` keeps, the search
 //! (`trackerInfoQueryMatcher`), the filters and the rows and details the page shows.
+//! FlClash: lib/views/connection/requests.dart, lib/features/connection.
 
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, VecDeque};

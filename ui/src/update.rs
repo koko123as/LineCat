@@ -1,6 +1,6 @@
-//! Self update (lib/common/app_update.dart, release_asset.dart, release_version.dart and
-//! `request.newestOfAllReleases`): which release file this build installs, the newest
-//! release of its line and the checksum a download is verified against.
+//! Self update: which release file this build installs, the newest release of its line and
+//! the checksum a download is verified against. FlClash: lib/common/app_update.dart,
+//! lib/common/release_asset.dart, lib/common/release_version.dart (`newestOfAllReleases`).
 
 use serde_json::Value;
 use std::cmp::Ordering;

@@ -1,6 +1,6 @@
-//! The added rules pages on `App`'s side (lib/views/config/rules.dart): the list, selecting
-//! to delete, the rule form (lib/features/form/rule.dart) and the presets
-//! (lib/features/form/rule_preset.dart).
+//! The added rules pages on `App`'s side: the list, selecting to delete, the rule form and
+//! the presets. FlClash: lib/views/config/rules.dart, lib/features/form/rule.dart,
+//! lib/features/form/rule_preset.dart.
 
 use crate::rules::{self, Rule, ACTIONS, TARGETS};
 use crate::{store, ActionItem, App, PageMeta, SetRow, SetSection};

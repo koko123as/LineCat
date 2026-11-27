@@ -1,4 +1,4 @@
-//! The dashboard cards added to match lib/views/dashboard: service status, connection
+//! The dashboard cards added to match FlClash's (FlClash: lib/views/dashboard): service status, connection
 //! stats, the intranet IP card's LAN switch, the IP quality sheet and the card editor.
 
 use crate::dash_table::{self, Feed};

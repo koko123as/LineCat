@@ -1,6 +1,6 @@
 //! The tools page and the settings pages under it, on `App`'s side: what a tap or a switch
-//! changes, saves and applies (lib/views/tools.dart, lib/views/config/general.dart,
-//! developer.dart, about.dart, theme.dart).
+//! changes, saves and applies. FlClash: lib/views/tools.dart, lib/views/config/general.dart,
+//! lib/views/developer.dart, lib/views/about.dart, lib/views/theme.dart.
 
 use crate::settings_view::{self, choices};
 use crate::{overrides, store, ActionItem, Anchor, App, AppWindow, PageMeta, SetSection, CALL};

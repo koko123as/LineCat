@@ -1,6 +1,6 @@
-//! MITM (lib/views/config/mitm.dart, mitm_modules.dart, lib/features/mitm/module_editor.dart):
-//! the Core's `mitm` section, the CA, the hostname list and the modules as `mitm.readModule`
-//! reads them.
+//! MITM: the Core's `mitm` section, the CA, the hostname list and the modules as
+//! `mitm.readModule` reads them. FlClash: lib/views/config/mitm.dart,
+//! lib/views/config/mitm_modules.dart, lib/features/mitm/module_editor.dart.
 
 use crate::store::MitmSettings;
 use serde::{Deserialize, Serialize};

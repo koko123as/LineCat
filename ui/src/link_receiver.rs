@@ -1,4 +1,4 @@
-//! `LinkReceiver` (lib/common/link_receiver.dart): a one-page form on the local network,
+//! `LinkReceiver` (FlClash: lib/common/link_receiver.dart): a one-page form on the local network,
 //! so a phone that scans the address can hand a link to a TV that has no way to type one.
 
 use crate::qr_import::profile_url_from_qr_codes;

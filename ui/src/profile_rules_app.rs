@@ -1,4 +1,4 @@
-//! A custom profile's 规则 on `App`'s side (lib/views/profiles/custom/rules.dart): the list
+//! A custom profile's 规则 on `App`'s side (FlClash: lib/views/profiles/custom/rules.dart): the list
 //! with search, selection, sort mode and menus (`ListEditorPage`), the presets
 //! (`RulePresetSheet`), quick edit, and the form (`_AddOrEditRuleView`).
 

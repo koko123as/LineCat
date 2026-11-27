@@ -1,6 +1,6 @@
-//! The app's own proxies of 进阶配置 → 自定义 → 代理 (lib/views/profiles/custom/custom_proxies.dart,
-//! `CustomProxy` in lib/models/clash_config.dart, `ProxyField` in lib/enum/enum.dart): each one
-//! kept as the raw mapping the Core parses, since every type reads its own keys.
+//! The app's own proxies of 进阶配置 → 自定义 → 代理: each one kept as the raw mapping the Core
+//! parses, since every type reads its own keys. FlClash: lib/views/profiles/custom/custom_proxies.dart,
+//! lib/models/clash_config.dart (`CustomProxy`), lib/enum/enum.dart (`ProxyField`).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};

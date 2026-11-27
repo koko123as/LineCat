@@ -1,7 +1,7 @@
-//! Custom profiles (lib/views/profiles/custom): a profile with no file of its own, built from
-//! the proxy groups, rules and settings kept for it. The tables mirror lib/database's
-//! `proxy_groups`, `rules` (those with a profile id), `proxy_dialers` and `disabled_rules`,
-//! each row keyed by its profile's id.
+//! Custom profiles: a profile with no file of its own, built from the proxy groups, rules and
+//! settings kept for it. The tables mirror FlClash's `proxy_groups`, `rules` (those with a
+//! profile id), `proxy_dialers` and `disabled_rules`, each row keyed by its profile's id.
+//! FlClash: lib/views/profiles/custom, lib/database.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -12,7 +12,7 @@ use crate::store::{Profile, State};
 
 pub const KIND: &str = "custom";
 
-/// `ProfileOverrides` in lib/models/clash_config.dart: each section with its picked keys.
+/// Each section with its picked keys. FlClash: lib/models/clash_config.dart (`ProfileOverrides`).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ProfileOverrides {

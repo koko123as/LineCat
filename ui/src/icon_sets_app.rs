@@ -1,4 +1,4 @@
-//! 图标集 on `App`'s side (lib/views/config/icon_sets.dart and `IconSetsAction`).
+//! 图标集 on `App`'s side. FlClash: lib/views/config/icon_sets.dart (`IconSetsAction`).
 
 use crate::icon_sets::{self, IconSet, IconSetIcon};
 use crate::{

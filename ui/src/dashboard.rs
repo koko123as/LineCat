@@ -1,4 +1,4 @@
-//! The dashboard's figures, worked out the way lib/views/dashboard shows them.
+//! The dashboard's figures, worked out as FlClash shows them. FlClash: lib/views/dashboard.
 
 use serde_json::Value;
 use std::collections::VecDeque;

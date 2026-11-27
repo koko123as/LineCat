@@ -1,5 +1,5 @@
-//! The added rules (lib/views/config/rules.dart, lib/features/form/rule.dart): rules put
-//! before every profile's own, each a type, a payload and where it goes.
+//! The added rules: rules put before every profile's own, each a type, a payload and where
+//! it goes. FlClash: lib/views/config/rules.dart, lib/features/form/rule.dart.
 
 use serde::{Deserialize, Serialize};
 

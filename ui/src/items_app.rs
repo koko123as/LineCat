@@ -1,5 +1,5 @@
-//! The filters and scripts pages on `App`'s side (lib/views/config/filters.dart,
-//! lib/views/config/scripts.dart).
+//! The filters and scripts pages on `App`'s side.
+//! FlClash: lib/views/config/filters.dart, lib/views/config/scripts.dart.
 
 use crate::items::{self, Filter, Script, ScriptSave};
 use crate::{profile, store, ActionItem, App, PageMeta, SetRow, SetSection, CALL};

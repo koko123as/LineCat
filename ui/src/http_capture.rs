@@ -1,6 +1,6 @@
-//! HTTP capture (lib/views/connection/http_capture.dart) and the requests it records
-//! (lib/features/connection/http_requests.dart, mitm_exchange_detail.dart), read
-//! through `mitm.query`, `mitm.exchange` and `mitm.body`.
+//! HTTP capture and the requests it records, read through `mitm.query`, `mitm.exchange` and
+//! `mitm.body`. FlClash: lib/views/connection/http_capture.dart,
+//! lib/features/connection/http_requests.dart, lib/features/connection/mitm_exchange_detail.dart.
 
 use crate::requests::{conditions_match, matches_terms, terms, Filters, Record};
 use crate::store::MitmSettings;

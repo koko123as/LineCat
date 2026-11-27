@@ -1,7 +1,7 @@
-//! The override pages (lib/views/config/override.dart): a spec lists the keys a page may
-//! write over a profile's config; the user picks some of them and gives each a value.
-//! The DNS page (lib/views/config/dns.dart) is built on it, and so is the core section of
-//! the general page (lib/views/config/general/overrides.dart).
+//! The override pages: a spec lists the keys a page may write over a profile's config; the
+//! user picks some of them and gives each a value. The DNS page is built on it, and so is
+//! the core section of the general page. FlClash: lib/views/config/override.dart,
+//! lib/views/config/dns.dart, lib/views/config/general/overrides.dart.
 
 use crate::{SetRow, SetSection};
 use serde::{Deserialize, Serialize};

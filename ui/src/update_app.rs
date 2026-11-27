@@ -1,4 +1,4 @@
-//! The self update of lib/providers/actions/common.dart: `checkUpdateResultHandle`,
+//! The self update (FlClash: lib/providers/actions/common.dart): `checkUpdateResultHandle`,
 //! `testUpdateDownload`, `_downloadUpdate`, `cancelUpdateDownload`, `discardUpdate` and
 //! `installUpdate`, with the download's state shown on the live status deck.
 

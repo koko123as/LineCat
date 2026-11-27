@@ -1,5 +1,5 @@
-//! Per-app proxying (lib/views/access.dart, `AccessControlProps` and `PackagesExt` in
-//! lib/models): the saved choice, and the list the page shows from the installed apps.
+//! Per-app proxying: the saved choice, and the list the page shows from the installed apps.
+//! FlClash: lib/views/access.dart, lib/models (`AccessControlProps`, `PackagesExt`).
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
