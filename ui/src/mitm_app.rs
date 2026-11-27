@@ -402,11 +402,12 @@ pub fn module_sections(
         })
         .collect();
     if !read.rules.is_empty() {
+        let refused = read.rules.iter().filter(|r| !r.refused.is_empty()).count();
         rules.push(row(
             "list:rules",
             "open",
             "分流规则",
-            &modules_count(read.rules.len()),
+            &mitm::count_label(read.rules.len(), refused),
         ));
     }
     if !read.ignored.is_empty() {
@@ -428,7 +429,7 @@ pub fn lines_of(read: &ModuleRead, list: &str) -> (String, Vec<(String, String, 
             "分流规则".into(),
             read.rules
                 .iter()
-                .map(|r| (r.clone(), String::new(), false))
+                .map(|r| (r.text.clone(), r.refused.clone(), !r.refused.is_empty()))
                 .collect(),
         ),
         "ignored" => (
@@ -1215,7 +1216,8 @@ impl App {
         let m = self.module(&id)?;
         let read = std::fs::read_to_string(self.module_path(&m))
             .map_err(|e| e.to_string())
-            .and_then(|text| self.read_text(&text, &m.arguments, &m.attachments()));
+            .and_then(|text| self.read_text(&text, &m.arguments, &m.attachments()))
+            .map(|read| read.with_refused(&self.refused_rules(&id)));
         {
             let mut st = state().lock().unwrap();
             if st.module != id {
@@ -1229,6 +1231,14 @@ impl App {
         }
         self.mitm_publish();
         read.ok()
+    }
+
+    /// `mitmModuleStatusProvider`'s refused rules of one module; none while it is not in force.
+    fn refused_rules(&self, id: &str) -> BTreeMap<i64, String> {
+        self.bridge()
+            .and_then(|b| b.call("mitm.moduleStatus", json!({}), CALL))
+            .map(|status| mitm::refused_rules(&status, id))
+            .unwrap_or_default()
     }
 
     /// `readMitmModule`: the Core reads the text with these argument values.

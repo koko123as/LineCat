@@ -521,6 +521,28 @@ pub fn with_host(hostname: &[String], host: &str, exclude: bool) -> Vec<String> 
         .collect()
 }
 
+/// A routing rule as a profile's rule line, with the Core's reason when it left it out.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ModuleRule {
+    pub line: i64,
+    pub text: String,
+    pub refused: String,
+}
+
+/// `refusedRules` of the module `mitm.moduleStatus` reports under `name`, by module line.
+pub fn refused_rules(status: &Value, name: &str) -> BTreeMap<i64, String> {
+    array(status, "modules")
+        .iter()
+        .find(|m| m.get("name").and_then(Value::as_str) == Some(name))
+        .map(|m| {
+            array(m, "refusedRules")
+                .iter()
+                .filter_map(|r| Some((r.get("line")?.as_i64()?, text(r, "detail"))))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// `MitmModuleDetails`: what `mitm.readModule` makes of a module's text.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ModuleRead {
@@ -535,7 +557,7 @@ pub struct ModuleRead {
     pub has_rule_sets: bool,
     pub network: crate::mitm_network::Network,
     pub lists: Vec<(&'static str, Vec<Line>)>,
-    pub rules: Vec<String>,
+    pub rules: Vec<ModuleRule>,
     /// `namedPolicies`: the policies its rules leave to the profile's exits.
     pub named_policies: Vec<String>,
     /// Each ignored line with why.
@@ -648,7 +670,11 @@ pub fn read_module(source: &str, read: &Value) -> ModuleRead {
             if r.get("noResolve").and_then(Value::as_bool) == Some(true) {
                 line.push_str(",no-resolve");
             }
-            line
+            ModuleRule {
+                line: r.get("line").and_then(Value::as_i64).unwrap_or(-1),
+                text: line,
+                refused: String::new(),
+            }
         })
         .collect();
     let mut named_policies: Vec<String> = Vec::new();
@@ -704,6 +730,13 @@ fn task_name(view: &Value) -> Option<String> {
 }
 
 impl ModuleRead {
+    pub fn with_refused(mut self, refused: &BTreeMap<i64, String>) -> Self {
+        for rule in &mut self.rules {
+            rule.refused = refused.get(&rule.line).cloned().unwrap_or_default();
+        }
+        self
+    }
+
     /// Nothing in it applies or is left out of a section: not a module at all.
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
@@ -1044,7 +1077,9 @@ mod tests {
         assert_eq!(rewrite[0].text, "^http://a reject");
         assert_eq!(rewrite[1].issue, "bad regex");
         assert_eq!(r.lines("script")[0].task.as_deref(), Some("tick"));
-        assert_eq!(r.rules, vec!["DOMAIN,ad.com,REJECT"]);
+        assert_eq!(r.rules[0].text, "DOMAIN,ad.com,REJECT");
+        assert_eq!(r.rules[0].line, 6);
+        assert!(r.rules[0].refused.is_empty());
         assert_eq!(r.ignored[0].1, "不支持 [Panel] 段");
         assert_eq!(r.skip_verify_hosts, vec!["a.com"]);
         assert_eq!(r.arguments[0].kind, ArgumentKind::Switch);
@@ -1073,6 +1108,30 @@ mod tests {
         assert!(saved(&accepted, &r, None, 5).enabled);
         let moved = saved(&accepted, &r, Some("https://x/new.sgmodule"), 5);
         assert!(!moved.enabled && moved.url == "https://x/new.sgmodule");
+    }
+
+    #[test]
+    fn only_a_rule_the_core_refused_shows_its_reason() {
+        let status = json!({"modules": [
+            {"name": "other", "refusedRules": [{"line": 6, "detail": "elsewhere"}]},
+            {"name": "m1", "refusedRules": [{"line": 6, "detail": "unknown rule type"}, {"line": 9}]}
+        ]});
+        let refused = refused_rules(&status, "m1");
+        assert_eq!(
+            refused.get(&6).map(String::as_str),
+            Some("unknown rule type")
+        );
+        assert_eq!(refused.get(&9).map(String::as_str), Some(""));
+        assert!(refused_rules(&status, "gone").is_empty());
+        assert!(refused_rules(&json!({}), "m1").is_empty());
+        let read = read_module(SOURCE, &read_json()).with_refused(&refused);
+        assert_eq!(read.rules[0].refused, "unknown rule type");
+        let mut ua = read_json();
+        ua["rules"] =
+            json!([{"line": 3, "rule": "USER-AGENT,Foo*", "policy": {"builtin": "DIRECT"}}]);
+        let read = read_module(SOURCE, &ua).with_refused(&refused);
+        assert_eq!(read.rules[0].text, "USER-AGENT,Foo*,DIRECT");
+        assert!(read.rules[0].refused.is_empty());
     }
 
     #[test]
