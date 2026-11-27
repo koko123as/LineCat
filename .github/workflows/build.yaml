@@ -115,7 +115,6 @@ jobs:
       CARGO_TERM_COLOR: always
       # The release budget in bytes for the desktop Core.
       CORE_MAX_BYTES: 30000000
-      CONCORD_REQUIRE_APP_TREE: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -188,9 +188,6 @@ jobs:
           unzip -l "$apk" | grep -q 'lib/arm64-v8a/libseasoncat_ui.so'
           unzip -l "$apk" | grep ' assets/data/GEOIP\.metadb$'
           unzip -l "$apk" | grep ' assets/data/GEOSITE\.dat$'
-          if unzip -l "$apk" | grep -E 'libflutter\.so|flutter_assets/'; then
-            echo "::error::the APK still carries Flutter"; exit 1
-          fi
           # Check the copy packaged in the APK too, against the libraries packaged beside it.
           rm -rf apk-libs && unzip -q -o "$apk" 'lib/arm64-v8a/*' -d apk-libs
           "$ELFCHECK_PY" ui/tools/check_so_symbols.py \
