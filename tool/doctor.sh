@@ -23,10 +23,10 @@ optional() {
 
 echo 'Required'
 required git 'submodules and versioning'
-required flutter 'every build and test'
-required dart 'tool/ scripts'
-required cargo 'the build hook compiles Concord, the Helper and rust_api, even for flutter test'
-required rustup 'the toolchain pinned in concord/rust-toolchain.toml'
+required cargo 'the Slint UI (ui/) and the Core the Gradle build compiles'
+required rustup 'the toolchains pinned in ui/ and concord/rust-toolchain.toml'
+required gradle 'the APK (android/), the version in android/gradle/wrapper/gradle-wrapper.properties'
+optional cargo-ndk 'builds libseasoncat_ui.so for the APK'
 
 for module in concord plugins/prism_ui; do
   if [ -n "$(ls -A "$root/$module" 2>/dev/null)" ]; then
@@ -85,7 +85,7 @@ fi
 echo
 echo 'Optional'
 optional pre-commit 'make hooks'
-optional flutter_rust_bridge_codegen 'make frb'
+optional dart 'the packaging, release and icon scripts in tool/'
 optional rsvg-convert 'make icons, make status-icons'
 optional cwebp 'make icons'
 optional node 'make site'

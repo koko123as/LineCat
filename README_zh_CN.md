@@ -92,26 +92,22 @@ adb shell am start -a com.follow.clash.action.TOGGLE
 
 ## 从源码构建
 
-需要 [Flutter](https://docs.flutter.dev/get-started/install) 3.50（正式版构建使用 3.50.1）、[Go](https://go.dev/dl/) 1.27，
-以及通过 rustup 安装的 [Rust](https://rustup.rs/)。桌面端需要在对应系统上构建，Android 在任意系统上都能构建。
+Android 应用由 Slint 界面（`ui/`，Rust）和 Kotlin 外壳（`android/`）组成，只用 Gradle 构建。需要通过 rustup 安装的
+[Rust](https://rustup.rs/)（版本见 `ui/rust-toolchain.toml`）、[cargo-ndk](https://github.com/bbqsrc/cargo-ndk)、JDK 17、
+[Gradle](https://gradle.org/install/)（版本见 `android/gradle/wrapper/gradle-wrapper.properties`），以及带 NDK 的
+Android SDK：内核用 NDK r28c，界面库用 NDK r30。
 
 ```bash
-git clone --recursive https://github.com/chen08209/FlClash.git
-cd FlClash
-flutter pub get
-dart run tool/package.dart android   # 或 windows、macos、linux
+git clone --recursive https://github.com/koko123as/LineCat.git
+cd LineCat/ui
+ANDROID_NDK_HOME=<NDK r30> cargo ndk -t arm64-v8a --platform 24 -o ../android/app/src/main/jniLibs build --release --locked
+cd ../android
+gradle :app:assembleRelease -Ptarget-platform=android-arm64
 ```
 
-安装包输出到 `dist/`。Go 内核和 Rust 库会在 Flutter 构建过程中一并编译。
-
-| 平台 | 额外依赖 |
-| --- | --- |
-| Android | 带 NDK 的 Android SDK。加上 `--arch arm64` 可以只构建单个 ABI。 |
-| Windows | 编译内核用的 GCC（MinGW-w64），以及打包安装程序用的 [Inno Setup](https://jrsoftware.org/isinfo.php) 6。 |
-| macOS | Xcode 与 Node.js。脚本会通过 npm 安装 `appdmg`。 |
-| Linux | Debian 或 Ubuntu。脚本会用 apt 安装构建所需的软件包，并下载 `appimagetool`。 |
-
-其余选项可以运行 `dart run tool/package.dart --help` 查看，例如用 `--targets` 只构建部分安装包格式，用 `--dry-run` 列出这次会生成的文件。
+APK 输出到 `android/app/build/outputs/apk/release/`，内核在 Gradle 构建中用 cargo 一并编译。完整的参考构建（包括界面库需要的
+环境变量）见 `.github/workflows/slint-android.yaml`。Flutter 桌面端（`linux/`、`macos/`、`windows/`）已无法构建，因为它们运行的
+Flutter 界面已被移除。
 
 ## 支持
 

@@ -5,6 +5,10 @@ one-line form, and its explanation lives in the linked `.agents/` file.
 
 ## Start Here
 
+The app is the Slint UI in `ui/` (Rust, `libseasoncat_ui.so`) inside the Kotlin shell in `android/`, built with Gradle
+alone; the Flutter UI (`lib/`) is gone. Where the `.agents/` files describe `lib/`, they describe FlClash's Flutter UI,
+which `ui/` ports page for page. `linecat-status.md` lists what each batch landed.
+
 Read these files before making changes:
 
 - [.agents/project.md](.agents/project.md): project overview, versions, and build dependencies.
@@ -39,25 +43,19 @@ Read these only when the task touches their area:
   [rules.md](.agents/rules.md).
 - Start FlClash on the host only as a safe mode build, and end only processes you started, by recorded pid; never kill
   by name. See Running the App Locally in [rules.md](.agents/rules.md).
-- Use `flutter test`, not `dart test`. Run code generation after changing models, providers, or the database schema,
-  and never edit generated files.
-- Desktop Core process convergence belongs to `lib/core/desktop/` and Android service intent arbitration to
-  `ServiceState`; UI and providers request transitions, never own them. Keep start/stop/restart latest-intent-safe.
-  See Lifecycle Rules in [rules.md](.agents/rules.md).
+- The Rust UI makes no JNI calls: Android capabilities go through the Kotlin `UiBridge` socket (`ui/src/bridge.rs`).
+- Android service intent arbitration belongs to `ServiceState`; the UI requests transitions, never owns them. Keep
+  start/stop/restart latest-intent-safe. See Lifecycle Rules in [rules.md](.agents/rules.md).
 - Commits follow Conventional Commits, carry no `Co-authored-by` trailer for a coding agent, and land follow-ups as
   regular commits. See Commit Messages in [rules.md](.agents/rules.md).
 - Never write machine-local identifiers into the repository: the home directory or user name, an absolute checkout
   path, the host name, or a personal email. Use `$HOME`, a repository-relative path, or a placeholder.
-- Round every corner with a superellipse from `prism_ui/lib/shape.dart`; `test/lint/superellipse_corners_test.dart`
-  enforces it. See Corner Radius in [rules.md](.agents/rules.md).
 - Anything that moves drops no frame while it moves and at most one as it starts (8 ms of UI work at 120 Hz). See UI
   Frame Budget in [rules.md](.agents/rules.md).
-- Follow `lint_options.yaml`: single quotes, trailing commas, `child:` last, no `print()`, const/final, declared return
-  types.
-- Before reporting done, run `flutter pub get`, `flutter analyze --no-fatal-infos`, and the tests the change reaches;
-  the full suite only after a shared-base change or in a branch's last review round. See the
-  [test-scope](.agents/skills/test-scope/SKILL.md) skill. Say which check was skipped when a toolchain the build hook
-  needs (`cargo`, the toolchain in `concord/rust-toolchain.toml`) is missing.
+- Before reporting done, run `cargo fmt --check` and `cargo test --locked` in `ui/` (tests must not depend on CJK font
+  rendering; CI has no CJK font); Android changes are built by `.github/workflows/slint-android.yaml`
+  (`gradle :app:assembleRelease -Ptarget-platform=android-arm64` in `android/`). Say which check was skipped when a
+  toolchain is missing.
 
 ## Repo Skills
 

@@ -98,27 +98,23 @@ adb shell am start -a com.follow.clash.action.TOGGLE
 
 ## Build from source
 
-You need [Flutter](https://docs.flutter.dev/get-started/install) 3.50 (release builds use 3.50.1),
-[Go](https://go.dev/dl/) 1.27 and [Rust](https://rustup.rs/) installed through rustup. Each platform builds on its own
-host, except Android, which builds anywhere.
+The Android app is a Slint UI (`ui/`, Rust) inside a Kotlin shell (`android/`), built with Gradle alone. You need
+[Rust](https://rustup.rs/) installed through rustup (the version in `ui/rust-toolchain.toml`),
+[cargo-ndk](https://github.com/bbqsrc/cargo-ndk), JDK 17, [Gradle](https://gradle.org/install/) (the version in
+`android/gradle/wrapper/gradle-wrapper.properties`) and the Android SDK with NDK r28c for the core and NDK r30 for the
+UI library.
 
 ```bash
-git clone --recursive https://github.com/chen08209/FlClash.git
-cd FlClash
-flutter pub get
-dart run tool/package.dart android   # or windows, macos, linux
+git clone --recursive https://github.com/koko123as/LineCat.git
+cd LineCat/ui
+ANDROID_NDK_HOME=<NDK r30> cargo ndk -t arm64-v8a --platform 24 -o ../android/app/src/main/jniLibs build --release --locked
+cd ../android
+gradle :app:assembleRelease -Ptarget-platform=android-arm64
 ```
 
-Packages land in `dist/`. The Go core and the Rust libraries are compiled as part of the Flutter build.
-
-| Platform | Also needed |
-| --- | --- |
-| Android | Android SDK with the NDK. Add `--arch arm64` to build a single ABI. |
-| Windows | GCC (MinGW-w64) for the core and [Inno Setup](https://jrsoftware.org/isinfo.php) 6 for the installer. |
-| macOS | Xcode and Node.js. The script installs `appdmg` through npm. |
-| Linux | Debian or Ubuntu. The script installs the build packages with apt and downloads `appimagetool`. |
-
-Run `dart run tool/package.dart --help` for the remaining options, such as `--targets` to build only some package formats or `--dry-run` to list the files a run would write.
+The APK lands in `android/app/build/outputs/apk/release/`; the core is compiled with cargo as part of the Gradle
+build. `.github/workflows/slint-android.yaml` is the reference build, including the environment the UI library needs.
+The Flutter desktop runners (`linux/`, `macos/`, `windows/`) no longer build, since the Flutter UI they ran was removed.
 
 ## Support
 
