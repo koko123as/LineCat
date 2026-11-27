@@ -167,10 +167,9 @@ its workspaces; setup-gradle writes only on `main` and `dev` in `build.yaml` and
 
 On the tag the `apk` job needs the four signing secrets and a versionName equal to the tag, and the `release` job
 publishes `SeasonCat-<version>-android-arm64.apk` and `SeasonCat-<version>-SHA256SUMS`, the names the in-app updater
-(`ui/src/update.rs`) looks for, with the notes file as the release body. It also publishes the same APK as
-`FlClash-<version>-android-arm64.apk` with `FlClash-<version>-SHA256SUMS` for v0.9.5-rs.3 and older, whose updater
-knows only that name; the workflow says when that copy can go. Push the tag by name: `--follow-tags` skips a
-lightweight tag.
+(`ui/src/update.rs`) looks for, with the notes file as the release body. No `FlClash-` file is published, so
+v0.9.5-rs.3 and older installs (whose updater knows only that name) do not see the new release and are updated by
+hand from the release page. Push the tag by name: `--follow-tags` skips a lightweight tag.
 
 ## Worktree Tooling
 

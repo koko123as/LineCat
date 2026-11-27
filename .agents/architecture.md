@@ -41,8 +41,8 @@ only through a JSON-RPC session the shell opens for the UI's connection.
   feature, which needs the NDK's libclang (see the build step in `slint-android.yaml`).
 - `src/update.rs` is the in-app updater: it reads the newest rs release from the GitHub release list, takes a tag whose
   `SeasonCat-<version>-SHA256SUMS` is attached, and installs `SeasonCat-<version>-android-arm64.apk` through the shell
-  after checking its SHA-256. Releases up to v0.9.5-rs.3 carry only `FlClash-` names, so it falls back to those. The
-  release job in `slint-android.yaml` publishes both name sets while installs that only know `FlClash-` remain.
+  after checking its SHA-256. These names are what the release job in `slint-android.yaml` publishes; releases up to
+  v0.9.5-rs.3, named `FlClash-`, are never offered.
 - `examples/snapshot.rs` renders every page with sample data through Slint's software renderer, so a layout can be
   checked on a desktop.
 
