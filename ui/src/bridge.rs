@@ -18,16 +18,29 @@ pub const CH_CORE: u8 = 0;
 pub const CH_SHELL: u8 = 1;
 const MAX_FRAME: usize = 64 << 20;
 const INITIAL_CREDIT: u64 = 4;
+/// FlClash: lib/core/api/core_client.dart (`_resyncPause`).
+const RESYNC_PAUSE: Duration = Duration::from_millis(50);
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 type Stream = std::os::unix::net::UnixStream;
 
 pub type Handler = Box<dyn Fn(Value) + Send + Sync>;
+pub type Resynced = Box<dyn Fn() + Send + Sync>;
+
+/// A stream method: the handler gets the snapshot and then every event of the stream. The
+/// Core ends a subscription that fell behind with a resync, after which it is opened again
+/// and `resynced` hears that events were lost.
+#[derive(Clone)]
+struct Watch {
+    method: String,
+    params: Value,
+    handler: Arc<Handler>,
+    resynced: Option<Arc<Resynced>>,
+}
 
 enum Pending {
     Call(Sender<Result<Value, String>>),
-    /// A stream method: the handler gets the snapshot and then every event of the stream.
-    Watch(Arc<Handler>),
+    Watch(Watch),
 }
 
 struct Inner {
@@ -35,7 +48,7 @@ struct Inner {
     shutdown: Stream,
     next_id: AtomicU64,
     pending: Mutex<HashMap<u64, Pending>>,
-    subs: Mutex<HashMap<u64, Arc<Handler>>>,
+    subs: Mutex<HashMap<u64, Watch>>,
     shell_pending: Mutex<HashMap<u64, Sender<Value>>>,
     on_shell_event: Mutex<Option<Handler>>,
     closed: AtomicBool,
@@ -196,10 +209,11 @@ impl Bridge {
                 Pending::Call(tx) => {
                     let _ = tx.send(result);
                 }
-                Pending::Watch(handler) => {
+                Pending::Watch(watch) => {
                     if let Ok(opened) = result {
+                        let handler = watch.handler.clone();
                         if let Some(sub) = opened.get("sub").and_then(Value::as_u64) {
-                            self.0.subs.lock().unwrap().insert(sub, handler.clone());
+                            self.0.subs.lock().unwrap().insert(sub, watch);
                         }
                         if let Some(snapshot) = opened.get("snapshot") {
                             if !snapshot.is_null() {
@@ -221,10 +235,28 @@ impl Bridge {
             return;
         };
         if params.get("resync").and_then(Value::as_bool) == Some(true) {
-            self.0.subs.lock().unwrap().remove(&sub);
+            let Some(watch) = self.0.subs.lock().unwrap().remove(&sub) else {
+                return;
+            };
+            if let Some(resynced) = &watch.resynced {
+                resynced();
+            }
+            let bridge = self.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(RESYNC_PAUSE);
+                if !bridge.is_closed() {
+                    let _ = bridge.open(watch);
+                }
+            });
             return;
         }
-        let handler = self.0.subs.lock().unwrap().get(&sub).cloned();
+        let handler = self
+            .0
+            .subs
+            .lock()
+            .unwrap()
+            .get(&sub)
+            .map(|w| w.handler.clone());
         let (Some(handler), Some(data)) = (handler, params.get("data")) else {
             return;
         };
@@ -276,18 +308,44 @@ impl Bridge {
 
     /// Subscribes to a stream method with the default credit; the handler runs on the bridge thread.
     pub fn watch(&self, method: &str, params: Value, handler: Handler) -> Result<(), String> {
+        self.open(Watch {
+            method: method.into(),
+            params,
+            handler: Arc::new(handler),
+            resynced: None,
+        })
+    }
+
+    /// `watch`, with `resynced` run whenever events were lost before the stream reopens.
+    pub fn watch_resyncing(
+        &self,
+        method: &str,
+        params: Value,
+        handler: Handler,
+        resynced: Resynced,
+    ) -> Result<(), String> {
+        self.open(Watch {
+            method: method.into(),
+            params,
+            handler: Arc::new(handler),
+            resynced: Some(Arc::new(resynced)),
+        })
+    }
+
+    fn open(&self, watch: Watch) -> Result<(), String> {
         let id = self.0.next_id.fetch_add(1, Ordering::SeqCst);
-        let mut params = match params {
+        let mut params = match watch.params.clone() {
             Value::Object(m) => m,
             _ => Map::new(),
         };
         params.insert("credit".into(), INITIAL_CREDIT.into());
+        let envelope = Self::envelope(id, &watch.method, Value::Object(params));
         self.0
             .pending
             .lock()
             .unwrap()
-            .insert(id, Pending::Watch(Arc::new(handler)));
-        self.send(CH_CORE, &Self::envelope(id, method, Value::Object(params)))
+            .insert(id, Pending::Watch(watch));
+        self.send(CH_CORE, &envelope)
     }
 
     /// A shell command; the answer is the shell's JSON object.
@@ -361,5 +419,47 @@ mod tests {
     fn core_error_prefers_the_issue() {
         let e = json!({"code": 1, "message": "invalid", "data": {"kind": "invalid", "issues": [{"message": "bad proxy"}]}});
         assert_eq!(error_text(&e), "bad proxy");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_resync_opens_the_stream_again() {
+        let (ours, mut theirs) = Stream::pair().unwrap();
+        theirs
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let bridge = Bridge::start(ours).unwrap();
+        let resyncs = Arc::new(AtomicU64::new(0));
+        let r = resyncs.clone();
+        let params = json!({"delays": false});
+        let counted = Box::new(move || {
+            r.fetch_add(1, Ordering::SeqCst);
+        });
+        bridge
+            .watch_resyncing("events.watch", params, Box::new(|_| {}), counted)
+            .unwrap();
+        let read = |s: &mut Stream| -> Value {
+            let (channel, payload) = read_frame(s).unwrap();
+            assert_eq!(channel, CH_CORE);
+            serde_json::from_slice(&payload).unwrap()
+        };
+        let send = |s: &mut Stream, v: Value| {
+            write_frame(s, CH_CORE, &serde_json::to_vec(&v).unwrap()).unwrap();
+        };
+        let first = read(&mut theirs);
+        assert_eq!(first["method"], "events.watch");
+        send(
+            &mut theirs,
+            json!({"jsonrpc": "2.0", "id": first["id"], "result": {"sub": 7}}),
+        );
+        send(
+            &mut theirs,
+            json!({"jsonrpc": "2.0", "method": "$/event", "params": {"sub": 7, "resync": true}}),
+        );
+        let again = read(&mut theirs);
+        assert_eq!(again["method"], "events.watch");
+        assert_eq!(again["params"]["delays"], false);
+        assert_ne!(again["id"], first["id"]);
+        assert_eq!(resyncs.load(Ordering::SeqCst), 1);
     }
 }

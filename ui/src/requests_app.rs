@@ -130,12 +130,18 @@ impl App {
             }),
         )?;
         let events = Arc::downgrade(self);
-        bridge.watch(
+        let resynced = Arc::downgrade(self);
+        bridge.watch_resyncing(
             "events.watch",
             json!({"delays": false, "state": false}),
             Box::new(move |event| {
                 if let Some(app) = events.upgrade() {
                     app.core_event(&event);
+                }
+            }),
+            Box::new(move || {
+                if let Some(app) = resynced.upgrade() {
+                    app.forget_geo_updates();
                 }
             }),
         )
@@ -167,6 +173,13 @@ impl App {
             "unchanged" if manual => self.toast(format!("{name} 已是最新版本")),
             _ => {}
         }
+    }
+
+    /// `forgetUpdates`: an update whose end was among the lost events would never clear.
+    fn forget_geo_updates(self: &Arc<Self>) {
+        self.geo_busy.lock().unwrap().clear();
+        self.geo_manual.lock().unwrap().clear();
+        self.republish_resources();
     }
 
     fn mitm(&self) -> store::MitmSettings {
