@@ -1,17 +1,18 @@
 repos:
   - repo: local
     hooks:
-      - id: dart-format
-        name: dart format
-        entry: dart format
+      - id: ui-rustfmt
+        name: cargo fmt --check (ui)
+        entry: bash -c 'cd ui && cargo fmt --check'
         language: system
-        files: \.dart$
+        files: ^ui/.*\.rs$
+        pass_filenames: false
         stages: [pre-commit]
       - id: comment-density
         name: comment density
         entry: tool/hooks/comment_density.sh
         language: system
-        files: \.(dart|kt|kts|swift|go|rs|java|cpp|cc|h|hpp|gradle|ya?ml)$
+        files: \.(kt|kts|swift|go|rs|java|cpp|cc|h|hpp|gradle|ya?ml)$
         stages: [pre-commit]
       - id: commit-msg-format
         name: conventional commit message

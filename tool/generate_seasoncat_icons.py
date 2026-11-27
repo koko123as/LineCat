@@ -98,7 +98,7 @@ def save(img, path, **kw):
 
 big = full(1024)
 
-# Desktop / Flutter asset: rounded square, transparent corners.
+# Desktop and README icon: rounded square, transparent corners.
 save(masked(big, "round"), "assets/images/icon.png")
 ico_sizes = [16, 24, 32, 48, 64, 128, 256]
 ico = masked(big, "round")

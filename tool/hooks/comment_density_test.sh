@@ -12,8 +12,8 @@ mkdir -p "$repo"
 git -C "$repo" init --quiet
 git -C "$repo" config user.email 'test@example.com'
 git -C "$repo" config user.name 'Test'
-printf 'void main() {}\n' >"$repo/tracked.dart"
-git -C "$repo" add tracked.dart
+printf 'fn main() {}\n' >"$repo/tracked.rs"
+git -C "$repo" add tracked.rs
 git -C "$repo" commit --quiet -m 'seed'
 
 failures=0
@@ -21,9 +21,9 @@ status=0
 
 dense() {
   local comments="$1" code="$2" i
-  echo 'void main() {'
-  for i in $(seq 1 "$comments"); do echo "  // step $i explained"; done
-  for i in $(seq 1 "$code"); do echo "  step$i();"; done
+  echo 'fn main() {'
+  for i in $(seq 1 "$comments"); do echo "    // step $i explained"; done
+  for i in $(seq 1 "$code"); do echo "    step$i();"; done
   echo '}'
 }
 
@@ -74,7 +74,7 @@ expect_under() {
   fi
 }
 
-expect_over 'a diff that is a quarter comments' "$repo/dense.dart" "$(dense 8 24)"
+expect_over 'a diff that is a quarter comments' "$repo/dense.rs" "$(dense 8 24)"
 expect_over 'block comment bodies count as comments' "$repo/block.kt" \
   '/**' \
   ' * first constraint' \
@@ -86,24 +86,17 @@ expect_over 'block comment bodies count as comments' "$repo/block.kt" \
   ' * seventh constraint' \
   ' */' \
   "$(dense 0 24)"
-expect_over 'first-party plugin source is checked' \
-  "$repo/plugins/proxy/lib/dense.dart" "$(dense 8 24)"
-expect_under 'a diff with a few real comments' "$repo/sparse.dart" "$(dense 2 40)"
-expect_under 'a small diff below the line floor' "$repo/tiny.dart" \
-  'void main() {' '  // why this retries' '}'
-expect_under 'code with no comments at all' "$repo/clean.dart" "$(dense 0 40)"
+expect_over 'nested crate source is checked' \
+  "$repo/ui/src/dense.rs" "$(dense 8 24)"
+expect_under 'a diff with a few real comments' "$repo/sparse.rs" "$(dense 2 40)"
+expect_under 'a small diff below the line floor' "$repo/tiny.rs" \
+  'fn main() {' '    // why this retries' '}'
+expect_under 'code with no comments at all' "$repo/clean.rs" "$(dense 0 40)"
 
-expect_under 'analyzer directives do not count' "$repo/directives.dart" \
-  "$(
-    echo 'void main() {'
-    for i in $(seq 1 8); do echo '  // ignore: avoid_print'; done
-    for i in $(seq 1 24); do echo "  step$i();"; done
-    echo '}'
-  )"
-expect_under 'a license header does not count' "$repo/license.dart" \
+expect_under 'a license header does not count' "$repo/license.rs" \
   "$(
     for i in $(seq 1 8); do echo '// Copyright 2026 The FlClash Authors.'; done
-    for i in $(seq 1 24); do echo "final v$i = $i;"; done
+    for i in $(seq 1 24); do echo "const V$i: i32 = $i;"; done
   )"
 expect_under 'go pointer dereferences are not comments' "$repo/deref.go" \
   "$(
@@ -112,25 +105,21 @@ expect_under 'go pointer dereferences are not comments' "$repo/deref.go" \
     for i in $(seq 1 30); do echo '	*p = 1'; done
     echo '}'
   )"
-expect_under 'a generated file is skipped' "$repo/model.g.dart" "$(dense 20 4)"
-expect_under 'generated plugin bindings are skipped' \
-  "$repo/plugins/rust_api/lib/src/rust/frb_generated.io.dart" "$(dense 20 4)"
-expect_under 'generated api bindings are skipped' \
-  "$repo/plugins/rust_api/lib/src/rust/api/proxy.dart" "$(dense 20 4)"
-expect_under 'the generated localizations are skipped' "$repo/lib/l10n/l10n_en.dart" "$(dense 20 4)"
+expect_under 'a generated file is skipped' "$repo/src/generated/model.rs" "$(dense 20 4)"
+expect_under 'a build output is skipped' "$repo/app/build/out.kt" "$(dense 20 4)"
 expect_under 'a vendored upstream file is skipped' "$repo/Clash.Meta/hub.go" "$(dense 20 4)"
 expect_under 'a markdown file is skipped' "$repo/notes.md" "$(dense 20 4)"
 
-expect_over 'a dense change to a tracked file' "$repo/tracked.dart" "$(dense 8 24)"
-git -C "$repo" checkout --quiet -- tracked.dart
+expect_over 'a dense change to a tracked file' "$repo/tracked.rs" "$(dense 8 24)"
+git -C "$repo" checkout --quiet -- tracked.rs
 
-mkdir -p "$repo/lib/nested"
-printf '%s\n' "$(dense 8 24)" >"$repo/lib/nested/hooked.dart"
-git -C "$repo" add lib/nested/hooked.dart
+mkdir -p "$repo/src/nested"
+printf '%s\n' "$(dense 8 24)" >"$repo/src/nested/hooked.rs"
+git -C "$repo" add src/nested/hooked.rs
 git -C "$repo" commit --quiet -m 'seed a dense tracked file'
-printf 'final addition = 1;\n' >>"$repo/lib/nested/hooked.dart"
+printf 'const ADDITION: i32 = 1;\n' >>"$repo/src/nested/hooked.rs"
 set +e
-(cd "$repo" && GIT_DIR="$repo/.git" bash "$checker" lib/nested/hooked.dart) \
+(cd "$repo" && GIT_DIR="$repo/.git" bash "$checker" src/nested/hooked.rs) \
   >"$temp_dir/out" 2>"$temp_dir/err"
 status=$?
 set -e
@@ -139,16 +128,16 @@ if [ "$status" -ne 0 ] || [ -s "$temp_dir/err" ]; then
   cat "$temp_dir/err" >&2
   failures=$((failures + 1))
 fi
-git -C "$repo" checkout --quiet -- lib/nested/hooked.dart
+git -C "$repo" checkout --quiet -- src/nested/hooked.rs
 
-printf '%s\n' "$(dense 8 24)" >"$repo/argv.dart"
-run_argv "$repo/argv.dart"
+printf '%s\n' "$(dense 8 24)" >"$repo/argv.rs"
+run_argv "$repo/argv.rs"
 if [ "$status" -ne 1 ]; then
   echo "FAIL: argv mode should exit 1 when over the cap, got $status" >&2
   failures=$((failures + 1))
 fi
 
-run_argv "$repo/sparse.dart"
+run_argv "$repo/sparse.rs"
 if [ "$status" -ne 0 ]; then
   echo "FAIL: argv mode should exit 0 under the cap, got $status" >&2
   cat "$temp_dir/err" >&2
@@ -156,7 +145,7 @@ if [ "$status" -ne 0 ]; then
 fi
 
 set +e
-COMMENT_DENSITY_MAX=50 bash "$checker" "$repo/argv.dart" >"$temp_dir/out" 2>"$temp_dir/err"
+COMMENT_DENSITY_MAX=50 bash "$checker" "$repo/argv.rs" >"$temp_dir/out" 2>"$temp_dir/err"
 status=$?
 set -e
 if [ "$status" -ne 0 ]; then
@@ -165,7 +154,7 @@ if [ "$status" -ne 0 ]; then
 fi
 
 set +e
-COMMENT_DENSITY_MAX=1 bash "$checker" "$repo/sparse.dart" >"$temp_dir/out" 2>"$temp_dir/err"
+COMMENT_DENSITY_MAX=1 bash "$checker" "$repo/sparse.rs" >"$temp_dir/out" 2>"$temp_dir/err"
 status=$?
 set -e
 if [ "$status" -ne 1 ]; then
@@ -181,10 +170,10 @@ if [ "$status" -ne 2 ]; then
 fi
 
 rm -f \
-  "$repo/dense.dart" \
+  "$repo/dense.rs" \
   "$repo/block.kt" \
-  "$repo/argv.dart" \
-  "$repo/plugins/proxy/lib/dense.dart"
+  "$repo/argv.rs" \
+  "$repo/ui/src/dense.rs"
 run_stdin
 if [ "$status" -ne 0 ] || [ -s "$temp_dir/err" ]; then
   echo "FAIL: a tree under the cap should pass silently, got $status" >&2
@@ -192,7 +181,7 @@ if [ "$status" -ne 0 ] || [ -s "$temp_dir/err" ]; then
   failures=$((failures + 1))
 fi
 
-space_path="$repo/path with space/dense.dart"
+space_path="$repo/path with space/dense.rs"
 mkdir -p "$(dirname "$space_path")"
 printf '%s\n' "$(dense 8 24)" >"$space_path"
 run_stdin

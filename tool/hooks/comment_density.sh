@@ -13,14 +13,11 @@ min_lines="${COMMENT_DENSITY_MIN_LINES:-20}"
 is_checkable() {
   local file="$1"
   case "$file" in
-    *.dart | *.kt | *.kts | *.swift | *.go | *.rs | *.java | *.cpp | *.cc | *.h | *.hpp | *.gradle | *.yaml | *.yml) ;;
+    *.kt | *.kts | *.swift | *.go | *.rs | *.java | *.cpp | *.cc | *.h | *.hpp | *.gradle | *.yaml | *.yml) ;;
     *) return 1 ;;
   esac
   case "$file" in
-    */build/* | */generated/* | */lib/l10n/* | */Clash.Meta/* | */.dart_tool/*) return 1 ;;
-    *.g.dart | *.freezed.dart | */frb_generated*.dart | */frb_generated.rs | */rust_api/lib/src/rust/api/*) return 1 ;;
-    */open_container.dart) return 1 ;;
-    */qr_matrix.dart) return 1 ;;
+    */build/* | */generated/* | */Clash.Meta/*) return 1 ;;
   esac
   return 0
 }
@@ -51,7 +48,7 @@ comment_lines() {
   local body="$1"
   printf '%s\n' "$body" |
     grep -E "$(printf '\t')[[:space:]]*(//|/\*|#|\*([[:space:]]|/|$))" |
-    grep -vE 'ignore:|ignore_for_file:|coverage:ignore|Copyright|SPDX-|Licensed under|GENERATED|dart format off|yaml-language-server|[[:space:]]#!$|[[:space:]]#!/|#!?\[|#(include|define|undef|ifdef|ifndef|if|elif|else|endif|pragma|error)\b' || true
+    grep -vE 'Copyright|SPDX-|Licensed under|GENERATED|yaml-language-server|[[:space:]]#!$|[[:space:]]#!/|#!?\[|#(include|define|undef|ifdef|ifndef|if|elif|else|endif|pragma|error)\b' || true
 }
 
 changed_files() {

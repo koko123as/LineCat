@@ -83,11 +83,7 @@ fi
 echo
 echo 'Optional'
 optional pre-commit 'make hooks'
-optional dart 'the icon scripts in tool/'
-optional rsvg-convert 'make icons, make status-icons'
-optional cwebp 'make icons'
-optional node 'make site'
-optional gh 'release metadata in make site'
+optional python3 'make icons (with Pillow and numpy)'
 
 echo
 if [ "$missing" -gt 0 ]; then

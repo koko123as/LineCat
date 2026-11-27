@@ -11,7 +11,7 @@ CORE_FEATURE_CRATES := concord-common concord-engine concord-mitm
 COMMENT_FILES = $(or $(FILES),$(shell git diff HEAD --name-only --diff-filter=d; git ls-files --others --exclude-standard))
 
 .PHONY: help setup submodules doctor hooks worktrees \
-	icons status-icons site \
+	icons \
 	fmt fmt-check test apk hooks-test comment-density \
 	rust-check check \
 	core-build core-fmt core-check core-test core-gate core-schema \
@@ -31,7 +31,6 @@ setup: submodules ## Fetch submodules
 submodules: ## Update git submodules (Concord core)
 	git submodule update --init --recursive
 
-
 doctor: ## Report missing toolchains: cargo, the pinned Rust, Gradle, NDK, JDK
 	bash tool/doctor.sh
 
@@ -43,24 +42,13 @@ worktrees: ## List worktrees with their owner tool and dirty state
 
 ##@ Generate
 
-
-
-
-icons: ## Regenerate the app icons, the running gradient and every tray icon
-	dart run tool/generate_app_icons.dart
-
-status-icons: ## Regenerate the tray icons only
-	dart run tool/generate_status_icons.dart
-
-
-site: ## Build the website into build/site
-	bash tool/build_site.sh
+icons: ## Regenerate the app icons from assets_source/images/icon/seasoncat.jpg (needs Pillow and numpy)
+	python3 tool/generate_seasoncat_icons.py
 
 ##@ Check
 
-fmt: ## Format the UI crate and the Dart scripts in place
+fmt: ## Format the UI crate in place
 	cd ui && $(CARGO) fmt
-	dart format tool
 
 fmt-check: ## Fail on an unformatted UI crate
 	cd ui && $(CARGO) fmt --check
@@ -68,11 +56,9 @@ fmt-check: ## Fail on an unformatted UI crate
 
 test: ## Test the UI crate, as CI does (one job: the build runs out of memory in parallel)
 	cd ui && $(CARGO) test --locked -j1
+
 apk: ## Build the arm64 release APK with Gradle; needs libseasoncat_ui.so in android/app/src/main/jniLibs
 	cd android && gradle :app:assembleRelease -Ptarget-platform=android-arm64
-
-
-
 
 hooks-test: ## Test the git hook scripts in tool/hooks
 	bash tool/hooks/test.sh
@@ -106,8 +92,8 @@ core-check: ## cargo fmt --check, clippy (also each crate without its default fe
 	cd concord && $(CARGO) xtask check-layers
 	cd concord && $(CARGO) xtask schema --check
 
-core-test: ## cargo test --workspace, with the app-tree contract tests required, and each crate without its default features
-	cd concord && CONCORD_REQUIRE_APP_TREE=1 $(CARGO) test --workspace
+core-test: ## cargo test --workspace, and each crate without its default features
+	cd concord && $(CARGO) test --workspace
 	cd concord && for crate in $(CORE_FEATURE_CRATES); do \
 		$(CARGO) test -p $$crate --no-default-features || exit 1; done
 
