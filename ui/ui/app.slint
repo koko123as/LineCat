@@ -121,6 +121,12 @@ export struct DashTraffic {
     down-fill: string,
 }
 
+// A source of the IP quality lookup that gave no type, and why (`IpQualityFailure`).
+export struct IpSource {
+    label: string,
+    status: string,
+}
+
 export struct DashStatus {
     ip: string,
     country: string,
@@ -132,6 +138,13 @@ export struct DashStatus {
     probing: bool,
     // `probe.outboundIp` failed: "检测失败", and a tap on the badge retries.
     failed: bool,
+    // Tor / 滥用记录 / VPN / 代理, "AS13335", the source the answer came from.
+    flags: [string],
+    asn: string,
+    source: string,
+    // No source stated a type: 类型查询失败, with each source's reason.
+    lookup-failed: bool,
+    sources: [IpSource],
 }
 
 // A service of the service status card (`_ServiceView`): tone 0 muted 1 ok 2 warning 3 error.
@@ -9959,6 +9972,8 @@ export component AppWindow inherits Window {
     callback dash-probe-services();
     callback dash-set-lan(bool);
     callback dash-set-hide-ip(bool);
+    // The IP sheet's ⟳ (`ipQualityRetry`): the lookup of the address it shows, again.
+    callback ipq-retry();
     callback dash-layout(bool, int, bool);
     in property <int> dash-table-feed;
     in property <[string]> dash-table-counts: ["0", "0", "0"];
@@ -12419,6 +12434,7 @@ export component AppWindow inherits Window {
                         padding-left: 20px;
                         padding-right: 8px;
                         Text { text: "出站 IP详情"; font-size: 17px * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                        VerticalLayout { alignment: center; IconButton { glyph: Icons.sync; loading: root.ipq.probing; clicked => { root.ipq-retry(); } } }
                         VerticalLayout { alignment: center; IconButton { glyph: Icons.close; clicked => { root.ip-sheet-open = false; } } }
                     }
                     Flickable {
@@ -12446,6 +12462,23 @@ export component AppWindow inherits Window {
                                         Text { text: "IP 地址"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
                                         Text { text: root.dash-hide-ip ? "*****" : root.ipq.ip; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
+                                    if root.ipq.lookup-failed: VerticalLayout {
+                                    Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "类型"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: "类型查询失败"; font-size: 15px * Type.scale; color: Theme.s.error; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                    }
+                                    if !root.ipq.lookup-failed: VerticalLayout {
+                                    Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "等级"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.ipq.quality == 1 ? "优" : root.ipq.quality == 2 ? "普通" : root.ipq.quality == 3 ? "风险" : "—"; font-size: 15px * Type.scale; color: root.ipq.quality == 1 ? Theme.success : root.ipq.quality == 3 ? Theme.s.error : Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
                                     Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
                                     HorizontalLayout {
                                         height: 48px;
@@ -12453,36 +12486,78 @@ export component AppWindow inherits Window {
                                         Text { text: "类型"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
                                         Text { text: root.ipq.kind == "" ? "—" : root.ipq.kind; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
                                     }
-                                    Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
-                                    HorizontalLayout {
-                                        height: 48px;
-                                        spacing: 12px;
-                                        Text { text: "等级"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.ipq.quality == 1 ? "优" : root.ipq.quality == 2 ? "普通" : root.ipq.quality == 3 ? "风险" : "—"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                                        HorizontalLayout {
+                                            height: 48px;
+                                            spacing: 12px;
+                                            Text { text: "命中标记"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; horizontal-stretch: 1; }
+                                            if root.ipq.flags.length == 0: Text { text: root.ipq.probing ? "—" : "无"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+                                            for f in root.ipq.flags: VerticalLayout { alignment: center; Chip { text: f; } }
+                                        }
                                     }
                                 }
                             }
-                            Rectangle { height: 4px; }
-                            Text { text: "网络"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
-                            Rectangle {
-                                background: Theme.s.card;
-                                border-radius: 16px;
-                                height: self.preferred-height;
-                                VerticalLayout {
-                                    padding-left: 16px;
-                                    padding-right: 16px;
-                                    HorizontalLayout {
-                                        height: 48px;
-                                        spacing: 12px;
-                                        Text { text: "区域"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
-                                        Text { text: root.ipq.country == "" ? "—" : root.ipq.country; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
-                                    }
+                            if !root.ipq.lookup-failed: VerticalLayout {
+                                spacing: 8px;
+                                Rectangle { height: 4px; }
+                                Text { text: "网络"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+                                Rectangle {
+                                    background: Theme.s.card;
+                                    border-radius: 16px;
+                                    height: self.preferred-height;
+                                    VerticalLayout {
+                                        padding-left: 16px;
+                                        padding-right: 16px;
+                                        HorizontalLayout {
+                                            height: 48px;
+                                            spacing: 12px;
+                                            Text { text: "区域"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                            Text { text: root.ipq.country == "" ? "—" : root.ipq.country; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                        }
                                     Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
                                     HorizontalLayout {
                                         height: 48px;
                                         spacing: 12px;
                                         Text { text: "组织"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
                                         Text { text: root.ipq.org == "" ? "—" : root.ipq.org; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                    Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "ASN"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.ipq.asn == "" ? "—" : root.ipq.asn; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                    Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                                    HorizontalLayout {
+                                        height: 48px;
+                                        spacing: 12px;
+                                        Text { text: "采用来源"; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                        Text { text: root.ipq.source == "" ? "—" : root.ipq.source; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                    }
+                                    }
+                                }
+                            }
+                            if root.ipq.lookup-failed && root.ipq.sources.length > 0: VerticalLayout {
+                                spacing: 8px;
+                                Rectangle { height: 4px; }
+                                Text { text: "各来源"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+                                Rectangle {
+                                    background: Theme.s.card;
+                                    border-radius: 16px;
+                                    height: self.preferred-height;
+                                    VerticalLayout {
+                                        padding-left: 16px;
+                                        padding-right: 16px;
+                                        for src[si] in root.ipq.sources: VerticalLayout {
+                                            if si > 0: Rectangle { height: 1px; background: Theme.s.outline-variant.with-alpha(0.6); }
+                                            HorizontalLayout {
+                                                height: 48px;
+                                                spacing: 12px;
+                                                Text { text: src.label; font-size: 15px * Type.scale; color: Theme.s.on-surface; vertical-alignment: center; }
+                                                Text { text: src.status; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-alignment: right; horizontal-stretch: 1; overflow: elide; }
+                                            }
+                                        }
                                     }
                                 }
                             }

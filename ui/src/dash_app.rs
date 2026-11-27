@@ -387,15 +387,7 @@ impl App {
                 if ui.get_ipq_ip().as_str() != ip {
                     return;
                 }
-                let mut s = ui.get_ipq_other();
-                let (org, kind, level) = quality
-                    .map(|q| (q.org, q.kind, q.level))
-                    .unwrap_or_else(|| (String::new(), "类型未知".into(), 0));
-                s.org = org.into();
-                s.kind = kind.into();
-                s.quality = level;
-                s.probing = false;
-                ui.set_ipq_other(s);
+                ui.set_ipq_other(crate::with_quality(ui.get_ipq_other(), quality));
             });
         });
     }

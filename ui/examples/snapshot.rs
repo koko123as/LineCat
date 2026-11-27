@@ -1733,8 +1733,9 @@ fn main() {
         kind: "住宅".into(),
         quality: 1,
         org: "Example Broadband".into(),
-        probing: false,
-        failed: false,
+        asn: "AS64500".into(),
+        source: "ident.me".into(),
+        ..Default::default()
     });
     let mut up = std::collections::VecDeque::new();
     let mut down = std::collections::VecDeque::new();
@@ -3152,8 +3153,7 @@ fn main() {
             kind: "机房".into(),
             quality: 2,
             org: "Example Cloud".into(),
-            probing: false,
-            failed: false,
+            ..Default::default()
         });
         ui.set_mem_sheet_open(*overlay == "memsheet");
         ui.set_svc_sheet_open(overlay.starts_with("svcsheet") || *overlay == "svcip");

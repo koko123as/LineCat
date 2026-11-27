@@ -300,6 +300,42 @@ fn dash_profile(p: &store::Profile, busy: bool) -> DashProfile {
     }
 }
 
+/// The status with what `lookup_quality` found, or each source's failure.
+fn with_quality(
+    mut s: DashStatus,
+    quality: Result<dashboard::Quality, Vec<(String, String)>>,
+) -> DashStatus {
+    s.probing = false;
+    match quality {
+        Ok(q) => {
+            s.org = q.org.into();
+            s.kind = q.kind.into();
+            s.quality = q.level;
+            let flags: Vec<SharedString> = q.flags.into_iter().map(Into::into).collect();
+            s.flags = ModelRc::new(VecModel::from(flags));
+            s.asn = q.asn.map(|a| format!("AS{a}")).unwrap_or_default().into();
+            s.source = q.source.into();
+            s.lookup_failed = false;
+            s.sources = ModelRc::default();
+        }
+        Err(failures) => {
+            s.kind = "类型未知".into();
+            s.quality = 0;
+            s.flags = ModelRc::default();
+            s.lookup_failed = true;
+            let rows: Vec<IpSource> = failures
+                .into_iter()
+                .map(|(label, status)| IpSource {
+                    label: label.into(),
+                    status: status.into(),
+                })
+                .collect();
+            s.sources = ModelRc::new(VecModel::from(rows));
+        }
+    }
+    s
+}
+
 /// `_ProfileFileItem`'s subtitle and size: when the file changed, and how big it is.
 fn file_info(path: &std::path::Path) -> String {
     match std::fs::metadata(path) {
@@ -890,6 +926,52 @@ impl App {
 
     /// `OutboundIpProbe`: where traffic leaves right now, through the rules while running
     /// and directly otherwise, then what kind of address it is.
+    /// `ipQualityRetry`: the sheet's address looked up again; the outbound one, when its
+    /// probe found none, is probed again instead.
+    fn retry_ip_quality(self: &Arc<Self>) {
+        let app = self.clone();
+        self.ui(move |ui| {
+            let other = !ui.get_ipq_ip().is_empty();
+            let mut s = if other {
+                ui.get_ipq_other()
+            } else {
+                ui.get_dash_status()
+            };
+            if s.probing {
+                return;
+            }
+            if s.ip.is_empty() {
+                return app.probe_ip();
+            }
+            s.probing = true;
+            let ip = s.ip.to_string();
+            if other {
+                ui.set_ipq_other(s);
+            } else {
+                ui.set_dash_status(s);
+            }
+            app.spawn(move |app| {
+                let quality = dashboard::lookup_quality(&ip);
+                app.ui(move |ui| {
+                    let current = if other {
+                        ui.get_ipq_other()
+                    } else {
+                        ui.get_dash_status()
+                    };
+                    if current.ip.as_str() != ip {
+                        return;
+                    }
+                    let next = with_quality(current, quality);
+                    if other {
+                        ui.set_ipq_other(next);
+                    } else {
+                        ui.set_dash_status(next);
+                    }
+                });
+            });
+        });
+    }
+
     fn probe_ip(self: &Arc<Self>) {
         let seq = self.ip_seq.fetch_add(1, Ordering::SeqCst) + 1;
         let proxy =
@@ -942,18 +1024,12 @@ impl App {
                 return;
             }
             app.ui(move |ui| {
-                let (org, kind, level) = quality
-                    .map(|q| (q.org, q.kind, q.level))
-                    .unwrap_or_else(|| (String::new(), "类型未知".into(), 0));
-                ui.set_dash_status(DashStatus {
+                let base = DashStatus {
                     ip: ip.into(),
                     country: cc.into(),
-                    kind: kind.into(),
-                    quality: level,
-                    org: org.into(),
-                    probing: false,
-                    failed: false,
-                });
+                    ..Default::default()
+                };
+                ui.set_dash_status(with_quality(base, quality));
             });
         });
     }
@@ -2785,6 +2861,8 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
     ui.on_edit_dashboard(move |action, widget| a.edit_dashboard(&action, &widget));
     let a = app.clone();
     ui.on_refresh_ip(move || a.probe_ip());
+    let a = app.clone();
+    ui.on_ipq_retry(move || a.retry_ip_quality());
     let a = app.clone();
     ui.on_copy_text(move |text| {
         let text = text.to_string();
