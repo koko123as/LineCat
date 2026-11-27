@@ -4025,21 +4025,6 @@ component CustomProfilePage inherits Rectangle {
     }
 }
 
-// A page whose content lands in a later batch: its title and back.
-component PlaceholderPage inherits Rectangle {
-    in property <string> title;
-    callback back();
-    background: Theme.s.page;
-    VerticalLayout {
-        AppBar {
-            title: root.title;
-            can-back: true;
-            back => { root.back(); }
-        }
-        Empty { text: "暂无内容"; }
-    }
-}
-
 // An outlined text field with its label above, as FlClash's forms.
 component Field inherits VerticalLayout {
     in property <string> label;
@@ -9398,8 +9383,7 @@ export component AppWindow inherits Window {
     // Profiles
     in property <[ProfileItem]> profiles;
     in property <bool> adding;
-    // Page over the profiles list: "", "edit", "editor", "preview", "sort", "custom" or
-    // "placeholder".
+    // Page over the profiles list: "", "edit", "editor", "preview", "sort" or "custom".
     in-out property <string> profiles-page;
     // `CustomProfileView`, kept open under the pages it opens while `custom-open`.
     in property <string> custom-title;
@@ -9490,9 +9474,6 @@ export component AppWindow inherits Window {
     callback ext-search(string);
     callback custom-row(string);
     in-out property <string> editor-parent;
-    in-out property <string> placeholder-title;
-    // Where the placeholder page goes back to, when not the custom profile page.
-    in-out property <string> placeholder-parent;
     callback add-custom();
     callback custom-back();
     callback custom-action(string);
@@ -9822,6 +9803,8 @@ export component AppWindow inherits Window {
     callback set-pure-black(bool);
     callback check-update();
     callback about-logo-tapped();
+    // `HomeBackScopeContainer`: back with nothing left to close on the root page.
+    callback close-app();
     in-out property <bool> choice-open;
     in property <string> choice-title;
     in-out property <bool> choice-loading;
@@ -10175,17 +10158,18 @@ export component AppWindow inherits Window {
                 if (root.profiles-shown && root.profiles-page == "group-members") { root.pg-pick("back"); return accept; }
                 if (root.profiles-shown && root.profiles-page == "group-icon" && root.gi-searching) { root.gi-query = ""; root.gi-searching = false; return accept; }
                 if (root.profiles-shown && root.profiles-page == "group-icon") { root.icon-pick("back"); return accept; }
-                if (root.profiles-shown && root.profiles-page == "placeholder" && root.placeholder-parent != "") { root.profiles-page = root.placeholder-parent; root.placeholder-parent = ""; return accept; }
                 if (root.profiles-shown && root.profiles-page == "custom" && (root.custom-group-selecting || root.custom-group-sorting)) { root.custom-group("clear"); return accept; }
                 if (root.tab == 0 && !root.custom-open && root.profiles-page == "preview") { root.profiles-page = ""; root.profile-sheet-open = true; return accept; }
-                if (root.profiles-shown && root.custom-open && (root.profiles-page == "preview" || root.profiles-page == "placeholder")) { root.profiles-page = "custom"; return accept; }
+                if (root.profiles-shown && root.custom-open && root.profiles-page == "preview") { root.profiles-page = "custom"; return accept; }
                 if (root.profiles-shown && root.profiles-page == "custom") { root.custom-back(); return accept; }
                 if (root.profiles-shown && root.profiles-page != "") { root.profiles-page = ""; return accept; }
                 if (root.tab == 0 && root.dash-editing) { root.dash-editing = false; return accept; }
-                if (root.tab != 0) {
+                if (root.is-tv && root.tab != 0) {
                     root.go(0);
                     return accept;
                 }
+                root.close-app();
+                return accept;
             }
             reject
         }
@@ -10532,17 +10516,6 @@ export component AppWindow inherits Window {
                     back => { root.pr-form("back"); }
                     clicked(id) => { root.pr-form(id); }
                     toggled(id, on) => { root.pr-form-toggled(id, on); }
-                }
-                if root.profiles-shown && root.profiles-page == "placeholder": PlaceholderPage {
-                    x: root.po-x(parent.width);
-                    y: root.po-y(parent.height);
-                    width: root.po-w(parent.width);
-                    height: parent.height - root.po-y(parent.height);
-                    title: root.placeholder-title;
-                    back => {
-                        root.profiles-page = root.placeholder-parent != "" ? root.placeholder-parent : root.custom-open ? "custom" : "";
-                        root.placeholder-parent = "";
-                    }
                 }
                 if root.profiles-shown && root.profiles-page == "group": EditProxyGroupPage {
                     x: root.po-x(parent.width);

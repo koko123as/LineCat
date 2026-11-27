@@ -2541,15 +2541,6 @@ fn main() {
         ("custom-replace-tablet", 2, "", "custom", 1, "creplace"),
         ("custom-menu", 2, "", "custom", 1, "cmenu"),
         ("custom-menu-wide", 2, "", "custom", 1, "cmenu"),
-        ("custom-placeholder", 2, "", "placeholder", 1, "custom"),
-        (
-            "custom-placeholder-small",
-            2,
-            "",
-            "placeholder",
-            1,
-            "custom",
-        ),
         ("profiles-link", 2, "", "", 1, "link"),
         ("profiles-menu", 2, "", "", 1, "menu"),
         ("profiles-confirm", 2, "", "", 1, "confirm"),
@@ -3561,7 +3552,6 @@ fn main() {
         )));
         ui.set_custom_issues(if *overlay == "issues" { 3 } else { 0 });
         ui.set_custom_group_count(0);
-        ui.set_placeholder_title("规则".into());
         ui.set_custom_menu_open(*overlay == "cmenu");
         if *overlay == "cmenu" {
             ui.set_ctx_x(52.0);

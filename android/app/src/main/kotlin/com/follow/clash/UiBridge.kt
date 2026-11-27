@@ -496,6 +496,22 @@ object UiBridge {
             ok()
         }
 
+        // `handleClose`: minimizeOnExit sends the task back, else the activity ends.
+        "app.close" -> {
+            val minimize = request.get("minimize")?.asBoolean ?: true
+            withContext(Dispatchers.Main) {
+                val host = activity
+                if (host != null) {
+                    if (minimize) {
+                        host.moveTaskToBack(true)
+                    } else {
+                        host.finish()
+                    }
+                }
+            }
+            ok()
+        }
+
         // `hidden` in the general settings: the task leaves the recent apps.
         "app.hidden" -> {
             val hidden = request.get("value")?.asBoolean ?: false

@@ -163,21 +163,13 @@ impl App {
             let page = ui.get_profiles_page();
             if matches!(
                 page.as_str(),
-                "custom"
-                    | "group"
-                    | "group-members"
-                    | "placeholder"
-                    | "rules"
-                    | "rule"
-                    | "rule-presets"
-                    | "pmore"
+                "custom" | "group" | "group-members" | "rules" | "rule" | "rule-presets" | "pmore"
             ) || (page == "editor"
                 && matches!(ui.get_editor_parent().as_str(), "group" | "rules"))
             {
                 ui.set_profiles_page("".into());
             }
             ui.set_editor_parent("".into());
-            ui.set_placeholder_parent("".into());
         });
         let (untouched, label, edited) = {
             let store = self.store.lock().unwrap();

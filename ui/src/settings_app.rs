@@ -393,6 +393,8 @@ impl App {
         ui.on_od_clicked(move |id| a.on_demand_clicked(&id));
         let a = self.clone();
         ui.on_about_logo_tapped(move || a.logo_tapped());
+        let a = self.clone();
+        ui.on_close_app(move || a.close_app());
         self.publish_settings();
         self.publish_mitm_consent();
     }
@@ -1173,6 +1175,23 @@ impl App {
         self.spawn(move |app| {
             if let Ok(b) = app.bridge() {
                 let _ = b.shell("app.hidden", json!({"value": hidden}), CALL);
+            }
+        });
+    }
+
+    /// `handleClose`: 退出时最小化 sends the task back (`system.back`), else it ends.
+    pub(crate) fn close_app(self: &Arc<Self>) {
+        let minimize = self
+            .store
+            .lock()
+            .unwrap()
+            .state
+            .settings
+            .general
+            .minimize_on_exit;
+        self.spawn(move |app| {
+            if let Ok(b) = app.bridge() {
+                let _ = b.shell("app.close", json!({"minimize": minimize}), CALL);
             }
         });
     }

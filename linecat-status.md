@@ -82,6 +82,7 @@ what each batch landed and what is left.
 | 12a group unfold | "unfold a proxy group on the outline spring" | As prism's `UnfoldMotion` / `UnfoldSliver` (FlClash rs): a group's rows (tab, list style) slide out from behind its header and back on UIKit's outline disclosure spring (mass 1, stiffness 631.65, damping 50.27, critically damped, settled at 1e-3 / 0.03, 0.367 s from rest), as one block of at most a screen clipped at its bottom edge, with what follows moving with it; a tap mid-motion turns it around from where it stands at its speed. The fold button is `Glyphs.caretDown` turned from -90° with the motion. `UnfoldMotion` is a global of pure functions checked by `tests/navigation.rs`. Left out: only one group moves at a time (a tap on another settles the first), all the rows are built at once as it opens (no lazy sliver), the card's bottom corners do not follow the block. |
 | 12b loading states | "open pages at once and load behind a spinner" | As prism's `NullStatusSwitcher` (`minimumLoadingDuration` 400 ms): the profile editor, 运行时配置, the rule set preview and 代理's quick edit open at once on a spinner held at least 400 ms and read their document behind it (`editor_load` drops a result from a page left or opened again); a document that cannot be read shows 编辑器不可用 with the reason (`editorUnavailable`) instead of a toast. 字体 holds its spinner the same way and brings the picked font to the middle once listed (`_revealSelected`). `ActionSheet` takes a `loading` state (`SelectionSheet.loadingStatus`): 扩展 → 出口's sheet opens while the outbounds are read and fills in, revealing the picked row. |
 | 12c record labels | "draw record lines as text with labels after it" | As FlClash rs `RecordLabelLine` / `RecordLabel`: the 请求 rows (connections: failure in red or the node and lifetime, ×n, MITM; DNS: the answer, failure, who asked, 缓存; HTTP: host, duration, mark), the detail heads (connection, DNS, HTTP outcome labels), the timeline (kind, then each note as a label), 链路 (UID, group type, node type), related connections, a connection's HTTP requests and the rule actions read as one line: the text, then tonal labels at their own widths, 4 apart. The text gives way first, then the last label within itself; a part left under twice its height that does not fit is dropped. The layout is the `RecordLine` global's pure functions, tested with given widths (no font). Left out: tabular figures (Slint `Text` has no font features), at most five labels a line. |
+| 12d back and close | "close the app from the root page as FlClash" | As `HomeBackScopeContainer` and `handleClose`: back with nothing left to close returns to 仪表盘 only on a TV off it; otherwise it closes the app: with 退出时最小化 on (the default) the task goes to the back (`UiBridge` `app.close` → `moveTaskToBack`), else the activity finishes. Before, back on another tab went to 仪表盘 and back on 仪表盘 did nothing. `PlaceholderPage` (no entry, no FlClash counterpart) is gone. Not done: the 「语言」 row (FlClash ships every locale; LineCat is Chinese only). Unchanged, already as FlClash: the default log level error, the Core in process. |
 
 ## Audit: entries that must really work
 
@@ -115,7 +116,8 @@ method it calls is one the Flutter UI's `rpc_core_api.dart` calls too. 修前 is
 | 仪表盘 | 服务状态等 DashSheet / 连接统计 SnapSheet 下拉关闭 | `showModalBottomSheet` 拖动：过半或快速下滑关闭 | DashSheet 只能点 ✕ 关闭 | 拖动把手或标题栏，过半或快速下滑关闭，否则回弹；SnapSheet 同样的快速下滑 (7h) | `SheetDrag.closes` → `close()` | `tests/navigation.rs`；真机 |
 | 代理 | 节点卡片长名称 / 列表样式组头吸顶 | `ProxyCard` 名称 maxLines 2（紧凑 1）+ 省略，类型与延迟一行常显；`PinnedHeaderSliver` 组头吸顶 | 长名换三行，底行被挤出卡片、与下一张重叠；组头随内容滚走 | 名称两行省略，底行固定在卡片底部，高度按字体行高；组头吸顶可定位/测速/折叠 (7i) | `ProxyCardMetrics.height` → `card-height` → `proxies::locate` 计算 | `tests/navigation.rs`；截图 proxies-long* 四尺寸 |
 | 请求 / 工具 | 连接、请求、DNS 行长按；请求页 ⋯；应用访问控制 ⋯ | `ContextMenuRegion` 弹出菜单；access `_buildMenuItems`（开启/关闭、设置▸、操作▸） | 底部操作面板；访问控制 ⋯ 为全高分组面板 | 锚定弹出菜单，分隔线/分组标题/图标对齐；访问控制为两层子菜单 (7j) | `req-row-menu` / `acc-menu` → `MenuAnchor` → `AnchorMenu` → `ctx-picked("acc")` → `access_menu_picked` → store `access_control` | 单测 `the_menu_follows_flclash`；截图 requests-row-menu*、set-access-menu* |
-| 配置 | `PlaceholderPage` | 无 | 无入口设置 `placeholder-title`，不可达 | 不变（死代码，未删以免越界） | — | grep |
+| 配置 | `PlaceholderPage` | 无 | 无入口设置 `placeholder-title`，不可达 | 已删除 (12d) | — | grep |
+| 根页 | 返回键 | `HomeBackScopeContainer` → `handleClose`：仅 TV 且不在仪表盘时回仪表盘，否则 退出时最小化 开（默认）`moveTaskToBack`，关则退出 | 非仪表盘回仪表盘，仪表盘无反应 | 同 FlClash (12d) | `close-app` → `close_app` → UiBridge `app.close` | 真机 |
 | 工具 | 资源页 `pending` 行状态 | 文件读取中显示 pending | 文件同步就地读取 | 不做：没有可观察的读取中状态 | — | — |
 
 ## Release
@@ -139,6 +141,6 @@ Handoff items 2–7:
 
 ## Waiting on the owner
 
-- VPN back/close behaviour, whether the build workflow skips `slint-ui`,
-  kernel integration, the 「语言」 row, and whether the tablet detail
-  sheet buttons match the phone's.
+- Whether the build workflow skips `slint-ui`, the 「语言」 row, and whether
+  the tablet detail sheet buttons match the phone's (the Core already runs in
+  process, 12d).
