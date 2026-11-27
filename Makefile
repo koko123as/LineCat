@@ -28,7 +28,7 @@ help: ## List every target and variable
 
 setup: submodules ## Fetch submodules
 
-submodules: ## Update git submodules (Concord core, prism_ui)
+submodules: ## Update git submodules (Concord core)
 	git submodule update --init --recursive
 
 

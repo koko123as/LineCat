@@ -13,7 +13,7 @@ Verify) and `make help`; this skill decides which of them a change runs and wher
 | Change under | Checks | Where |
 |---|---|---|
 | `lib/`, `test/`, `arb/`, `assets/` | Which Tests below, `flutter analyze --no-fatal-infos` | host |
-| `plugins/prism_ui`, `plugins/code_forge`, `plugins/dynamic_color`, Dart in `plugins/rust_api` | `make plugins-check`; the root `test/plugins/` files for the plugin | host |
+| `plugins/code_forge`, `plugins/dynamic_color`, Dart in `plugins/rust_api` | `make plugins-check`; the root `test/plugins/` files for the plugin | host |
 | `plugins/setup` | `dart analyze` and `dart test` in `plugins/setup/setup_hooks` | host |
 | `plugins/rust_api/rust` | `make rust-check`; the root tests that load the library, such as `test/plugins/code_forge/` and `test/core/desktop/ipc_native_test.dart` | host; Linux for `cfg(target_os = "linux")` |
 | `services/helper` | `make rust-check` | host; Windows for `--features windows-service` |
@@ -48,7 +48,7 @@ The root package's Flutter and Dart tests, sized to the change; keep the full su
 - Run the full suite (`dart run tool/test.dart`) only when the change touches a shared base, or in a branch's last
   review round; no other round runs it. The shared bases are `pubspec.yaml` and `pubspec.lock`, the build hook in
   `plugins/setup`, models and anything `build_runner` regenerates, `lib/common/` and the barrel files
-  (`lib/models/models.dart`, `lib/widgets/widgets.dart` and the like), `plugins/prism_ui`, `analysis_options.yaml` and
+  (`lib/models/models.dart`, `lib/widgets/widgets.dart` and the like), `analysis_options.yaml` and
   `lint_options.yaml`, and `test/helpers/` or `tool/test.dart`. Over half the test files import a barrel, so no import
   graph narrows such a change.
 - Keep the last round's full run: on the private `origin` the CI checks run only when started by hand, so nothing else
@@ -86,7 +86,7 @@ The build hook builds Concord for every `flutter test`, which needs `cargo` and 
 
 1. Check out the submodules at the commits the tree records (`git submodule status`), or extract them from another
    checkout's submodule with `git -C <checkout>/<submodule> archive <commit> | tar -x -C <submodule>`.
-   `flutter pub get` needs `plugins/prism_ui`; every `flutter test` needs the asset
+   Every `flutter test` needs the asset
    `concord/assets/ca-certificates.crt` and stops at `No file or variants found for asset` without it; tests under
    `test/core/api/`, `test/models/`, `test/features/` and `test/providers/` read `concord/schema/` and Concord's
    config goldens.

@@ -552,7 +552,7 @@ automatic retry is off because a retry after an HTTP 429 spends the same per-out
 
 The UI comes in two layers, plus the app's own widgets:
 
-- `prism_ui`, a path dependency on the submodule `plugins/prism_ui` (repository `chen08209/prism_ui`), is the UI library; `prism_ui/lib/` paths in these docs are in that submodule: the components and design tokens that know nothing of FlClash. Shapes,
+- `prism_ui`, FlClash's UI library (repository `chen08209/prism_ui`, no longer carried in this repository; `ui/src/hct.rs` and `ui/src/colors.rs` port its colours), is where `prism_ui/lib/` paths in these docs point: the components and design tokens that know nothing of FlClash. Shapes,
   surfaces, motion, colors, the scaffold's layout (`PrismScaffold`, `ScaffoldBar`, `AppBar`), sheets, popups, list rows and groups, buttons, glass, and the glyph engine with the few
   glyphs the components draw themselves (`Glyphs`). It ships no app assets and names nothing from the app; its own
   shader goes with it as `packages/prism_ui/shaders/liquid_glass.frag`. A change to it lands and publishes there
