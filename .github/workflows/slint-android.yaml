@@ -89,8 +89,9 @@ jobs:
         working-directory: ui
         run: |
           rustup show active-toolchain
+          rustup component add rustfmt
           sudo apt-get update -q && sudo apt-get install -y -q libfontconfig-dev
-          cargo fmt --check || echo "::warning::ui is not rustfmt-formatted"
+          cargo fmt --check
           cargo test --locked
 
       - name: Build libseasoncat_ui.so (arm64-v8a)

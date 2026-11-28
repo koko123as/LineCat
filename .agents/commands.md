@@ -144,7 +144,7 @@ make comment-density FILES="path ..."
   (`tool/hooks/test.sh`), `android` (the Kotlin unit tests above), `rust` (Helper and JNI glue format, Helper tests),
   `rust-core` (the Concord gate) and `windows-helper-test`. In a private copy they run only on `slint-ui` pushes and when started by hand.
 - `slint-android.yaml` runs on pushes to `slint-ui`, on `v*-rs.*` tags and by hand. Its `apk` job runs the UI crate's
-  format check (a warning only) and tests, builds and checks `libseasoncat_ui.so`, builds the release APK, checks that it
+  format check and tests, builds and checks `libseasoncat_ui.so`, builds the release APK, checks that it
   carries the UI library, the Core and the geo data, checks its version and signer, and uploads the artifact
   `seasoncat-slint-arm64-v8a` (`SeasonCat-slint-arm64-v8a.apk` and its `.sha256`).
 - `issue-gate.yaml` labels an incomplete issue, and a daily sweep closes issues left incomplete and locks old closed
