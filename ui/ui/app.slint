@@ -121,6 +121,11 @@ export struct DashTraffic {
     down-fill: string,
 }
 
+export struct IpSourceFailure {
+    source: string,
+    status: string,
+}
+
 export struct DashStatus {
     ip: string,
     country: string,
@@ -139,11 +144,6 @@ export struct DashStatus {
     // `lookupIpQuality` failed: 类型查询失败, then why each source gave no answer.
     lookup-failed: bool,
     failures: [IpSourceFailure],
-}
-
-export struct IpSourceFailure {
-    source: string,
-    status: string,
 }
 
 // A service of the service status card (`_ServiceView`): tone 0 muted 1 ok 2 warning 3 error.
