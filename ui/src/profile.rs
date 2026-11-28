@@ -467,7 +467,7 @@ pub fn overlay_for(
         crate::mitm::core_json(
             &settings.mitm,
             &settings.mitm_modules,
-            &crate::mitm::language(settings.locale.as_deref()),
+            crate::mitm::LANGUAGE,
         ),
     );
     set(

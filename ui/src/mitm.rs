@@ -282,13 +282,8 @@ pub fn core_json(m: &MitmSettings, modules: &[MitmModule], language: &str) -> Va
     Value::Object(c)
 }
 
-/// `Platform.localeName` as the Core takes it.
-pub fn language(locale: Option<&str>) -> String {
-    locale
-        .filter(|l| !l.is_empty())
-        .unwrap_or("zh-CN")
-        .replace('_', "-")
-}
+/// `Platform.localeName` as the Core takes it; the UI is Chinese only.
+pub const LANGUAGE: &str = "zh-CN";
 
 /// `MitmCertificate`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1414,8 +1409,6 @@ mod tests {
         );
         assert_eq!(url_name("https://a.com/dir/Ads.sgmodule?x=1"), "Ads");
         assert_eq!(quick_edit_lines(" a \n\nb\na\n"), vec!["a", "b"]);
-        assert_eq!(language(Some("en_US")), "en-US");
-        assert_eq!(language(None), "zh-CN");
     }
 
     #[test]

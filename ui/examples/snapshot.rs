@@ -705,7 +705,7 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
         overlay.starts_with("choice:") || (page == "custom-proxy" && overlay == "add"),
     );
     if let Some(key) = overlay.strip_prefix("choice:") {
-        ui.set_choice_title("语言".into());
+        ui.set_choice_title("延迟测试超时".into());
         let items: Vec<ActionItem> = settings_view::choices(&s, key)
             .into_iter()
             .map(|(id, label, checked)| ActionItem {
@@ -3017,10 +3017,38 @@ fn main() {
             "sliders",
         ),
         ("set-color-sliders-dark", 3, "", "theme-color", 2, "sliders"),
-        ("set-language", 3, "", "", 1, "choice:language"),
-        ("set-language-small", 3, "", "", 1, "choice:language"),
-        ("set-language-wide", 3, "", "", 1, "choice:language"),
-        ("set-language-tablet", 3, "", "", 1, "choice:language"),
+        (
+            "set-delay-timeout",
+            3,
+            "",
+            "general",
+            1,
+            "choice:delay-timeout",
+        ),
+        (
+            "set-delay-timeout-small",
+            3,
+            "",
+            "general",
+            1,
+            "choice:delay-timeout",
+        ),
+        (
+            "set-delay-timeout-wide",
+            3,
+            "",
+            "general",
+            1,
+            "choice:delay-timeout",
+        ),
+        (
+            "set-delay-timeout-tablet",
+            3,
+            "",
+            "general",
+            1,
+            "choice:delay-timeout",
+        ),
         ("set-port", 3, "", "general", 1, "input:port"),
         ("set-port-small", 3, "", "general", 1, "input:port"),
         ("set-port-wide", 3, "", "general", 1, "input:port"),

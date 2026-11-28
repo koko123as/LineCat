@@ -476,7 +476,6 @@ impl App {
 
     fn tools_clicked(self: &Arc<Self>, id: &str) {
         match id {
-            "language" => self.open_choice("language", "语言"),
             "access" => {
                 self.open_access();
                 self.open_page(id);
@@ -901,9 +900,6 @@ impl App {
             return;
         }
         match key {
-            "language" => self.update_settings(Effect::None, |s| {
-                s.locale = (!value.is_empty()).then_some(value)
-            }),
             "delay-timeout" => {
                 if let Ok(ms) = value.parse::<i64>() {
                     self.update_general(Effect::Reapply, |g| g.delay_test_timeout = ms);

@@ -5,30 +5,6 @@ use crate::store::{Settings, DELAY_TEST_TIMEOUTS};
 use crate::{SetRow, SetSection};
 use slint::{ModelRc, VecModel};
 
-/// `AppLocalizations.supportedLocales`, with each one's label (`Locale.label`).
-pub const LOCALES: [(&str, &str); 7] = [
-    ("en", "英语"),
-    ("zh", "中文简体"),
-    ("ja", "日语"),
-    ("ru", "俄语"),
-    ("fr", "法语"),
-    ("es", "西班牙语"),
-    ("ko", "韩语"),
-];
-
-/// The label of a stored locale; older versions saved `zh_CN`.
-pub fn locale_label(locale: Option<&str>) -> &'static str {
-    let Some(locale) = locale else {
-        return "默认";
-    };
-    let code = locale.split(['_', '-']).next().unwrap_or(locale);
-    LOCALES
-        .iter()
-        .find(|(c, _)| *c == code)
-        .map(|(_, l)| *l)
-        .unwrap_or("默认")
-}
-
 fn row(id: &str, kind: &str, glyph: &str, title: &str, subtitle: &str) -> SetRow {
     SetRow {
         id: id.into(),
@@ -82,16 +58,7 @@ pub fn tools(settings: &Settings, mobile: bool, pages: &[&str]) -> Vec<SetSectio
         more.push(open("logs", "logs", "日志"));
     }
     let has = |p: &str| pages.contains(&p);
-    let mut set = vec![
-        row(
-            "language",
-            "value-icon",
-            "language",
-            "语言",
-            locale_label(settings.locale.as_deref()),
-        ),
-        open("theme", "paintbrush", "主题"),
-    ];
+    let mut set = vec![open("theme", "paintbrush", "主题")];
     if has("access") {
         set.push(open("access", "apps", "访问控制"));
     }
@@ -489,19 +456,6 @@ pub fn about(settings: &Settings) -> Vec<SetSection> {
 pub fn choices(settings: &Settings, key: &str) -> Vec<(String, String, bool)> {
     let g = &settings.general;
     match key {
-        "language" => {
-            let current = settings
-                .locale
-                .as_deref()
-                .map(|l| l.split(['_', '-']).next().unwrap_or(l).to_string());
-            std::iter::once(("".to_string(), "默认".to_string(), current.is_none()))
-                .chain(
-                    LOCALES.iter().map(|(c, l)| {
-                        (c.to_string(), l.to_string(), current.as_deref() == Some(*c))
-                    }),
-                )
-                .collect()
-        }
         "delay-timeout" => DELAY_TEST_TIMEOUTS
             .iter()
             .map(|t| (t.to_string(), format!("{t} ms"), *t == g.delay_test_timeout))
@@ -667,7 +621,7 @@ mod tests {
             ids(&tools(&s, true, &[])),
             vec![
                 vec!["requests", "resources"],
-                vec!["language", "theme", "general"],
+                vec!["theme", "general"],
                 vec!["about"],
             ]
         );
@@ -677,7 +631,7 @@ mod tests {
         assert_eq!(all[0], vec!["resources", "logs"]);
         assert_eq!(
             all[1],
-            vec!["language", "theme", "access", "backup", "advanced", "general"]
+            vec!["theme", "access", "backup", "advanced", "general"]
         );
         assert_eq!(all[2], vec!["developer", "about"]);
     }
@@ -707,20 +661,6 @@ mod tests {
             ]
         );
         assert!(general(&s)[2].footer.contains("其他网址"));
-    }
-
-    #[test]
-    fn locales_read_older_names() {
-        assert_eq!(locale_label(None), "默认");
-        assert_eq!(locale_label(Some("zh_CN")), "中文简体");
-        assert_eq!(locale_label(Some("ja")), "日语");
-        let s = Settings {
-            locale: Some("zh_CN".into()),
-            ..Default::default()
-        };
-        let c = choices(&s, "language");
-        assert_eq!(c.len(), 8);
-        assert!(c.iter().any(|(id, _, on)| id == "zh" && *on));
     }
 
     #[test]

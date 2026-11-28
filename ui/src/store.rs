@@ -28,8 +28,6 @@ pub struct Settings {
     pub geo_update_interval: i64,
     /// `geox-url`, keyed mmdb / asn / geosite.
     pub geox_url: BTreeMap<String, String>,
-    /// `AppSettingProps.locale`; None follows the system.
-    pub locale: Option<String>,
     pub pure_black: bool,
     pub developer_mode: bool,
     pub auto_check_update: bool,
@@ -250,7 +248,6 @@ impl Default for Settings {
             geo_auto_update: true,
             geo_update_interval: 24,
             geox_url: crate::resources::default_urls(),
-            locale: None,
             pure_black: false,
             developer_mode: false,
             auto_check_update: true,
@@ -621,10 +618,17 @@ mod tests {
     }
 
     #[test]
+    fn a_stored_locale_is_ignored() {
+        let s: Settings = serde_json::from_str(r#"{"locale":"en_US","mode":2}"#).unwrap();
+        assert_eq!(s.mode, 2);
+        assert!(!serde_json::to_string(&s).unwrap().contains("locale"));
+    }
+
+    #[test]
     fn older_settings_take_flclash_general_defaults() {
         let s: Settings = serde_json::from_str(r#"{"accent":2}"#).unwrap();
         let g = &s.general;
-        assert!(s.locale.is_none() && !s.developer_mode && s.auto_check_update);
+        assert!(!s.developer_mode && s.auto_check_update);
         assert!(g.check_certificate && g.close_connections && g.show_notification_stop_action);
         assert!(!g.open_logs && !g.allow_lan && !g.authentication.enable);
         assert_eq!((g.mixed_port, g.delay_test_timeout), (7890, 8000));

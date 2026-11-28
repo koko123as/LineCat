@@ -1442,7 +1442,7 @@ impl App {
         arguments: &BTreeMap<String, String>,
         attachments: &BTreeMap<String, String>,
     ) -> Result<ModuleRead, String> {
-        let language = mitm::language(self.mitm_settings().locale.as_deref());
+        let language = mitm::LANGUAGE;
         let answer = self.bridge()?.call(
             "mitm.readModule",
             json!({"text": text, "arguments": arguments, "attachments": attachments, "language": language}),
