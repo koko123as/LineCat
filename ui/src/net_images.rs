@@ -1,5 +1,5 @@
 //! Pictures behind an http url (`CommonTargetIcon`'s network image): downloaded once to a
-//! disk cache, decoded (PNG, SVG) and shrunk to an icon's size, kept here by url, `None`
+//! disk cache, decoded (PNG, JPEG, SVG) and shrunk to an icon's size, kept here by url, `None`
 //! once a url turned out to hold none. A `data:` url is decoded in place.
 
 use crate::app_icons::{decode_png, Pixels};
@@ -76,6 +76,7 @@ pub fn is_image_src(src: &str) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     Png,
+    Jpeg,
     Svg,
 }
 
@@ -83,6 +84,9 @@ pub enum Format {
 pub fn sniff(bytes: &[u8]) -> Option<Format> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Some(Format::Png);
+    }
+    if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        return Some(Format::Jpeg);
     }
     let head = &bytes[..bytes.len().min(1024)];
     let head = head.strip_prefix(b"\xef\xbb\xbf").unwrap_or(head);
@@ -100,6 +104,7 @@ pub fn sniff(bytes: &[u8]) -> Option<Format> {
 fn format_of_mime(mime: &str) -> Option<Format> {
     match mime {
         "image/png" => Some(Format::Png),
+        "image/jpeg" | "image/jpg" | "image/pjpeg" => Some(Format::Jpeg),
         "image/svg+xml" => Some(Format::Svg),
         _ => None,
     }
@@ -165,8 +170,22 @@ pub fn decode(bytes: &[u8]) -> Option<Pixels> {
 fn decode_as(bytes: &[u8], format: Format) -> Option<Pixels> {
     match format {
         Format::Png => decode_png(bytes).map(|p| shrink(&p, MAX_SIDE)),
+        Format::Jpeg => decode_jpeg(bytes).map(|p| shrink(&p, MAX_SIDE)),
         Format::Svg => render_svg(bytes, MAX_SIDE),
     }
+}
+
+/// A photo too large to decode within `max_alloc` is refused rather than shrunk.
+pub fn decode_jpeg(bytes: &[u8]) -> Option<Pixels> {
+    let mut reader =
+        image::ImageReader::with_format(std::io::Cursor::new(bytes), image::ImageFormat::Jpeg);
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(64 << 20);
+    reader.limits(limits);
+    let rgba = reader.decode().ok()?.into_rgba8();
+    let (w, h) = rgba.dimensions();
+    let raw = rgba.into_raw();
+    Some(SharedPixelBuffer::clone_from_slice(&raw, w, h))
 }
 
 /// Drawn so its longer side is `side`, however small its own size; images it names by
@@ -388,6 +407,36 @@ mod tests {
         assert_eq!(sniff(b"<?xml version=\"1.0\"?><html/>"), None);
         assert_eq!(sniff(b"<html><svg/></html>"), None);
         assert_eq!(sniff(b""), None);
+    }
+
+    fn jpeg(w: u32, h: u32, rgb: [u8; 3]) -> Vec<u8> {
+        let data: Vec<u8> = (0..w * h).flat_map(|_| rgb).collect();
+        let mut out = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 95)
+            .encode(&data, w, h, image::ExtendedColorType::Rgb8)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn jpeg_decodes_from_bytes_and_data_urls() {
+        let bytes = jpeg(16, 8, [0, 0, 255]);
+        assert_eq!(sniff(&bytes), Some(Format::Jpeg));
+        let p = decode(&bytes).unwrap();
+        assert_eq!((p.width(), p.height()), (16, 8));
+        let px = p.as_slice()[0];
+        assert!(
+            px.b > 230 && px.r < 25 && px.g < 25 && px.a == 255,
+            "{px:?}"
+        );
+        let big = decode(&jpeg(300, 150, [9, 9, 9])).unwrap();
+        assert_eq!((big.width(), big.height()), (MAX_SIDE, MAX_SIDE / 2));
+        for mime in ["image/jpeg", "image/jpg", "application/octet-stream"] {
+            let url = format!("data:{mime};base64,{}", encode(&bytes));
+            let p = decode_data_url(&url).unwrap_or_else(|| panic!("{mime}"));
+            assert_eq!(p.width(), 16);
+        }
+        assert!(decode(&[0xff, 0xd8, 0xff, 0xe0, 0, 0]).is_none());
     }
 
     #[test]
