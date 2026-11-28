@@ -1296,13 +1296,16 @@ component ModeTile inherits Rectangle {
 // `OutboundModeCard` on a phone: three tiles under the header.
 component ModeCard inherits DashCard {
     in property <int> mode;
+    in property <bool> no-profile;
     callback set-mode(int);
     height: 136px;
     VerticalLayout {
         padding: 16px;
         spacing: 12px;
         DashHeader { glyph: Icons.route; title: "出站模式"; }
-        HorizontalLayout {
+        // `_NoProfileNote`: with no profile every mode goes direct.
+        if root.no-profile: Text { text: "未使用配置，全部直连"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; wrap: word-wrap; overflow: elide; min-height: 52px; }
+        if !root.no-profile: HorizontalLayout {
             spacing: 8px;
             ModeTile { glyph: Icons.rule; label: "规则"; active: root.mode == 0; clicked => { root.set-mode(0); } }
             ModeTile { glyph: Icons.proxies; label: "全局"; active: root.mode == 1; clicked => { root.set-mode(1); } }
@@ -1314,6 +1317,7 @@ component ModeCard inherits DashCard {
 // `OutboundModeBar` on a wide dashboard: the label, then the choices in a row.
 component ModeBar inherits DashCard {
     in property <int> mode;
+    in property <bool> no-profile;
     callback set-mode(int);
     HorizontalLayout {
         padding-left: 16px;
@@ -1327,9 +1331,10 @@ component ModeBar inherits DashCard {
             Text { text: "出站模式"; font-size: 14px * Type.scale; font-weight: 600; color: Theme.s.on-surface; vertical-alignment: center; }
         }
         Rectangle { horizontal-stretch: 0.2; }
-        ModeTile { inline: true; glyph: Icons.rule; label: "规则"; active: root.mode == 0; clicked => { root.set-mode(0); } }
-        ModeTile { inline: true; glyph: Icons.proxies; label: "全局"; active: root.mode == 1; clicked => { root.set-mode(1); } }
-        ModeTile { inline: true; glyph: Icons.target; label: "直连"; active: root.mode == 2; clicked => { root.set-mode(2); } }
+        if root.no-profile: Text { text: "未使用配置，全部直连"; font-size: 14px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; overflow: elide; horizontal-stretch: 3; }
+        if !root.no-profile: ModeTile { inline: true; glyph: Icons.rule; label: "规则"; active: root.mode == 0; clicked => { root.set-mode(0); } }
+        if !root.no-profile: ModeTile { inline: true; glyph: Icons.proxies; label: "全局"; active: root.mode == 1; clicked => { root.set-mode(1); } }
+        if !root.no-profile: ModeTile { inline: true; glyph: Icons.target; label: "直连"; active: root.mode == 2; clicked => { root.set-mode(2); } }
     }
 }
 
@@ -2795,7 +2800,7 @@ component Dashboard inherits Rectangle {
                             open-ip => { root.open-ip(); }
                         }
                         if w == "speed": SpeedCard { traffic: root.traffic; }
-                        if w == "mode": ModeCard { mode: root.mode; set-mode(m) => { root.set-mode(m); } }
+                        if w == "mode": ModeCard { mode: root.mode; no-profile: root.profile.id == ""; set-mode(m) => { root.set-mode(m); } }
                         if w == "vpn": VpnCard { run-state: root.run-state; toggle => { root.toggle-vpn(); } }
                         if w == "service": ServiceDashCard {
                             services: root.services;
@@ -2926,12 +2931,12 @@ component Dashboard inherits Rectangle {
                     SpeedTile { width: root.cw; header: true; peak: true; upload: true; traffic: root.traffic; }
                     SpeedTile { width: root.cw; header: true; peak: true; upload: false; traffic: root.traffic; }
                 }
-                if root.columns == 2: ModeBar { height: root.control-h; mode: root.mode; set-mode(m) => { root.set-mode(m); } }
+                if root.columns == 2: ModeBar { height: root.control-h; mode: root.mode; no-profile: root.profile.id == ""; set-mode(m) => { root.set-mode(m); } }
                 if root.columns == 2: VpnCard { height: root.control-h; slim: true; run-state: root.run-state; toggle => { root.toggle-vpn(); } }
                 if root.columns == 4: HorizontalLayout {
                     height: root.control-h;
                     spacing: root.gap;
-                    ModeBar { width: root.span(2); mode: root.mode; set-mode(m) => { root.set-mode(m); } }
+                    ModeBar { width: root.span(2); mode: root.mode; no-profile: root.profile.id == ""; set-mode(m) => { root.set-mode(m); } }
                     VpnCard { width: root.span(2); height: root.control-h; slim: true; run-state: root.run-state; toggle => { root.toggle-vpn(); } }
                 }
                 HorizontalLayout {
