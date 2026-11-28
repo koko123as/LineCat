@@ -184,6 +184,7 @@ pub fn page_meta(settings: &store::Settings, page: &str) -> PageMeta {
     match page {
         "general" => meta("常规", ""),
         "developer" => meta("开发者模式", ""),
+        "crash-log" => meta("崩溃日志", ""),
         "backup" => meta("备份与恢复", ""),
         "advanced" => meta("进阶配置", ""),
         "network" => meta("网络", "advanced"),
@@ -423,7 +424,7 @@ impl App {
                 "backup" => app.backup_sections(&settings),
                 "advanced" => settings_view::advanced(&settings, app.mitm_invalid_hosts(&settings)),
                 "network" => settings_view::network(&settings),
-                "on-demand" => Vec::new(),
+                "on-demand" | "crash-log" => Vec::new(),
                 "user-agents" => settings_view::user_agents(&settings),
                 "list" => {
                     let key = targets().lock().unwrap().list.0.clone();
@@ -484,6 +485,7 @@ impl App {
                 self.open_page(id);
                 self.ping_dav();
             }
+            "crash-log" => self.open_crash_log(),
             _ => self.open_page(id),
         }
     }

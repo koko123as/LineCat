@@ -667,7 +667,8 @@ global Glyphs {
             : k == "block" ? Icons.block : k == "eye-off" ? Icons.eye-off : k == "toggle" ? Icons.toggle : k == "toggle-on" ? Icons.toggle-on
             : k == "sparkle" ? Icons.sparkle : k == "paste" ? Icons.paste
             : k == "undo" ? Icons.undo : k == "redo" ? Icons.redo
-            : k == "text-size" ? Icons.text-size : k == "wrap" ? Icons.wrap : k == "target" ? Icons.target : "";
+            : k == "text-size" ? Icons.text-size : k == "wrap" ? Icons.wrap : k == "target" ? Icons.target
+            : k == "error" ? Icons.error : "";
     }
 }
 
@@ -5000,6 +5001,85 @@ component AuthorizeButton inherits Rectangle {
 
 // `OnDemandView` below the bar: the prerequisites, then the excluded SSIDs with their
 // header actions, each row with its circle checkbox; a long press lifts a row to drag it.
+// 工具 → 崩溃日志: the last process exit and `crash.txt`, read only; 复制 and 清除 act on the file.
+component CrashLogBody inherits VerticalLayout {
+    in property <bool> exit-has;
+    in property <string> exit-reason;
+    in property <string> exit-time;
+    in property <string> exit-desc;
+    in property <bool> exit-crashed;
+    in property <string> log-text;
+    in property <string> log-note;
+    callback clicked(string);
+    padding-left: 16px;
+    padding-right: 16px;
+    spacing: 0px;
+    HorizontalLayout {
+        padding-left: 14px;
+        Text { text: "上次退出"; height: 36px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; }
+    }
+    Rectangle {
+        background: Theme.s.card;
+        border-radius: 16px;
+        VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            spacing: 10px;
+            if !root.exit-has: Text { text: "无记录"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; }
+            if root.exit-has: HorizontalLayout {
+                spacing: 12px;
+                Text { text: "原因"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
+                Rectangle {
+                    width: reason-text.preferred-width * 1.1;
+                    height: reason-text.preferred-height;
+                    reason-text := Text { text: root.exit-reason; font-size: 15px * Type.scale; font-weight: 600; horizontal-alignment: right; color: root.exit-crashed ? Theme.s.error : Theme.s.on-surface; }
+                }
+            }
+            if root.exit-has: HorizontalLayout {
+                spacing: 12px;
+                Text { text: "时间"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
+                Rectangle {
+                    width: time-text.preferred-width * 1.1;
+                    height: time-text.preferred-height;
+                    time-text := Text { text: root.exit-time; font-size: 15px * Type.scale; horizontal-alignment: right; color: Theme.s.on-surface; }
+                }
+            }
+            if root.exit-has && root.exit-desc != "": VerticalLayout {
+                spacing: 4px;
+                Text { text: "说明"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; }
+                Text { text: root.exit-desc; font-size: 13px * Type.scale; color: Theme.s.on-surface; wrap: word-wrap; }
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-top: 8px;
+        Text { text: "Android 11 起由系统记录最近一次退出。"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        Text { text: "崩溃日志"; height: 36px; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; vertical-alignment: center; horizontal-stretch: 1; }
+        if root.log-text != "": TextButton { text: "复制"; clicked => { root.clicked("copy"); } }
+        if root.log-text != "": TextButton { text: "清除"; danger: true; clicked => { root.clicked("clear"); } }
+    }
+    Rectangle {
+        background: Theme.s.card;
+        border-radius: 16px;
+        VerticalLayout {
+            padding: 16px;
+            if root.log-text == "": Text { text: "无崩溃日志"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; }
+            if root.log-text != "": Text { text: root.log-text; font-size: 12px * Type.scale; font-family: "monospace"; color: Theme.s.on-surface; wrap: word-wrap; }
+        }
+    }
+    if root.log-note != "": HorizontalLayout {
+        padding-left: 14px;
+        padding-top: 8px;
+        Text { text: root.log-note; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+    }
+}
+
 component OnDemandBody inherits VerticalLayout {
     // 0 while asking, 1 not exempt, 2 exempt.
     in property <int> battery;
@@ -10256,6 +10336,14 @@ export component AppWindow inherits Window {
     in property <[bool]> od-selected;
     in property <bool> od-selecting;
     callback od-clicked(string);
+    in property <bool> crash-exit-has;
+    in property <string> crash-exit-reason;
+    in property <string> crash-exit-time;
+    in property <string> crash-exit-desc;
+    in property <bool> crash-exit-crashed;
+    in property <string> crash-log-text;
+    in property <string> crash-log-note;
+    callback crash-clicked(string);
     in property <int> mode: 0;
     in property <DashStatus> dash-status;
     in property <DashTraffic> dash-traffic;
@@ -11764,6 +11852,16 @@ export component AppWindow inherits Window {
                                 Text { text: root.cp-issue; font-size: 14px * Type.scale; color: Theme.s.error; wrap: word-wrap; horizontal-stretch: 1; }
                             }
                         }
+                    }
+                    if root.tools-page == "crash-log": CrashLogBody {
+                        exit-has: root.crash-exit-has;
+                        exit-reason: root.crash-exit-reason;
+                        exit-time: root.crash-exit-time;
+                        exit-desc: root.crash-exit-desc;
+                        exit-crashed: root.crash-exit-crashed;
+                        log-text: root.crash-log-text;
+                        log-note: root.crash-log-note;
+                        clicked(id) => { root.crash-clicked(id); }
                     }
                     od-body := OnDemandBody {
                         visible: root.tools-page == "on-demand";

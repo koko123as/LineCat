@@ -73,6 +73,7 @@ pub fn tools(settings: &Settings, mobile: bool, pages: &[&str]) -> Vec<SetSectio
     if settings.developer_mode {
         other.push(open("developer", "cpu", "开发者模式"));
     }
+    other.push(open("crash-log", "error", "崩溃日志"));
     other.push(open("about", "info", "关于"));
     vec![
         section("", "", more),
@@ -606,7 +607,7 @@ mod tests {
             vec![
                 vec!["requests", "resources"],
                 vec!["theme", "general"],
-                vec!["about"],
+                vec!["crash-log", "about"],
             ]
         );
         s.general.open_logs = true;
@@ -617,7 +618,7 @@ mod tests {
             all[1],
             vec!["theme", "access", "backup", "advanced", "general"]
         );
-        assert_eq!(all[2], vec!["developer", "about"]);
+        assert_eq!(all[2], vec!["developer", "crash-log", "about"]);
     }
 
     #[test]

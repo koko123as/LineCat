@@ -14,6 +14,8 @@ mod boot_guard_app;
 pub mod bridge;
 pub mod ca_trust;
 mod ca_trust_app;
+pub mod crash_log;
+mod crash_log_app;
 mod dash_app;
 pub mod dash_table;
 pub mod dashboard;
@@ -216,6 +218,7 @@ struct App {
     started_once: AtomicBool,
     boot: Mutex<boot_guard::Decision>,
     boot_pending: Mutex<Option<(Option<boot_guard::Record>, i64)>>,
+    last_exit: Mutex<Option<boot_guard::ExitInfo>>,
     /// The connection whose setup failed, kept for the start failure page's copy and exit.
     init_bridge: Mutex<Option<Bridge>>,
 }
@@ -641,11 +644,11 @@ impl App {
             }
         }));
         let hello = bridge.shell("hello", json!({}), Duration::from_secs(90))?;
-        self.settle_boot(
-            hello
-                .get("lastExit")
-                .and_then(boot_guard::ExitInfo::from_json),
-        );
+        let exit = hello
+            .get("lastExit")
+            .and_then(boot_guard::ExitInfo::from_json);
+        *self.last_exit.lock().unwrap() = exit.clone();
+        self.settle_boot(exit);
         let home = hello
             .get("home")
             .and_then(Value::as_str)
@@ -2339,6 +2342,7 @@ impl App {
             (a, _) if a.starts_with("mitm-") => self.mitm_confirmed(a, &arg, yes),
             (a, _) if a.starts_with("update-") => self.update_confirmed(a, &arg, yes),
             ("ua-delete", true) => self.delete_user_agent(&arg),
+            ("crash-clear", true) => self.clear_crash_log(),
             ("access-save", _) => self.access_save_answer(yes),
             ("app-settings" | "location-settings", true) => self.open_app_settings(),
             ("send-import", true) => self.import_sent_link(arg),
@@ -2755,6 +2759,7 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
         started_once: AtomicBool::new(false),
         boot: Mutex::new(boot_guard::Decision::default()),
         boot_pending: Mutex::new(None),
+        last_exit: Mutex::new(None),
         init_bridge: Mutex::new(None),
     });
 
@@ -2774,6 +2779,8 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
     });
     let a = app.clone();
     ui.on_toggle_vpn(move || a.toggle_vpn());
+    let a = app.clone();
+    ui.on_crash_clicked(move |id| a.crash_log_clicked(&id));
     let a = app.clone();
     ui.on_set_mode(move |m| a.set_mode(m));
     let a = app.clone();
