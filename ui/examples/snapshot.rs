@@ -1956,6 +1956,7 @@ fn main() {
             now: now.into(),
             count: nodes.len() as i32,
             monogram: name.chars().next().unwrap().to_string().into(),
+            icon: Default::default(),
             expanded,
             testing: false,
             nodes: ModelRc::new(VecModel::from(nodes)),

@@ -2429,6 +2429,7 @@ impl App {
                         .map(String::from)
                         .unwrap_or_default()
                         .into(),
+                    icon: g.picture().into(),
                     expanded: false,
                     testing: false,
                     nodes: ModelRc::default(),

@@ -32,9 +32,19 @@ pub struct Group {
     pub all: Vec<String>,
     pub test_url: String,
     pub hidden: bool,
+    pub icon: String,
 }
 
 impl Group {
+    /// `_GroupIcon`'s source, empty when the icon is no picture `CommonTargetIcon` draws.
+    pub fn picture(&self) -> &str {
+        if crate::net_images::is_image_src(&self.icon) {
+            &self.icon
+        } else {
+            ""
+        }
+    }
+
     /// `GroupType.isComputedSelected`: the Core picks, a pin only steers it.
     pub fn computed(&self) -> bool {
         matches!(self.kind.as_str(), "URLTest" | "Fallback" | "Smart")
@@ -82,6 +92,7 @@ impl Groups {
                     .unwrap_or_default(),
                 test_url: str_of(g, "testUrl"),
                 hidden: g.get("hidden").and_then(Value::as_bool).unwrap_or(false),
+                icon: str_of(g, "icon"),
             };
             kinds.insert(group.name.clone(), group.kind.clone());
             groups.insert(group.name.clone(), group);
@@ -260,6 +271,7 @@ impl View<'_> {
                 now: g.now.as_str().into(),
                 count: g.all.len() as i32,
                 monogram: first.into(),
+                icon: g.picture().into(),
                 expanded: self.style.unfold.iter().any(|u| u == &g.name),
                 testing: self.testing.contains(&g.name),
                 nodes: ModelRc::new(VecModel::from(nodes)),
@@ -370,8 +382,8 @@ mod tests {
             "order": ["GLOBAL", "节点选择", "自动", "隐藏"],
             "groups": [
                 {"name": "GLOBAL", "type": "Selector", "now": "节点选择", "all": ["节点选择", "DIRECT"], "testUrl": "", "hidden": false},
-                {"name": "节点选择", "type": "Selector", "now": "自动", "all": ["自动", "香港", "日本", "美国"], "testUrl": "", "hidden": false},
-                {"name": "自动", "type": "URLTest", "now": "日本", "fixed": "日本", "all": ["香港", "日本"], "testUrl": "https://t.example/", "hidden": false},
+                {"name": "节点选择", "type": "Selector", "now": "自动", "all": ["自动", "香港", "日本", "美国"], "testUrl": "", "hidden": false, "icon": "https://a.test/select.png"},
+                {"name": "自动", "type": "URLTest", "now": "日本", "fixed": "日本", "all": ["香港", "日本"], "testUrl": "https://t.example/", "hidden": false, "icon": "auto"},
                 {"name": "隐藏", "type": "Selector", "now": "香港", "all": ["香港"], "testUrl": "", "hidden": true}
             ],
             "nodes": [
@@ -415,6 +427,16 @@ mod tests {
     fn names(g: &ProxyGroup) -> Vec<String> {
         use slint::Model;
         g.nodes.iter().map(|n| n.name.to_string()).collect()
+    }
+
+    #[test]
+    fn a_group_keeps_its_icon_when_it_is_a_picture() {
+        let g = sample();
+        assert_eq!(g.groups["节点选择"].icon, "https://a.test/select.png");
+        assert_eq!(g.groups["节点选择"].picture(), "https://a.test/select.png");
+        assert_eq!(g.groups["自动"].icon, "auto");
+        assert_eq!(g.groups["自动"].picture(), "");
+        assert_eq!(g.groups["GLOBAL"].picture(), "");
     }
 
     #[test]

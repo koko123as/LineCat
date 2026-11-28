@@ -99,6 +99,8 @@ export struct ProxyGroup {
     now: string,
     count: int,
     monogram: string,
+    // An http or data url the group names as its icon, else empty.
+    icon: string,
     expanded: bool,
     testing: bool,
     nodes: [NodeItem],
@@ -1473,7 +1475,8 @@ component GroupsDashCard inherits DashCard {
         }
         if root.groups.length > 0: Rectangle {
             height: ceil(root.shown / root.cols) * (root.tile-h + 8px) - 8px;
-            for g[i] in root.groups: Rectangle {
+            for g[i] in root.groups: gtile := Rectangle {
+                property <bool> pictured: i < root.limit && g.icon != "" && NetImages.has(g.icon, NetImages.rev);
                 visible: i < root.limit;
                 x: mod(i, root.cols) * (root.cell-w + 8px);
                 y: floor(i / root.cols) * (root.tile-h + 8px);
@@ -1493,7 +1496,15 @@ component GroupsDashCard inherits DashCard {
                             height: 34px;
                             border-radius: 10px;
                             background: Theme.s.card;
-                            Text { text: g.monogram; font-size: 14px * Type.scale; font-weight: 700; color: Theme.s.on-surface-variant; }
+                            if gtile.pictured: Image {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                width: 24px;
+                                height: 24px;
+                                image-fit: contain;
+                                source: NetImages.image(g.icon, NetImages.rev);
+                            }
+                            if !gtile.pictured: Text { text: g.monogram; font-size: 14px * Type.scale; font-weight: 700; color: Theme.s.on-surface-variant; }
                         }
                     }
                     VerticalLayout {
@@ -3198,6 +3209,7 @@ component GroupHeader inherits Card {
     in property <ProxyGroup> group;
     // 0 filled, 1 plain, 2 hidden.
     in property <int> icon;
+    property <bool> pictured: root.icon != 2 && root.group.icon != "" && NetImages.has(root.group.icon, NetImages.rev);
     // How far the rows are out, 0 folded to 1 unfolded.
     in property <float> unfold: root.group.expanded ? 1 : 0;
     callback toggle();
@@ -3217,10 +3229,23 @@ component GroupHeader inherits Card {
                 height: 42px;
                 border-radius: 10px;
                 background: Theme.s.block;
-                Text { text: root.group.monogram; font-size: 18px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; }
+                clip: true;
+                if root.pictured: Image {
+                    x: 6px;
+                    y: 6px;
+                    width: parent.width - 12px;
+                    height: parent.height - 12px;
+                    image-fit: contain;
+                    source: NetImages.image(root.group.icon, NetImages.rev);
+                }
+                if !root.pictured: Text { text: root.group.monogram; font-size: 18px * Type.scale; font-weight: 600; color: Theme.s.on-surface-variant; }
             }
         }
-        if root.icon == 1: VerticalLayout {
+        if root.icon == 1 && root.pictured: VerticalLayout {
+            alignment: center;
+            Image { width: 28px; height: 28px; image-fit: contain; source: NetImages.image(root.group.icon, NetImages.rev); }
+        }
+        if root.icon == 1 && !root.pictured: VerticalLayout {
             alignment: center;
             Text { text: root.group.monogram; width: 28px; font-size: 22px * Type.scale; font-weight: 700; color: Theme.s.primary; horizontal-alignment: center; }
         }
