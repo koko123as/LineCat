@@ -9951,6 +9951,8 @@ export component AppWindow inherits Window {
     in property <bool> providers-updating;
     // The sheet's 外部资源: "update-all", or a row's "preview" / "menu" by its name.
     callback provider-act(string, string);
+    // Back from 编辑 of a provider's file (`editor-parent` "provider"), with the text.
+    callback provider-editor-back(string);
     callback open-profile-detail();
     callback dash-move(int, int);
     callback dash-card-height(int, length);
@@ -10763,7 +10765,7 @@ export component AppWindow inherits Window {
                 if (root.group-sheet-open && root.group-sheet-searching) { root.group-sheet-searching = false; root.search-proxies(""); return accept; }
                 if (root.group-sheet-open) { root.close-group-sheet(); return accept; }
                 if (root.tab == 1 && root.proxy-searching) { root.proxy-searching = false; root.search-proxies(""); return accept; }
-                if (root.confirm-open && (root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save" || root.confirm-action == "script-save" || root.confirm-action == "rs-save")) { root.confirm-open = false; return accept; }
+                if (root.confirm-open && (root.confirm-action == "provider-save" || root.confirm-action == "access-save" || root.confirm-action == "pg-save" || root.confirm-action == "pr-save" || root.confirm-action == "script-save" || root.confirm-action == "rs-save")) { root.confirm-open = false; return accept; }
                 if (root.confirm-open) {
                     root.confirm-open = false;
                     root.confirm-answer(root.confirm-action, root.confirm-arg, false);
@@ -10811,6 +10813,7 @@ export component AppWindow inherits Window {
                 if (root.profiles-shown && root.profiles-page == "group-icon" && root.gi-searching) { root.gi-query = ""; root.gi-searching = false; return accept; }
                 if (root.profiles-shown && root.profiles-page == "group-icon") { root.icon-pick("back"); return accept; }
                 if (root.profiles-shown && root.profiles-page == "custom" && (root.custom-group-selecting || root.custom-group-sorting)) { root.custom-group("clear"); return accept; }
+                if ((root.tab == 0 || root.tab == 2) && root.profiles-page == "preview" && root.editor-parent == "provider" && !root.editor-readonly) { root.provider-editor-back(root.editor-text); return accept; }
                 if (root.tab == 0 && !root.custom-open && root.profiles-page == "preview") { root.profiles-page = ""; root.profile-sheet-open = true; return accept; }
                 if (root.profiles-shown && root.custom-open && root.profiles-page == "preview") { root.profiles-page = "custom"; return accept; }
                 if (root.profiles-shown && root.profiles-page == "custom") { root.custom-back(); return accept; }
@@ -11085,6 +11088,10 @@ export component AppWindow inherits Window {
                     error: root.editor-error;
                     save(t) => { root.editor-save(t); }
                     back => {
+                        if (root.profiles-page == "preview" && root.editor-parent == "provider" && !root.editor-readonly) {
+                            root.provider-editor-back(root.editor-text);
+                            return;
+                        }
                         if (root.tab == 0 && !root.custom-open) { root.profile-sheet-open = true; }
                         if (root.profiles-page == "editor" && root.editor-parent == "group") {
                             root.group-yaml-closed();

@@ -67,6 +67,8 @@ impl App {
         let a = self.clone();
         ui.on_provider_act(move |action, name| a.provider_act(&action, &name));
         let a = self.clone();
+        ui.on_provider_editor_back(move |text| a.provider_editor_back(text.into()));
+        let a = self.clone();
         ui.on_dash_move(move |from, to| a.move_dashboard(from as usize, to as usize));
         let a = self.clone();
         ui.on_dash_table_select(move |feed| {

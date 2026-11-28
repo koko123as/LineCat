@@ -94,13 +94,17 @@ pub fn probe(head: Option<&[u8]>) -> ProviderFile {
     }
 }
 
-/// `_menuItems`, by id: preview (an `.mrs` set), upload, sync, subscription.
+/// `_menuItems`, by id: edit (a text file) or preview (an `.mrs` set), upload, sync,
+/// subscription.
 pub fn menu(
     file: ProviderFile,
     syncable: bool,
     subscribed: bool,
 ) -> Vec<(&'static str, &'static str, &'static str)> {
     let mut items = Vec::new();
+    if file == ProviderFile::Text {
+        items.push(("edit", "edit", "编辑"));
+    }
     if file == ProviderFile::RuleSet {
         items.push(("preview", "eye", "预览"));
     }
@@ -176,7 +180,11 @@ mod tests {
         fn ids(v: Vec<(&'static str, &'static str, &'static str)>) -> Vec<&'static str> {
             v.into_iter().map(|i| i.0).collect()
         }
-        assert_eq!(ids(menu(ProviderFile::Text, false, false)), ["upload"]);
+        assert_eq!(
+            ids(menu(ProviderFile::Text, false, false)),
+            ["edit", "upload"]
+        );
+        assert_eq!(ids(menu(ProviderFile::Binary, false, false)), ["upload"]);
         assert_eq!(
             ids(menu(ProviderFile::RuleSet, true, true)),
             ["preview", "upload", "sync", "subscription"]

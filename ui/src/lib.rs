@@ -2249,6 +2249,7 @@ impl App {
             ("edit-save", _) => self.save_edit(form, yes),
             ("edit-back", true) => self.request_edit_save(form),
             ("edit-back", false) => self.ui(|ui| ui.set_profiles_page("".into())),
+            ("provider-save", _) => self.provider_save_answer(arg, yes),
             ("editor-cache", true) => self.save_editor(arg),
             ("editor-cache", false) => self.ui(|ui| ui.set_profiles_page("edit".into())),
             ("color-reset" | "color-delete", true) => self.theme_confirmed(&action, &arg),
@@ -2721,8 +2722,14 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
         a.edit_back(changed);
     });
     let a = app.clone();
+    let w = ui.as_weak();
     ui.on_editor_save(move |text| {
-        if !a.group_yaml_save(&text)
+        let parent = w
+            .upgrade()
+            .filter(|ui| ui.get_profiles_page() == "preview" && !ui.get_editor_readonly())
+            .map(|ui| ui.get_editor_parent());
+        if !a.provider_editor_save(&parent.unwrap_or_default(), &text)
+            && !a.group_yaml_save(&text)
             && !a.rules_yaml_save(&text)
             && !a.override_yaml_save(&text, true)
         {

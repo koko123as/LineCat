@@ -18,7 +18,10 @@ struct Shown {
     app_sets: HashMap<String, String>,
     busy: HashSet<String>,
     updating: bool,
+    editing: Option<ExtProvider>,
 }
+
+const EDIT_PARENT: &str = "provider";
 
 fn shown() -> &'static Mutex<Shown> {
     static S: OnceLock<Mutex<Shown>> = OnceLock::new();
@@ -125,7 +128,8 @@ impl App {
         match action {
             "update-all" => self.update_all_providers(),
             "menu" => self.provider_menu(name),
-            "preview" => self.preview_provider(name),
+            "preview" => self.open_provider_file(name, false),
+            "edit" => self.open_provider_file(name, true),
             "upload" => self.upload_provider(name),
             "sync" => self.sync_provider(name),
             "subscription" => self.show_provider_subscription(name),
@@ -306,21 +310,27 @@ impl App {
         });
     }
 
-    /// `_handlePreviewProvider`: the file read only, an `.mrs` set dumped back to text.
-    fn preview_provider(self: &Arc<Self>, name: &str) {
+    /// `_handlePreviewProvider` (an `.mrs` set dumped to text), or `_EditProviderView`.
+    fn open_provider_file(self: &Arc<Self>, name: &str, editable: bool) {
         let Some(p) = self.ext_provider(name) else {
             return;
         };
         let file = shown().lock().unwrap().files.get(name).copied();
-        if p.path.is_empty() || file == Some(ProviderFile::Binary) {
+        if p.path.is_empty()
+            || file == Some(ProviderFile::Binary)
+            || (editable && file != Some(ProviderFile::Text))
+        {
             return;
         }
+        shown().lock().unwrap().editing = editable.then(|| p.clone());
         let title: slint::SharedString = p.name.as_str().into();
+        let parent = if editable { EDIT_PARENT } else { "" };
         self.ui(move |ui| {
             ui.set_profile_sheet_open(false);
             ui.set_editor_title(title);
             ui.set_editor_text(Default::default());
-            ui.set_editor_readonly(true);
+            ui.set_editor_readonly(!editable);
+            ui.set_editor_parent(parent.into());
             ui.set_editor_schema("provider".into());
             ui.set_editor_error(Default::default());
             ui.set_editor_loading(true);
@@ -345,6 +355,72 @@ impl App {
                     .and_then(|b| ep::decode(&b).map(str::to_string))
             };
             app.profile_editor_loaded(load, text);
+        });
+    }
+
+    pub(crate) fn provider_editor_save(self: &Arc<Self>, parent: &str, text: &str) -> bool {
+        if parent != EDIT_PARENT {
+            return false;
+        }
+        let Some(p) = shown().lock().unwrap().editing.clone() else {
+            return false;
+        };
+        let text = text.to_string();
+        self.spawn(move |app| {
+            app.set_provider_busy(&p.name, true);
+            let result = app
+                .bridge()
+                .and_then(|b| {
+                    b.call(
+                        "provider.sideLoad",
+                        json!({"name": p.name, "data": text}),
+                        CALL,
+                    )
+                })
+                .and_then(|_| std::fs::write(&p.path, text.as_bytes()).map_err(|e| e.to_string()));
+            app.refresh_provider(&p.name);
+            app.set_provider_busy(&p.name, false);
+            match result {
+                Ok(()) => {
+                    app.refresh_groups();
+                    app.leave_provider_editor();
+                }
+                Err(e) => app.toast(e),
+            }
+        });
+        true
+    }
+
+    /// `_handlePop`: unchanged text leaves, else 是否保存更改？ under the provider's name.
+    pub(crate) fn provider_editor_back(self: &Arc<Self>, text: String) {
+        if text == crate::items_app::profile_editor_opened() {
+            return self.leave_provider_editor();
+        }
+        let Some(name) = shown()
+            .lock()
+            .unwrap()
+            .editing
+            .as_ref()
+            .map(|p| p.name.clone())
+        else {
+            return self.leave_provider_editor();
+        };
+        self.confirm(&name, "是否保存更改？".into(), "provider-save", text);
+    }
+
+    pub(crate) fn provider_save_answer(self: &Arc<Self>, text: String, yes: bool) {
+        if !yes {
+            return self.leave_provider_editor();
+        }
+        self.provider_editor_save(EDIT_PARENT, &text);
+    }
+
+    fn leave_provider_editor(self: &Arc<Self>) {
+        shown().lock().unwrap().editing = None;
+        self.ui(|ui| {
+            ui.set_editor_parent("".into());
+            ui.set_profiles_page("".into());
+            ui.set_profile_sheet_open(true);
         });
     }
 
