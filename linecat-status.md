@@ -176,7 +176,9 @@ method it calls is one the Flutter UI's `rpc_core_api.dart` calls too. 修前 is
   (2026112702 plus the arm64 split's 2000), published by `slint-android.yaml` on the tag.
 - v0.9.5-rs.4 (2026-11-28, owner approved): versionCode 2026114801 (2026112801 plus the arm64 split's 2000), the
   first release whose files are named `SeasonCat-`.
-- Next release: bump `appVersionName` and `appVersionCode` (above 2026114801) in `android/app/build.gradle.kts`, add
+- v0.9.5-rs.5 (2026-11-28, owner approved): versionCode 2026114802 (2026112802 plus the arm64 split's 2000): the
+  crash log page (F1) and SVG / JPEG icons (F2, F3).
+- Next release: bump `appVersionName` and `appVersionCode` (above 2026114802) in `android/app/build.gradle.kts`, add
   `release-notes/<tag>.md`, push, wait for green, tag.
 
 ## Remaining
