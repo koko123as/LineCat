@@ -26,8 +26,8 @@ of them a change runs and where.
 | `.github/scripts/`, `.github/ISSUE_TEMPLATE/` | `node --test .github/scripts/` | host |
 | `.github/workflows/` | none locally; only a run proves it | CI |
 
-- On the private `origin` every `build.yaml` job runs only when started by hand, and `slint-android.yaml` runs only on
-  `slint-ui`, `v*-rs.*` tags and by hand, so start the run a change needs.
+- On the private `origin` every `build.yaml` job runs only on `slint-ui` pushes and when started by hand, and
+  `slint-android.yaml` runs only on `slint-ui`, `v*-rs.*` tags and by hand, so start the run a change needs.
 - Gradle, which also builds Concord for Android, a cold `cargo` build and a Concord release build each take long and
   load the whole machine.
 - Report a check you could not run as skipped, with the reason: a missing toolchain (`make doctor` names it), another

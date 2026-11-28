@@ -140,9 +140,9 @@ make comment-density FILES="path ..."
 
 ## CI
 
-- `build.yaml` runs on pushes to every branch but `slint-ui`, on `v*` tags and by hand. Its jobs are `hooks`
+- `build.yaml` runs on pushes to every branch, on `v*` tags and by hand. Its jobs are `hooks`
   (`tool/hooks/test.sh`), `android` (the Kotlin unit tests above), `rust` (Helper and JNI glue format, Helper tests),
-  `rust-core` (the Concord gate) and `windows-helper-test`. In a private copy they run only when started by hand.
+  `rust-core` (the Concord gate) and `windows-helper-test`. In a private copy they run only on `slint-ui` pushes and when started by hand.
 - `slint-android.yaml` runs on pushes to `slint-ui`, on `v*-rs.*` tags and by hand. Its `apk` job runs the UI crate's
   format check (a warning only) and tests, builds and checks `libseasoncat_ui.so`, builds the release APK, checks that it
   carries the UI library, the Core and the geo data, checks its version and signer, and uploads the artifact

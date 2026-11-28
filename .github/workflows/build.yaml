@@ -2,9 +2,8 @@ name: build
 
 on:
   push:
-    # slint-ui is built by slint-android.yaml.
-    branches-ignore:
-      - slint-ui
+    branches:
+      - '**'
     tags:
       - 'v*'
   workflow_dispatch:
@@ -24,9 +23,9 @@ env:
 jobs:
   hooks:
     name: Git hooks
-    # A private copy pays for its Actions minutes, so it runs the checks only when
-    # started by hand.
-    if: &checks github.event_name == 'workflow_dispatch' || !github.event.repository.private
+    # A private copy pays for its Actions minutes, so it runs the checks only on slint-ui,
+    # the branch in development, and when started by hand.
+    if: &checks github.event_name == 'workflow_dispatch' || !github.event.repository.private || github.ref == 'refs/heads/slint-ui'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
