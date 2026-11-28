@@ -1266,6 +1266,7 @@ impl App {
     fn modules_clicked(self: &Arc<Self>, id: &str) {
         let modules = self.mitm_settings().mitm_modules;
         if id == "action" {
+            self.ui(|ui| ui.set_choice_anchored(true));
             self.open_choice_items(
                 "",
                 vec![

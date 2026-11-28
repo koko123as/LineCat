@@ -134,6 +134,7 @@ impl App {
                 item("file", "import-file", "通过文件导入"),
             ];
             self.ui(move |ui| {
+                ui.set_choice_anchored(true);
                 ui.set_choice_title("".into());
                 ui.set_choice_items(ModelRc::new(VecModel::from(items)));
                 ui.set_choice_open(true);

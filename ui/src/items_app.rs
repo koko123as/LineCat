@@ -163,14 +163,22 @@ impl App {
                     );
                 }
             }
-            ("scripts", "action") => self.sheet(
-                "",
-                vec![
-                    ("script-add:new".into(), "edit", "从零开始", false),
-                    ("script-add:url".into(), "sync", "通过URL导入", false),
-                    ("script-add:file".into(), "copy", "通过文件导入", false),
-                ],
-            ),
+            ("scripts", "action") => {
+                self.ui(|ui| ui.set_choice_anchored(true));
+                self.sheet(
+                    "",
+                    vec![
+                        ("script-add:new".into(), "edit", "从零开始", false),
+                        ("script-add:url".into(), "cloud", "通过URL导入", false),
+                        (
+                            "script-add:file".into(),
+                            "import-file",
+                            "通过文件导入",
+                            false,
+                        ),
+                    ],
+                );
+            }
             ("scripts", id) => {
                 let Some(sid) = id.strip_prefix("script:") else {
                     return true;

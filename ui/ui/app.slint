@@ -10801,6 +10801,8 @@ export component AppWindow inherits Window {
     // `HomeBackScopeContainer`: back with nothing left to close on the root page.
     callback close-app();
     in-out property <bool> choice-open;
+    // A ⊕'s `PopupMenu` at `Anchor` in place of the sheet; cleared as the choice closes.
+    in-out property <bool> choice-anchored;
     in property <string> choice-title;
     in-out property <bool> choice-loading;
     in-out property <string> choice-error;
@@ -10876,7 +10878,7 @@ export component AppWindow inherits Window {
         root.tools-page-changed();
     }
     changed choice-open => {
-        if (!root.choice-open) { root.choice-loading = false; root.choice-error = ""; }
+        if (!root.choice-open) { root.choice-loading = false; root.choice-error = ""; root.choice-anchored = false; }
     }
     changed cond-value => { root.cond-changed(); }
     changed res-dialog-value => {
@@ -13131,7 +13133,17 @@ export component AppWindow inherits Window {
             dismiss => { root.ctx-kind = ""; }
         }
 
-        if root.choice-open: ActionSheet {
+        if root.choice-open && root.choice-anchored: AnchorMenu {
+            items: root.choice-items;
+            ax: Anchor.x;
+            ay: Anchor.y;
+            aw: Anchor.w;
+            ah: Anchor.h;
+            picked(id) => { root.choice-open = false; root.choice-picked(id); }
+            dismiss => { root.choice-open = false; }
+        }
+
+        if root.choice-open && !root.choice-anchored: ActionSheet {
             title: root.choice-title;
             items: root.choice-items;
             loading: root.choice-loading;
