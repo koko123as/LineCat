@@ -2,6 +2,7 @@
 //! them on Android. FlClash: lib/models/profile.dart, lib/common/task.dart (`_makeRealProfileTask`).
 
 use serde_json::{json, Map, Value};
+use std::collections::HashSet;
 use std::io::Read;
 use std::time::Duration;
 
@@ -57,6 +58,73 @@ pub fn is_url(s: &str) -> bool {
     let lower = s.to_ascii_lowercase();
     (lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("ftp://"))
         && crate::store::host_of(s).is_some()
+}
+
+/// `parseUrlInput` for a batch of links: the new ones in order, how many were already
+/// listed, and the first that is neither a URL nor a share link.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct UrlInput {
+    pub entries: Vec<String>,
+    pub skipped_existing: usize,
+    pub invalid: Option<String>,
+}
+
+impl UrlInput {
+    /// `batchPreviewTip`.
+    pub fn preview(&self) -> String {
+        format!(
+            "将添加 {} 项，跳过 {} 项已存在",
+            self.entries.len(),
+            self.skipped_existing
+        )
+    }
+}
+
+fn strip_line_markup(line: &str) -> &str {
+    let mut value = line.trim();
+    if let Some(rest) = value.strip_prefix("- ") {
+        value = rest.trim();
+    }
+    if let Some(rest) = value.strip_suffix(',') {
+        value = rest.trim();
+    }
+    value
+}
+
+fn unquote(value: &str) -> &str {
+    for q in ['"', '\''] {
+        if value.len() >= 2 && value.starts_with(q) && value.ends_with(q) {
+            return value[1..value.len() - 1].trim();
+        }
+    }
+    value
+}
+
+pub fn parse_url_input(text: &str, existing: &HashSet<String>) -> UrlInput {
+    let mut input = UrlInput::default();
+    let mut seen = HashSet::new();
+    for line in text.lines().map(strip_line_markup) {
+        let parts: Vec<&str> = if is_share_link(line) {
+            vec![line]
+        } else {
+            line.split_whitespace().collect()
+        };
+        for url in parts.into_iter().map(unquote).filter(|u| !u.is_empty()) {
+            if !is_url(url) && !is_share_link(url) {
+                input.invalid.get_or_insert_with(|| url.to_string());
+                continue;
+            }
+            if !seen.insert(url.to_string()) {
+                continue;
+            }
+            if existing.contains(url) {
+                input.skipped_existing += 1;
+                continue;
+            }
+            input.entries.push(url.to_string());
+        }
+    }
+    input
 }
 
 /// FlClash: lib/providers/state/custom.dart (`reservedCustomProxyNames`).
@@ -584,6 +652,23 @@ pub const BYPASS_DOMAIN: [&str; 26] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_batch_counts_what_it_adds_and_skips() {
+        let existing: HashSet<String> = ["https://a.example/sub".to_string()].into();
+        let text = "- https://a.example/sub,\n\"https://b.example/sub\" https://b.example/sub\n\n  ss://YWVzOmFiYw@h:1#n m\n";
+        let input = parse_url_input(text, &existing);
+        assert_eq!(
+            input.entries,
+            vec!["https://b.example/sub", "ss://YWVzOmFiYw@h:1#n m"]
+        );
+        assert_eq!(input.skipped_existing, 1);
+        assert_eq!(input.invalid, None);
+        assert_eq!(input.preview(), "将添加 2 项，跳过 1 项已存在");
+        let bad = parse_url_input("https://c.example nope", &HashSet::new());
+        assert_eq!(bad.invalid.as_deref(), Some("nope"));
+        assert_eq!(bad.entries, vec!["https://c.example"]);
+    }
 
     #[test]
     fn the_shared_state_carries_the_active_profile_name() {

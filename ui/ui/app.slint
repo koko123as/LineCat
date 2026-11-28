@@ -10386,6 +10386,8 @@ export component AppWindow inherits Window {
     in-out property <bool> add-menu-open;
     in-out property <bool> link-open;
     in-out property <bool> link-batch;
+    in property <string> link-batch-tip;
+    callback link-batch-edited(string);
     in-out property <ProfileItem> menu-item;
     in-out property <bool> menu-open;
     in-out property <bool> menu-more;
@@ -12372,12 +12374,14 @@ export component AppWindow inherits Window {
                 label: "链接";
                 placeholder: root.link-batch ? "每行一个链接" : "订阅链接或代理分享链接";
                 multi: root.link-batch;
-               
+                changed text => { if root.link-batch { root.link-batch-edited(self.text); } }
             }
+            // `BatchSection`'s footer.
+            if root.link-batch && root.link-batch-tip != "": Text { text: root.link-batch-tip; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
             link-age := Field { label: "age 私钥"; placeholder: "可选"; visible: !root.link-batch; height: root.link-batch ? 0 : self.preferred-height; }
             HorizontalLayout {
                 spacing: 8px;
-                TextButton { text: root.link-batch ? "单个导入" : "批量导入"; clicked => { root.link-batch = !root.link-batch; } }
+                TextButton { text: root.link-batch ? "单个导入" : "批量导入"; clicked => { root.link-batch = !root.link-batch; root.link-batch-edited(root.link-batch ? link-url.text : ""); } }
                 Rectangle { horizontal-stretch: 1; }
                 TextButton { text: "取消"; clicked => { root.link-open = false; } }
                 TextButton {

@@ -1511,7 +1511,28 @@ impl App {
         }
     }
 
+    fn listed_urls(&self) -> HashSet<String> {
+        let store = self.store.lock().unwrap();
+        store
+            .state
+            .profiles
+            .iter()
+            .filter(|p| !p.url.is_empty())
+            .map(|p| p.url.clone())
+            .collect()
+    }
+
+    fn link_batch_edited(&self, text: &str) -> String {
+        if text.trim().is_empty() {
+            return String::new();
+        }
+        profile::parse_url_input(text, &self.listed_urls()).preview()
+    }
+
     fn import_links(self: &Arc<Self>, label: String, text: String, age_key: String, batch: bool) {
+        if batch {
+            return self.import_link_batch(&text);
+        }
         let lines: Vec<String> = text
             .lines()
             .map(|l| l.trim().to_string())
@@ -1521,15 +1542,11 @@ impl App {
             self.toast("链接不能为空");
             return;
         }
-        if let Some(bad) = lines
+        if lines
             .iter()
-            .find(|l| !profile::is_url(l) && !profile::is_share_link(l))
+            .any(|l| !profile::is_url(l) && !profile::is_share_link(l))
         {
-            self.toast(if batch {
-                format!("{bad}: 不是有效的订阅链接或代理分享链接")
-            } else {
-                "不是有效的订阅链接或代理分享链接".into()
-            });
+            self.toast("不是有效的订阅链接或代理分享链接");
             return;
         }
         self.ui(|ui| {
@@ -1537,30 +1554,36 @@ impl App {
             ui.invoke_links_done();
         });
         self.spawn(move |app| {
-            if !batch {
-                let url = lines.into_iter().next().unwrap_or_default();
-                if let Err(e) = app.add_from_link(label, url, age_key) {
-                    app.alert("添加配置", e);
-                }
-                app.ui(|ui| ui.set_adding(false));
-                return;
+            let url = lines.into_iter().next().unwrap_or_default();
+            if let Err(e) = app.add_from_link(label, url, age_key) {
+                app.alert("添加配置", e);
             }
-            // `addProfilesFromLinks`: the urls already listed are skipped, the share links
-            // make up one profile in the place of the first.
-            let existing: HashSet<String> = app
-                .store
-                .lock()
-                .unwrap()
-                .state
-                .profiles
-                .iter()
-                .map(|p| p.url.clone())
-                .collect();
-            let mut seen = HashSet::new();
-            let lines: Vec<String> = lines
-                .into_iter()
-                .filter(|l| !existing.contains(l) && seen.insert(l.clone()))
-                .collect();
+            app.ui(|ui| ui.set_adding(false));
+        });
+    }
+
+    /// `addProfilesFromLinks`: the urls already listed are skipped, the share links make up
+    /// one profile in the place of the first.
+    fn import_link_batch(self: &Arc<Self>, text: &str) {
+        let input = profile::parse_url_input(text, &self.listed_urls());
+        if let Some(bad) = input.invalid {
+            self.toast(format!("{bad}: 不是有效的订阅链接或代理分享链接"));
+            return;
+        }
+        if input.entries.is_empty() {
+            self.toast(if input.skipped_existing > 0 {
+                input.preview()
+            } else {
+                "链接不能为空".into()
+            });
+            return;
+        }
+        self.ui(|ui| {
+            ui.set_adding(true);
+            ui.invoke_links_done();
+        });
+        let lines = input.entries;
+        self.spawn(move |app| {
             let shares: Vec<String> = lines
                 .iter()
                 .filter(|l| profile::is_share_link(l))
@@ -2745,6 +2768,13 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
     let a = app.clone();
     ui.on_import_links(move |label, text, key, batch| {
         a.import_links(label.into(), text.into(), key.into(), batch)
+    });
+    let a = app.clone();
+    let w = ui.as_weak();
+    ui.on_link_batch_edited(move |text| {
+        if let Some(ui) = w.upgrade() {
+            ui.set_link_batch_tip(a.link_batch_edited(&text).into());
+        }
     });
     let a = app.clone();
     ui.on_add_file(move || a.add_file());
