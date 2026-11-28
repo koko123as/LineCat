@@ -172,6 +172,7 @@ struct App {
     alive: AtomicBool,
     configured: AtomicBool,
     last_apply: Mutex<Option<Value>>,
+    applies: profile::ApplyTurns,
     run_state: Mutex<String>,
     groups: Mutex<Value>,
     delays: Mutex<HashMap<String, i32>>,
@@ -852,6 +853,11 @@ impl App {
     }
 
     fn apply_active(self: &Arc<Self>) -> Result<(), String> {
+        let ticket = self.applies.ticket();
+        self.applies.run(ticket, || self.apply_current())
+    }
+
+    fn apply_current(self: &Arc<Self>) -> Result<(), String> {
         let bridge = self.bridge()?;
         let (id, selection, settings) = {
             let store = self.store.lock().unwrap();
@@ -2710,6 +2716,7 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
         alive: AtomicBool::new(true),
         configured: AtomicBool::new(false),
         last_apply: Mutex::new(None),
+        applies: profile::ApplyTurns::default(),
         run_state: Mutex::new("OFFLINE".into()),
         groups: Mutex::new(Value::Null),
         delays: Mutex::new(HashMap::new()),

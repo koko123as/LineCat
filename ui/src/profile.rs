@@ -4,6 +4,8 @@
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::io::Read;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 /// `productName` and the version stay FlClash's v0.9.4, not the app's (Gradle's versionName),
@@ -637,9 +639,68 @@ pub const BYPASS_DOMAIN: [&str; 26] = [
     "192.168.*",
 ];
 
+/// Applies run one at a time. A caller changes the store before taking its ticket, so an
+/// apply that read the store covers every ticket issued until then; such a ticket, still
+/// waiting for its turn, is answered without applying an older state over the newer one.
+#[derive(Default)]
+pub struct ApplyTurns {
+    issued: AtomicU64,
+    covered: Mutex<u64>,
+}
+
+impl ApplyTurns {
+    pub fn ticket(&self) -> u64 {
+        self.issued.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    pub fn run(
+        &self,
+        ticket: u64,
+        apply: impl FnOnce() -> Result<(), String>,
+    ) -> Result<(), String> {
+        let mut covered = self.covered.lock().unwrap();
+        if *covered >= ticket {
+            return Ok(());
+        }
+        let reads = self.issued.load(Ordering::SeqCst);
+        apply()?;
+        *covered = reads;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_apply_covers_the_tickets_issued_before_it() {
+        let turns = ApplyTurns::default();
+        let (first, second) = (turns.ticket(), turns.ticket());
+        let mut ran = Vec::new();
+        turns
+            .run(second, || {
+                ran.push(second);
+                Ok(())
+            })
+            .unwrap();
+        turns
+            .run(first, || {
+                ran.push(first);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(ran, [second]);
+        let third = turns.ticket();
+        assert!(turns.run(third, || Err("refused".into())).is_err());
+        turns
+            .run(third, || {
+                ran.push(third);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(ran, [second, third]);
+    }
 
     #[test]
     fn a_batch_counts_what_it_adds_and_skips() {
