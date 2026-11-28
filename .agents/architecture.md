@@ -56,8 +56,8 @@ one channel byte and the payload.
   (`NativeCore.open`), closed when the connection ends.
 - Channel 1 carries small JSON commands (`{"id":1,"op":"vpn.start",...}`), their answers (`{"id":1,"ok":true,...}`)
   and pushed events (`{"ev":"state",...}`, `network`, `resume`, links). `hello` answers with the Core's home, the SDK
-  level, the version name, the run state, insets, system colour seeds, the font scale, whether the device is a TV and
-  any links waiting for the UI.
+  level, the version name, the run state, insets, system colour seeds, the font scale, whether the device is a TV,
+  any links waiting for the UI and, from API 30, the app process's newest `ApplicationExitInfo` (`lastExit`).
 - The shell does only what the Rust side must not: the VPN consent and permission prompts, the services, files through
   the system pickers, the camera, the system CA stores, package lists and icons, installing an update.
 

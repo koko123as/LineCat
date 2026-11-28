@@ -268,7 +268,10 @@ object UiBridge {
 
     private suspend fun command(request: JsonObject): JsonObject = when (request.get("op")?.asString) {
         "hello" -> {
-            withContext(Dispatchers.IO) { extractGeoAssets() }
+            val lastExit = withContext(Dispatchers.IO) {
+                extractGeoAssets()
+                GlobalState.lastExitInfo()
+            }
             ok {
                 addProperty("home", GlobalState.application.filesDir.path)
                 addProperty("sdkInt", Build.VERSION.SDK_INT)
@@ -280,6 +283,7 @@ object UiBridge {
                 addProperty("fontScale", fontScale())
                 addProperty("isTelevision", isTelevision)
                 add("links", takeLinks())
+                lastExit?.let { add("lastExit", gson.toJsonTree(it)) }
             }
         }
 
