@@ -1862,11 +1862,6 @@ fn main() {
             ..Default::default()
         },
     ])));
-    ui.set_profile_name("我的机场".into());
-    ui.set_up_speed("12.3 KB/s".into());
-    ui.set_down_speed("1.4 MB/s".into());
-    ui.set_up_total("共 3.2 MB".into());
-    ui.set_down_total("共 120.5 MB".into());
     ui.set_app_version("v0.9.5".into());
     if let Some(icon) = settings_view::app_icon() {
         ui.set_app_icon(icon);

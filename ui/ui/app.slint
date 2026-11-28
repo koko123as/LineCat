@@ -553,7 +553,6 @@ global Icons {
     out property <string> profiles: "M6 3h9l4 4v14H6z M14 3v5h5 M9 13h7 M9 17h7";
     out property <string> tools: "M14.7 6.3a4 4 0 0 0-5.4 5.2L4 16.8V20h3.2l5.3-5.3a4 4 0 0 0 5.2-5.4l-2.5 2.5-2.3-.7-.7-2.3z";
     out property <string> play: "M8 5v14l11-7z";
-    out property <string> pause: "M8 5h3v14H8z M13 5h3v14h-3z";
     out property <string> bolt: "M13 2 4 14h7l-1 8 9-12h-7z";
     out property <string> plus: "M12 5v14 M5 12h14";
     out property <string> sun: "M12 8a4 4 0 1 0 0.01 0z M12 2.5v2 M12 19.5v2 M5.3 5.3l1.4 1.4 M17.3 17.3l1.4 1.4 M2.5 12h2 M19.5 12h2 M5.3 18.7l1.4-1.4 M17.3 6.7l1.4-1.4";
@@ -570,7 +569,6 @@ global Icons {
     out property <string> chevron: "M9 6l6 6-6 6";
     out property <string> speed: "M4 16a8 8 0 1 1 16 0 M12 16l4-5";
     out property <string> route: "M6 19a2 2 0 1 0 0.01 0z M18 5a2 2 0 1 0 0.01 0z M6 17V9a3 3 0 0 1 3-3h7 M18 7v8a3 3 0 0 1-3 3H8";
-    out property <string> traffic: "M7 4v16 M3 8l4-4 4 4 M17 20V4 M13 16l4 4 4-4";
     out property <string> file: "M6 3h9l4 4v14H6z M14 3v5h5";
     out property <string> logs: "M5 6h14 M5 10h14 M5 14h10 M5 18h7";
     out property <string> paintbrush: "M18.4 2.6a2 2 0 0 1 2.9 2.9L11 15.8 8.2 13z M8.2 13c-2.2 0-3.7 1.6-3.7 3.6 0 1.6-.9 2.6-2.5 3.4 4.6 1.3 9-1 9-4.2z";
@@ -608,7 +606,6 @@ global Icons {
     out property <string> rule: "M5 5h14v14H5z M8 9h8 M8 12h8 M8 15h5";
     out property <string> target: "M12 3a9 9 0 1 0 0.01 0z M12 8a4 4 0 1 0 0.01 0z";
     out property <string> shield: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z";
-    out property <string> group: "M12 3l8 4-8 4-8-4z M4 12l8 4 8-4 M4 17l8 4 8-4";
     out property <string> node-group: "M9.7 5.4a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0z M2.5 18a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0z M16.9 18a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0z M10.86 7.4L5.94 16 M13.14 7.4L18.06 16 M7.1 18L16.9 18";
     out property <string> devices: "M3 5h13v9H3z M1 17h17 M19 9h4v10h-4z";
     out property <string> requests: "M4 8h13 M14 5l3 3-3 3 M20 16H7 M10 13l-3 3 3 3";
@@ -1029,11 +1026,8 @@ component Chip inherits Rectangle {
     }
 }
 
-// `DashboardCard` with its header row: icon, title, chips, then actions on the right.
+// `DashboardCard`: the card a widget sits on; `DashHeader` draws its header row.
 component DashCard inherits Rectangle {
-    in property <string> glyph;
-    in property <string> title;
-    in property <bool> chevron;
     callback tapped();
     background: Theme.s.card;
     border-radius: 20px;
@@ -1093,8 +1087,6 @@ component StatusCard inherits DashCard {
     callback open-ip();
     property <bool> on: run-state == "STARTED";
     property <bool> busy: run-state == "STARTING" || run-state == "STOPPING" || run-state == "OFFLINE";
-    glyph: Icons.status;
-    title: "状态";
     HorizontalLayout {
         padding: 16px;
         spacing: 12px;
@@ -1376,13 +1368,10 @@ component VpnCard inherits DashCard {
 // `ProfilesCard`: the current profile, when it runs out and how much it has used.
 component ProfileDashCard inherits DashCard {
     in property <DashProfile> profile;
-    in property <bool> wide;
     // More than one profile: a swap button beside the name opens the picker.
     in property <bool> switchable;
     callback sync();
     callback switch();
-    glyph: Icons.profiles;
-    title: "配置";
     VerticalLayout {
         padding: 16px;
         spacing: 8px;
@@ -1718,7 +1707,6 @@ component StatsDashCard inherits DashCard {
 // `MemoryInfo`: what the app and its Core hold in memory.
 component MemoryDashCard inherits DashCard {
     in property <string> memory;
-    chevron: true;
     height: 120px;
     VerticalLayout {
         padding: 16px;
@@ -2953,7 +2941,6 @@ component Dashboard inherits Rectangle {
                     }
                     ProfileDashCard {
                         width: root.cw;
-                        wide: true;
                         profile: root.profile;
                         switchable: root.switchable;
                         switch => { root.switch-profile(); }
@@ -5068,7 +5055,6 @@ component OnDemandBody inherits VerticalLayout {
         Rectangle { background: Theme.s.card; border-radius: 16px; }
         for t[i] in root.ssids: Rectangle {
             property <bool> lifted: i == root.drag-from;
-            property <bool> on: i < root.selected.length && root.selected[i];
             y: root.drag-from < 0 || self.lifted ? i * root.row-h
                 : i > root.drag-from && i <= root.drag-to ? (i - 1) * root.row-h
                 : i < root.drag-from && i >= root.drag-to ? (i + 1) * root.row-h
@@ -10245,11 +10231,6 @@ export component AppWindow inherits Window {
     in property <[bool]> od-selected;
     in property <bool> od-selecting;
     callback od-clicked(string);
-    in property <string> profile-name;
-    in property <string> up-speed: "0 B/s";
-    in property <string> down-speed: "0 B/s";
-    in property <string> up-total;
-    in property <string> down-total;
     in property <int> mode: 0;
     in property <DashStatus> dash-status;
     in property <DashTraffic> dash-traffic;
@@ -10344,7 +10325,6 @@ export component AppWindow inherits Window {
     in property <string> dash-local-ip;
     in property <string> dash-memory;
     in property <string> dash-run-time: "00:00:00";
-    in property <int> profile-count;
     in-out property <bool> dash-editing;
     callback edit-dashboard(string, string);
     callback refresh-ip();
@@ -10681,7 +10661,6 @@ export component AppWindow inherits Window {
     callback req-body-menu();
     callback req-hex-columns(int);
     in-out property <bool> req-actions-open;
-    in property <string> req-actions-title;
     in property <[ActionItem]> req-actions;
     // A tools page pushed over the page (a module's editor from a request's menu) hides it.
     property <bool> tools-covering: root.tools-over && root.tools-page != "";
@@ -10705,7 +10684,6 @@ export component AppWindow inherits Window {
     callback req-search(string);
     callback req-open-menu();
     callback req-set-segment(int);
-    callback req-set-status(int);
     callback req-status-menu();
     callback req-add-condition();
     callback req-edit-condition(int);

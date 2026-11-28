@@ -24,7 +24,7 @@ impl App {
     pub(crate) fn open_http_menu(self: &Arc<Self>, target: MenuTarget) {
         let items = http_export::menu_items(&target, &self.local_modules(), None);
         self.req.lock().unwrap().http_menu = Some((target, None));
-        self.show_actions(String::new(), items);
+        self.show_actions(items);
     }
 
     /// The menu's item `name` with its request id (and module) in `arg`; false for an item

@@ -941,10 +941,7 @@ impl App {
             .unwrap()
             .map(|t| dashboard::run_time(t.elapsed().as_secs()));
         let memory = dashboard::resident_memory().map(size).unwrap_or_default();
-        let (us, ds) = (speed(up), speed(down));
         self.ui(move |ui| {
-            ui.set_up_speed(us.into());
-            ui.set_down_speed(ds.into());
             ui.set_dash_traffic(traffic);
             if let Some(run) = run {
                 ui.set_dash_run_time(run.into());
@@ -1215,7 +1212,7 @@ impl App {
     }
 
     fn refresh_profiles(&self) {
-        let (items, name, dash) = {
+        let (items, dash) = {
             let store = self.store.lock().unwrap();
             let busy = self.busy.lock().unwrap();
             let items: Vec<ProfileItem> = store
@@ -1228,18 +1225,11 @@ impl App {
                 .active()
                 .map(|p| dash_profile(p, busy.contains(&p.id)))
                 .unwrap_or_default();
-            (
-                items,
-                store.active().map(|p| p.label()).unwrap_or_default(),
-                dash,
-            )
+            (items, dash)
         };
-        let count = items.len() as i32;
         self.ui(move |ui| {
             ui.set_profiles(ModelRc::new(VecModel::from(items)));
-            ui.set_profile_name(name.into());
             ui.set_dash_profile(dash);
-            ui.set_profile_count(count);
         });
     }
 

@@ -302,12 +302,11 @@ impl App {
         self.ui(move |ui| app.publish_requests(&ui));
     }
 
-    pub(crate) fn show_actions(self: &Arc<Self>, title: String, items: Vec<ActionItem>) {
+    pub(crate) fn show_actions(self: &Arc<Self>, items: Vec<ActionItem>) {
         if items.is_empty() {
             return;
         }
         self.ui(move |ui| {
-            ui.set_req_actions_title(title.into());
             ui.set_req_actions(model(items));
             ui.set_req_actions_open(true);
         });
@@ -1057,7 +1056,7 @@ impl App {
                 req.limit_open = false;
                 req.page_actions(&a.mitm())
             };
-            a.show_actions(String::new(), items);
+            a.show_actions(items);
         });
         let a = self.clone();
         ui.on_req_set_segment(move |s| {
@@ -1065,14 +1064,9 @@ impl App {
             a.republish();
         });
         let a = self.clone();
-        ui.on_req_set_status(move |s| {
-            a.req.lock().unwrap().filters_mut().status = s.clamp(0, 2);
-            a.republish();
-        });
-        let a = self.clone();
         ui.on_req_status_menu(move || {
             let items = a.req.lock().unwrap().status_actions();
-            a.show_actions(String::new(), items);
+            a.show_actions(items);
         });
         let a = self.clone();
         ui.on_req_add_condition(move || {
@@ -1116,7 +1110,7 @@ impl App {
                 let req = a.req.lock().unwrap();
                 req.row_actions(req.segment, id as i64)
             };
-            a.show_actions(String::new(), items);
+            a.show_actions(items);
         });
         let a = self.clone();
         ui.on_req_detail_tab(move |i| {
@@ -1172,7 +1166,7 @@ impl App {
             };
             match http {
                 Some(target) => a.open_http_menu(target),
-                None => a.show_actions(String::new(), items),
+                None => a.show_actions(items),
             }
         });
         let a = self.clone();
@@ -1186,7 +1180,7 @@ impl App {
                 enabled: true,
                 ..Default::default()
             };
-            a.show_actions(String::new(), vec![item]);
+            a.show_actions(vec![item]);
         });
         let a = self.clone();
         let w = ui.as_weak();
@@ -1298,7 +1292,7 @@ impl App {
                 items.push(item(format!("res-edit:{key}"), "edit", "编辑"));
             }
             items.push(item(format!("res-copy:{key}"), "copy", "复制链接"));
-            a.show_actions(String::new(), items);
+            a.show_actions(items);
         });
         let a = self.clone();
         ui.on_res_dialog_submit(move |kind, key, value| a.dialog_submitted(&kind, &key, &value));
