@@ -852,6 +852,12 @@ impl MemorySnapshot {
     }
 }
 
+/// FlClash resets the Core's traffic once a run it started has stopped, not when the app
+/// first learns the service is stopped.
+pub fn stop_resets_traffic(previous: &str) -> bool {
+    matches!(previous, "STARTED" | "STOPPING")
+}
+
 /// The profile card's usage line: "42%" and "42.0 GB / 100.0 GB" with the share used.
 pub fn usage(used: i64, total: i64) -> Option<(String, String, f32)> {
     if total <= 0 {
@@ -1034,6 +1040,14 @@ mod tests {
             Err(SourceStatus::RateLimited)
         );
         assert_eq!(SourceStatus::IpMismatch.label(), "出站 IP 不一致");
+    }
+
+    #[test]
+    fn only_a_stopped_run_resets_traffic() {
+        assert!(stop_resets_traffic("STARTED"));
+        assert!(stop_resets_traffic("STOPPING"));
+        assert!(!stop_resets_traffic(""));
+        assert!(!stop_resets_traffic("OFFLINE"));
     }
 
     #[test]

@@ -602,6 +602,9 @@ impl App {
             "STOPPED" => {
                 *self.started_at.lock().unwrap() = None;
                 self.ui(|ui| ui.set_dash_run_time("00:00:00".into()));
+                if dashboard::stop_resets_traffic(&previous) {
+                    self.reset_traffic();
+                }
                 self.probe_ip();
                 self.probe_services();
             }
@@ -880,6 +883,18 @@ impl App {
 
     // ------------------------------------------------------------ dashboard
     // FlClash: lib/views/dashboard.
+
+    /// `_stop`'s `resetCoreTraffic` with the cleared history and totals.
+    fn reset_traffic(self: &Arc<Self>) {
+        self.traffic_up.lock().unwrap().clear();
+        self.traffic_down.lock().unwrap().clear();
+        *self.peaks.lock().unwrap() = (0, 0);
+        self.spawn(|app| {
+            if let Ok(b) = app.bridge() {
+                let _ = b.call("traffic.reset", json!({}), CALL);
+            }
+        });
+    }
 
     fn on_traffic(self: &Arc<Self>, up: i64, down: i64, total_up: i64, total_down: i64) {
         let push = |q: &Mutex<VecDeque<i64>>, v: i64| {
