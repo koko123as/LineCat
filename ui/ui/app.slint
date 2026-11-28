@@ -8319,7 +8319,7 @@ component RecordRowView inherits Rectangle {
         ta := TouchArea {
             pointer-event(e) => {
                 if (e.kind == PointerEventKind.down) {
-                    MenuAnchor.at(root.absolute-position.x + self.mouse-x, root.absolute-position.y + self.mouse-y, 0px, 0px);
+                    MenuAnchor.press(root.absolute-position.x + self.mouse-x, root.absolute-position.y + self.mouse-y, root.absolute-position.y, root.absolute-position.y + root.height, e.button != PointerEventButton.right);
                     if (e.button == PointerEventButton.right) {
                         root.fired = true;
                         root.menu(root.rec.id);
@@ -8369,7 +8369,7 @@ component DetailRowView inherits Rectangle {
             if (e.kind == PointerEventKind.down) {
                 root.fired = false;
                 if (root.item.menu) {
-                    MenuAnchor.at(root.absolute-position.x + self.mouse-x, root.absolute-position.y + self.mouse-y, 0px, 0px);
+                    MenuAnchor.press(root.absolute-position.x + self.mouse-x, root.absolute-position.y + self.mouse-y, root.absolute-position.y, root.absolute-position.y + root.height, e.button != PointerEventButton.right);
                     if (e.button == PointerEventButton.right) {
                         root.fired = true;
                         root.tapped("menu:" + root.item.arg);
@@ -9451,11 +9451,42 @@ export global MenuAnchor {
     in-out property <length> y;
     in-out property <length> w;
     in-out property <length> h;
+    in-out property <bool> point;
+    in-out property <bool> avoid;
+    in-out property <length> row-top;
+    in-out property <length> row-bottom;
     public function at(x: length, y: length, w: length, h: length) {
         MenuAnchor.x = x;
         MenuAnchor.y = y;
         MenuAnchor.w = w;
         MenuAnchor.h = h;
+        MenuAnchor.point = false;
+    }
+    // A press at `x`, `y` on the row spanning `top` to `bottom`; `avoid` for a touch hold.
+    public function press(x: length, y: length, top: length, bottom: length, avoid: bool) {
+        MenuAnchor.at(x, y, 0px, 0px);
+        MenuAnchor.point = true;
+        MenuAnchor.avoid = avoid;
+        MenuAnchor.row-top = top;
+        MenuAnchor.row-bottom = bottom;
+    }
+}
+
+// prism `_PopupLayoutDelegate` with `PopupPlacement.belowPoint`, which `ContextMenuRegion`
+// uses: the menu starts at the press, above the held row when it fits, else below it, else
+// under the press, 16 inside the window. Pinned by tests/menu_place.rs.
+export global MenuPlace {
+    public pure function left-of(px: length, w: length, win: length) -> length {
+        return max(16px, min(px, win - 16px - w));
+    }
+    public pure function top-of(py: length, row-top: length, row-bottom: length, avoid: bool, h: length, win: length) -> length {
+        let lo = 16px;
+        let hi = max(lo, win - 16px - h);
+        let y = avoid && row-top - 8px - h >= lo ? row-top - 8px - h
+            : avoid && row-bottom + 8px <= hi ? row-bottom + 8px
+            : py > hi && py - h >= lo ? py - h
+            : py;
+        return clamp(y, lo, hi);
     }
 }
 
@@ -9470,6 +9501,10 @@ component AnchorMenu inherits Rectangle {
     in property <length> ay;
     in property <length> aw;
     in property <length> ah;
+    in property <bool> point;
+    in property <bool> avoid;
+    in property <length> row-top;
+    in property <length> row-bottom;
     in property <length> menu-width: 220px;
     in property <int> max-rows: 7;
     // Items' `enabled` greys them out; most menus leave it set on every item.
@@ -9483,8 +9518,8 @@ component AnchorMenu inherits Rectangle {
     Rectangle {
         width: min(root.menu-width, root.width - 16px);
         height: root.menu-height;
-        x: max(8px, min(root.ax + root.aw - self.width, root.width - self.width - 8px));
-        y: root.ay + root.ah + 4px + self.height <= root.height - 8px ? root.ay + root.ah + 4px : max(8px, root.ay - self.height - 4px);
+        x: root.point ? MenuPlace.left-of(root.ax, self.width, root.width) : max(8px, min(root.ax + root.aw - self.width, root.width - self.width - 8px));
+        y: root.point ? MenuPlace.top-of(root.ay, root.row-top, root.row-bottom, root.avoid, self.height, root.height) : root.ay + root.ah + 4px + self.height <= root.height - 8px ? root.ay + root.ah + 4px : max(8px, root.ay - self.height - 4px);
         background: Theme.s.card;
         border-radius: 16px;
         border-width: 1px;
@@ -12942,6 +12977,10 @@ export component AppWindow inherits Window {
             ay: MenuAnchor.y;
             aw: MenuAnchor.w;
             ah: MenuAnchor.h;
+            point: MenuAnchor.point;
+            avoid: MenuAnchor.avoid;
+            row-top: MenuAnchor.row-top;
+            row-bottom: MenuAnchor.row-bottom;
             max-rows: 10;
             picked(id) => {
                 if (id != "capture-limit" && id != "http-reject" && id != "http-map-local") { root.req-actions-open = false; }
