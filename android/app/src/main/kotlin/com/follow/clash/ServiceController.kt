@@ -48,10 +48,6 @@ object ServiceController {
         Core.stopListener()
     }
 
-    fun sendFrame(data: ByteArray): Result<Unit> = runCatching {
-        Core.sendFrame(data)
-    }
-
     suspend fun quickSetup(
         initParams: String,
         setupParams: String,
@@ -62,10 +58,6 @@ object ServiceController {
                 continuation.resume(result)
             }
         }
-    }
-
-    fun setEventListener(callback: ((ByteArray) -> Unit)?): Result<Unit> = runCatching {
-        Core.updateEventListener(callback)
     }
 
     suspend fun start(options: VpnOptions): Boolean = lock.withLock {

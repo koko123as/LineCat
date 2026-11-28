@@ -31,8 +31,6 @@ object Core {
     }
 
     private val releasing = AtomicBoolean()
-    private val bridgeLock = Any()
-    private var bridgeSession = 0L
 
     fun load() = NativeCore.load()
 
@@ -107,25 +105,6 @@ object Core {
         steps.whenComplete { _, error ->
             callback(error?.let { (it.cause ?: it).message.orEmpty().ifEmpty { "unknown error" } }.orEmpty())
         }
-    }
-
-    fun updateEventListener(callback: ((ByteArray) -> Unit)?) {
-        synchronized(bridgeLock) {
-            val previous = bridgeSession
-            bridgeSession = 0L
-            if (previous != 0L) NativeCore.close(previous)
-            if (callback != null) {
-                bridgeSession = NativeCore.open { frame ->
-                    callback(frame)
-                    true
-                }
-            }
-        }
-    }
-
-    fun sendFrame(data: ByteArray) {
-        val session = synchronized(bridgeLock) { bridgeSession }
-        check(session != 0L && NativeCore.send(session, data)) { "no session to take the frame" }
     }
 
     private class Host(
