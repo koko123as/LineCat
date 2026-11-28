@@ -1749,6 +1749,7 @@ fn main() {
         org: "Example Broadband".into(),
         probing: false,
         failed: false,
+        ..Default::default()
     });
     let mut up = std::collections::VecDeque::new();
     let mut down = std::collections::VecDeque::new();
@@ -3168,6 +3169,7 @@ fn main() {
             org: "Example Cloud".into(),
             probing: false,
             failed: false,
+            ..Default::default()
         });
         ui.set_mem_sheet_open(*overlay == "memsheet");
         ui.set_svc_sheet_open(overlay.starts_with("svcsheet") || *overlay == "svcip");

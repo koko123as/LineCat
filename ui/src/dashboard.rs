@@ -305,37 +305,128 @@ fn pick_type(hosting: bool, mobile: bool, declared: Option<&'static str>) -> Opt
 }
 
 /// One source's answer: organization, type label, level (1 good, 2 normal, 3 risky),
-/// and whether the type was only inferred (silence taken as residential).
-#[derive(Debug, Clone, PartialEq)]
+/// whether the type was only inferred (silence taken as residential), the ASN, the source's
+/// label and the flags it raised (`ipFlag*`).
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Quality {
     pub org: String,
     pub kind: String,
     pub level: i32,
     pub inferred: bool,
+    pub asn: Option<i64>,
+    pub source: &'static str,
+    pub flags: Vec<&'static str>,
+}
+
+/// `IpQualitySourceStatus`: why a source gave no answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceStatus {
+    NoType,
+    Timeout,
+    RateLimited,
+    Failed,
+    IpMismatch,
+}
+
+impl SourceStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            SourceStatus::NoType => "无法判定类型",
+            SourceStatus::Timeout => "超时",
+            SourceStatus::RateLimited => "限流",
+            SourceStatus::Failed => "检测失败",
+            SourceStatus::IpMismatch => "出站 IP 不一致",
+        }
+    }
+}
+
+/// `IpQualityLookupException`: each source's failure, in `IpQualitySource` order.
+pub type QualityFailures = Vec<(&'static str, SourceStatus)>;
+
+/// `IpQualitySource.label`, by its order in `IpQualitySource`.
+const SOURCES: [(&str, &str); 6] = [
+    ("identMe", "ident.me"),
+    ("ipApiCom", "ip-api.com"),
+    ("ipQuery", "ipquery.io"),
+    ("ipLocate", "iplocate.io"),
+    ("proxyCheck", "proxycheck.io"),
+    ("ipApiIs", "ipapi.is"),
+];
+
+fn source_index(source: &str) -> usize {
+    SOURCES
+        .iter()
+        .position(|(s, _)| *s == source)
+        .unwrap_or(SOURCES.len())
+}
+
+fn source_label(source: &str) -> &'static str {
+    SOURCES
+        .get(source_index(source))
+        .map(|(_, l)| *l)
+        .unwrap_or("")
+}
+
+#[derive(Default)]
+struct Raised {
+    proxy: bool,
+    vpn: bool,
+    tor: bool,
+    abuser: bool,
 }
 
 /// `IpQualityExt.level`: Tor or an abuser is risky, hosting is normal, the rest good.
 fn quality(
+    source: &str,
     kind: Option<&'static str>,
     inferred: bool,
     org: Option<String>,
-    tor: bool,
-    abuser: bool,
-) -> Option<Quality> {
-    let kind = kind?;
-    let level = if tor || abuser {
+    asn: Option<i64>,
+    raised: Raised,
+) -> Result<Quality, SourceStatus> {
+    let kind = kind.ok_or(SourceStatus::NoType)?;
+    let level = if raised.tor || raised.abuser {
         3
     } else if kind == "hosting" {
         2
     } else {
         1
     };
-    Some(Quality {
+    let flags = [
+        (raised.tor, "Tor"),
+        (raised.abuser, "滥用记录"),
+        (raised.vpn, "VPN"),
+        (raised.proxy, "代理"),
+    ]
+    .into_iter()
+    .filter_map(|(on, label)| on.then_some(label))
+    .collect();
+    Ok(Quality {
         org: org.unwrap_or_default(),
         kind: type_label(kind).into(),
         level,
         inferred,
+        asn,
+        source: source_label(source),
+        flags,
     })
+}
+
+/// `_asn`: a number, or the first run of digits in "AS13335 Example".
+fn asn(value: Option<&Value>) -> Option<i64> {
+    let n = match value? {
+        Value::Number(n) => n.as_i64()?,
+        Value::String(s) => {
+            let digits: String = s
+                .chars()
+                .skip_while(|c| !c.is_ascii_digit())
+                .take_while(char::is_ascii_digit)
+                .collect();
+            digits.parse().ok()?
+        }
+        _ => return None,
+    };
+    (n != 0).then_some(n)
 }
 
 fn obj<'a>(json: &'a Value, key: &str) -> &'a Value {
@@ -375,62 +466,82 @@ fn quality_url(source: &str, ip: &str) -> String {
     }
 }
 
-/// `_parse`: what each source says about `ip`; None when it states no type or fails.
-pub fn parse_quality(source: &str, ip: &str, json: &Value) -> Option<Quality> {
+/// `_parse`: what each source says about `ip`.
+pub fn parse_quality(source: &str, ip: &str, json: &Value) -> Result<Quality, SourceStatus> {
     match source {
         "identMe" => {
             if json.get("ip").and_then(Value::as_str) != Some(ip) {
-                return None;
+                return Err(SourceStatus::IpMismatch);
             }
             quality(
+                source,
                 declared_type(json.get("type")),
                 false,
                 text(json, "aso"),
-                false,
-                false,
+                asn(json.get("asn")),
+                Raised::default(),
             )
         }
         "ipApiCom" => {
             if json.get("status").and_then(Value::as_str) != Some("success") {
-                return None;
+                return Err(SourceStatus::Failed);
             }
             let t = pick_type(flag(json, "hosting"), flag(json, "mobile"), None);
             quality(
+                source,
                 Some(t.unwrap_or("residential")),
                 t.is_none(),
                 text(json, "org").or_else(|| text(json, "isp")),
-                false,
-                false,
+                asn(json.get("as")),
+                Raised {
+                    proxy: flag(json, "proxy"),
+                    ..Default::default()
+                },
             )
         }
         "ipQuery" => {
             let (risk, isp) = (obj(json, "risk"), obj(json, "isp"));
             let t = pick_type(flag(risk, "is_datacenter"), flag(risk, "is_mobile"), None);
             quality(
+                source,
                 Some(t.unwrap_or("residential")),
                 t.is_none(),
                 text(isp, "org").or_else(|| text(isp, "isp")),
-                flag(risk, "is_tor"),
-                false,
+                asn(isp.get("asn")),
+                Raised {
+                    proxy: flag(risk, "is_proxy"),
+                    vpn: flag(risk, "is_vpn"),
+                    tor: flag(risk, "is_tor"),
+                    abuser: false,
+                },
             )
         }
         "ipLocate" => {
-            let (privacy, company, asn) =
+            let (privacy, company, asn_obj) =
                 (obj(json, "privacy"), obj(json, "company"), obj(json, "asn"));
             let declared =
-                declared_type(company.get("type")).or_else(|| declared_type(asn.get("type")));
+                declared_type(company.get("type")).or_else(|| declared_type(asn_obj.get("type")));
             quality(
+                source,
                 pick_type(flag(privacy, "is_hosting"), false, declared),
                 false,
-                text(company, "name").or_else(|| text(asn, "name")),
-                flag(privacy, "is_tor"),
-                flag(privacy, "is_abuser"),
+                text(company, "name").or_else(|| text(asn_obj, "name")),
+                asn(asn_obj.get("asn")),
+                Raised {
+                    proxy: flag(privacy, "is_proxy"),
+                    vpn: flag(privacy, "is_vpn"),
+                    tor: flag(privacy, "is_tor"),
+                    abuser: flag(privacy, "is_abuser"),
+                },
             )
         }
         "proxyCheck" => {
             let status = json.get("status").and_then(Value::as_str);
+            if status == Some("denied") {
+                return Err(SourceStatus::RateLimited);
+            }
             if status != Some("ok") && status != Some("warning") {
-                return None;
+                return Err(SourceStatus::Failed);
             }
             let result = obj(json, ip);
             let (network, detections) = (obj(result, "network"), obj(result, "detections"));
@@ -441,6 +552,7 @@ pub fn parse_quality(source: &str, ip: &str, json: &Value) -> Option<Quality> {
                 _ => None,
             };
             quality(
+                source,
                 pick_type(
                     flag(detections, "hosting") || nt == Some("Hosting"),
                     nt == Some("Wireless"),
@@ -448,33 +560,66 @@ pub fn parse_quality(source: &str, ip: &str, json: &Value) -> Option<Quality> {
                 ),
                 false,
                 text(network, "organisation"),
-                flag(detections, "tor"),
-                false,
+                asn(network.get("asn")),
+                Raised {
+                    proxy: flag(detections, "proxy"),
+                    vpn: flag(detections, "vpn"),
+                    tor: flag(detections, "tor"),
+                    abuser: false,
+                },
             )
         }
         _ => {
-            let (company, asn) = (obj(json, "company"), obj(json, "asn"));
+            let (company, asn_obj) = (obj(json, "company"), obj(json, "asn"));
             let declared =
-                declared_type(company.get("type")).or_else(|| declared_type(asn.get("type")));
+                declared_type(company.get("type")).or_else(|| declared_type(asn_obj.get("type")));
             quality(
+                source,
                 pick_type(
                     flag(json, "is_datacenter"),
                     flag(json, "is_mobile"),
                     declared,
                 ),
                 false,
-                text(company, "name").or_else(|| text(asn, "org")),
-                flag(json, "is_tor"),
-                flag(json, "is_abuser"),
+                text(company, "name").or_else(|| text(asn_obj, "org")),
+                asn(asn_obj.get("asn")),
+                Raised {
+                    proxy: flag(json, "is_proxy"),
+                    vpn: flag(json, "is_vpn"),
+                    tor: flag(json, "is_tor"),
+                    abuser: flag(json, "is_abuser"),
+                },
             )
         }
     }
 }
 
+/// `_query`: 429 is rate limited, any other status but 200 a failure.
+fn query_quality(agent: &ureq::Agent, source: &str, ip: &str) -> Result<Quality, SourceStatus> {
+    let mut res = agent
+        .get(&quality_url(source, ip))
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::Timeout(_) => SourceStatus::Timeout,
+            _ => SourceStatus::Failed,
+        })?;
+    match res.status().as_u16() {
+        200 => {}
+        429 => return Err(SourceStatus::RateLimited),
+        _ => return Err(SourceStatus::Failed),
+    }
+    let body = res
+        .body_mut()
+        .read_to_string()
+        .map_err(|_| SourceStatus::Failed)?;
+    let json = serde_json::from_str(&body).map_err(|_| SourceStatus::Failed)?;
+    parse_quality(source, ip, &json)
+}
+
 /// `lookupIpQuality`: asks the sources wave by wave (a later wave starts after a
 /// one-second hedge or once the earlier ones have all answered). The first stated type
 /// wins; an inferred one only stands in when no source states a type.
-pub fn lookup_quality(ip: &str) -> Option<Quality> {
+pub fn lookup_quality(ip: &str) -> Result<Quality, QualityFailures> {
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
     let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -482,8 +627,9 @@ pub fn lookup_quality(ip: &str) -> Option<Quality> {
         .http_status_as_error(false)
         .build()
         .into();
-    let (tx, rx) = mpsc::channel::<Option<Quality>>();
+    let (tx, rx) = mpsc::channel::<(&'static str, Result<Quality, SourceStatus>)>();
     let mut fallback: Option<Quality> = None;
+    let mut failures: Vec<(&'static str, SourceStatus)> = Vec::new();
     let mut in_flight = 0usize;
     let mut wave = 0usize;
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -493,21 +639,12 @@ pub fn lookup_quality(ip: &str) -> Option<Quality> {
                 let (tx, agent, ip) = (tx.clone(), agent.clone(), ip.to_string());
                 in_flight += 1;
                 std::thread::spawn(move || {
-                    let answer = (|| {
-                        let mut res = agent.get(&quality_url(source, &ip)).call().ok()?;
-                        if res.status() != 200 {
-                            return None;
-                        }
-                        let body = res.body_mut().read_to_string().ok()?;
-                        parse_quality(source, &ip, &serde_json::from_str(&body).ok()?)
-                    })();
-                    let _ = tx.send(answer);
+                    let _ = tx.send((source, query_quality(&agent, source, &ip)));
                 });
             }
             wave += 1;
         }
         let hedge = Instant::now() + Duration::from_secs(1);
-        // Wait for answers until the hedge passes (with waves left) or none are out.
         loop {
             if in_flight == 0 {
                 break;
@@ -522,21 +659,28 @@ pub fn lookup_quality(ip: &str) -> Option<Quality> {
                 break;
             }
             match rx.recv_timeout(until - now) {
-                Ok(answer) => {
+                Ok((source, answer)) => {
                     in_flight -= 1;
                     match answer {
-                        Some(q) if !q.inferred => return Some(q),
-                        Some(q) => {
+                        Ok(q) if !q.inferred => return Ok(q),
+                        Ok(q) => {
                             fallback.get_or_insert(q);
                         }
-                        None => {}
+                        Err(status) => failures.push((source, status)),
                     }
                 }
                 Err(_) => break,
             }
         }
         if wave >= QUALITY_WAVES.len() && (in_flight == 0 || Instant::now() >= deadline) {
-            return fallback;
+            if let Some(q) = fallback {
+                return Ok(q);
+            }
+            failures.sort_by_key(|(source, _)| source_index(source));
+            return Err(failures
+                .into_iter()
+                .map(|(source, status)| (source_label(source), status))
+                .collect());
         }
     }
 }
@@ -743,7 +887,7 @@ mod tests {
         );
         assert_eq!(
             parse_quality("ipApiCom", "1.2.3.4", &json!({"status": "fail"})),
-            None
+            Err(SourceStatus::Failed)
         );
         let q = parse_quality(
             "identMe",
@@ -758,7 +902,7 @@ mod tests {
                 "1.2.3.4",
                 &json!({"ip": "9.9.9.9", "type": "hosting"})
             ),
-            None
+            Err(SourceStatus::IpMismatch)
         );
         let q = parse_quality("ipApiIs", "1.2.3.4", &json!({"is_datacenter": false, "is_tor": true, "company": {"type": "isp", "name": "Home"}})).unwrap();
         assert_eq!((q.kind.as_str(), q.level), ("住宅", 3));
@@ -775,8 +919,23 @@ mod tests {
                 "1.2.3.4",
                 &json!({"privacy": {}, "company": {}})
             ),
-            None
+            Err(SourceStatus::NoType)
         );
+        let q = parse_quality("ipLocate", "1.2.3.4", &json!({"privacy": {"is_vpn": true, "is_abuser": true, "is_proxy": true}, "company": {"type": "isp", "name": "Home"}, "asn": {"asn": "AS64500"}})).unwrap();
+        assert_eq!(q.flags, ["滥用记录", "VPN", "代理"]);
+        assert_eq!((q.level, q.asn, q.source), (3, Some(64500), "iplocate.io"));
+        let q = parse_quality(
+            "ipQuery",
+            "1.2.3.4",
+            &json!({"risk": {"is_tor": true}, "isp": {"asn": 0}}),
+        )
+        .unwrap();
+        assert_eq!((q.flags.clone(), q.asn), (vec!["Tor"], None));
+        assert_eq!(
+            parse_quality("proxyCheck", "1.2.3.4", &json!({"status": "denied"})),
+            Err(SourceStatus::RateLimited)
+        );
+        assert_eq!(SourceStatus::IpMismatch.label(), "出站 IP 不一致");
     }
 
     #[test]

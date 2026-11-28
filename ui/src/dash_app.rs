@@ -145,6 +145,8 @@ impl App {
         let a = self.clone();
         ui.on_open_service_ip(move |ip, region| a.open_service_ip(ip.into(), region.into()));
         let a = self.clone();
+        ui.on_requery_ip_quality(move || a.requery_ip_quality());
+        let a = self.clone();
         ui.on_dash_card_height(move |i, h| {
             let Ok(i) = usize::try_from(i) else { return };
             let mut heights = a.dash_heights.lock().unwrap();
@@ -383,6 +385,36 @@ impl App {
             });
             ui.set_ip_sheet_open(true);
         });
+        self.lookup_sheet_quality(ip);
+    }
+
+    /// The sheet's ⟳: `ref.invalidate(ipQualityProvider(ip))` for the address it shows.
+    fn requery_ip_quality(self: &Arc<Self>) {
+        let a = self.clone();
+        self.ui(move |ui| {
+            let ipq_ip = ui.get_ipq_ip();
+            if ipq_ip.is_empty() {
+                let mut s = ui.get_dash_status();
+                if s.ip.is_empty() || s.probing {
+                    return;
+                }
+                s.probing = true;
+                let ip = s.ip.to_string();
+                ui.set_dash_status(s);
+                a.lookup_dash_quality(ip);
+            } else {
+                let mut s = ui.get_ipq_other();
+                if s.probing {
+                    return;
+                }
+                s.probing = true;
+                ui.set_ipq_other(s);
+                a.lookup_sheet_quality(ipq_ip.to_string());
+            }
+        });
+    }
+
+    fn lookup_sheet_quality(self: &Arc<Self>, ip: String) {
         self.spawn(move |app| {
             let quality = dashboard::lookup_quality(&ip);
             app.ui(move |ui| {
@@ -390,13 +422,7 @@ impl App {
                     return;
                 }
                 let mut s = ui.get_ipq_other();
-                let (org, kind, level) = quality
-                    .map(|q| (q.org, q.kind, q.level))
-                    .unwrap_or_else(|| (String::new(), "类型未知".into(), 0));
-                s.org = org.into();
-                s.kind = kind.into();
-                s.quality = level;
-                s.probing = false;
+                crate::set_quality(&mut s, quality);
                 ui.set_ipq_other(s);
             });
         });

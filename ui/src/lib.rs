@@ -319,6 +319,45 @@ fn file_info(path: &std::path::Path) -> String {
     }
 }
 
+/// What `lookupIpQuality` found onto the card's or the sheet's status; a failed lookup keeps
+/// 类型未知 on the card and each source's failure for the sheet.
+fn set_quality(
+    s: &mut DashStatus,
+    quality: Result<dashboard::Quality, dashboard::QualityFailures>,
+) {
+    s.probing = false;
+    match quality {
+        Ok(q) => {
+            s.org = q.org.into();
+            s.kind = q.kind.into();
+            s.quality = q.level;
+            s.asn = q.asn.map(|n| format!("AS{n}")).unwrap_or_default().into();
+            s.source = q.source.into();
+            let flags: Vec<SharedString> = q.flags.into_iter().map(Into::into).collect();
+            s.flags = ModelRc::new(VecModel::from(flags));
+            s.lookup_failed = false;
+            s.failures = ModelRc::default();
+        }
+        Err(failures) => {
+            s.org = Default::default();
+            s.kind = "类型未知".into();
+            s.quality = 0;
+            s.asn = Default::default();
+            s.source = Default::default();
+            s.flags = ModelRc::default();
+            s.lookup_failed = true;
+            let rows: Vec<IpSourceFailure> = failures
+                .into_iter()
+                .map(|(source, status)| IpSourceFailure {
+                    source: source.into(),
+                    status: status.label().into(),
+                })
+                .collect();
+            s.failures = ModelRc::new(VecModel::from(rows));
+        }
+    }
+}
+
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -945,25 +984,28 @@ impl App {
                     ..Default::default()
                 });
             });
-            let quality = dashboard::lookup_quality(&ip);
-            if app.ip_seq.load(Ordering::SeqCst) != seq {
+            app.lookup_dash_quality_seq(ip, seq);
+        });
+    }
+
+    fn lookup_dash_quality_seq(self: &Arc<Self>, ip: String, seq: u64) {
+        let quality = dashboard::lookup_quality(&ip);
+        if self.ip_seq.load(Ordering::SeqCst) != seq {
+            return;
+        }
+        self.ui(move |ui| {
+            let mut s = ui.get_dash_status();
+            if s.ip.as_str() != ip {
                 return;
             }
-            app.ui(move |ui| {
-                let (org, kind, level) = quality
-                    .map(|q| (q.org, q.kind, q.level))
-                    .unwrap_or_else(|| (String::new(), "类型未知".into(), 0));
-                ui.set_dash_status(DashStatus {
-                    ip: ip.into(),
-                    country: cc.into(),
-                    kind: kind.into(),
-                    quality: level,
-                    org: org.into(),
-                    probing: false,
-                    failed: false,
-                });
-            });
+            set_quality(&mut s, quality);
+            ui.set_dash_status(s);
         });
+    }
+
+    pub(crate) fn lookup_dash_quality(self: &Arc<Self>, ip: String) {
+        let seq = self.ip_seq.load(Ordering::SeqCst);
+        self.spawn(move |app| app.lookup_dash_quality_seq(ip, seq));
     }
 
     fn publish_dashboard_widgets(self: &Arc<Self>) {
