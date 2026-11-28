@@ -923,6 +923,13 @@ pub fn profile_stats(inspect: &serde_json::Value, providers: &[serde_json::Value
     ]
 }
 
+/// `ProfileDetailSheet`'s 扩展脚本: 无 when the profile names no script or it is gone.
+pub fn script_label(scripts: &[crate::items::Script], script_id: Option<&str>) -> String {
+    script_id
+        .and_then(|id| scripts.iter().find(|s| s.id == id))
+        .map_or_else(|| "无".to_string(), |s| s.label.clone())
+}
+
 /// `_handleRelease`'s banner: what was freed, else that memory was released.
 pub fn released_text(before: i64, after: i64) -> String {
     let freed = (before - after).max(0);
@@ -1180,6 +1187,18 @@ mod tests {
             serde_json::json!({"name": "r", "type": "rule", "vehicleType": "File", "count": 900}),
         ];
         assert_eq!(profile_stats(&inspect, &providers), [3, 15, 120, 2]);
+    }
+
+    #[test]
+    fn script_label_names_the_profile_script() {
+        let scripts = vec![crate::items::Script {
+            id: "s1".into(),
+            label: "去广告".into(),
+            ..Default::default()
+        }];
+        assert_eq!(script_label(&scripts, Some("s1")), "去广告");
+        assert_eq!(script_label(&scripts, Some("gone")), "无");
+        assert_eq!(script_label(&scripts, None), "无");
     }
 
     #[test]

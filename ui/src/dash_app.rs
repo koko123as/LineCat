@@ -396,7 +396,7 @@ impl App {
     /// `ProfileDetailSheet`: the current profile's counts from `profile.inspect` and its
     /// providers from `provider.list`.
     fn load_profile_detail(self: &Arc<Self>) {
-        let (path, updated) = {
+        let (path, updated, script) = {
             let store = self.store.lock().unwrap();
             match store.active() {
                 Some(p) => (
@@ -405,13 +405,14 @@ impl App {
                         .updated
                         .trim_start_matches("更新于 ")
                         .to_string(),
+                    dashboard::script_label(&store.state.settings.scripts, p.script_id.as_deref()),
                 ),
-                None => (None, String::new()),
+                None => (None, String::new(), dashboard::script_label(&[], None)),
             }
         };
         let blank = DashProfileDetail {
             updated: updated.clone().into(),
-            script: "无".into(),
+            script: script.clone().into(),
             ..Default::default()
         };
         self.ui(move |ui| {
@@ -451,7 +452,7 @@ impl App {
                     rules: rules.into(),
                     providers: providers.into(),
                     updated: updated.into(),
-                    script: "无".into(),
+                    script: script.into(),
                     remote: false,
                 });
             });
