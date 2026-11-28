@@ -1,8 +1,10 @@
-//! MITM on `App`'s side: the page, 抓包, 主机名, 模块 and a module's page.
+//! MITM on `App`'s side: 选项, 主机名, 模块 and a module's page.
 //! FlClash: lib/views/config/mitm.dart, lib/views/config/mitm_modules.dart (`MitmModulesAction`).
 
 use crate::ca_trust::{self, TrustCheck};
-use crate::mitm::{self, Certificate, HostRow, MitmModule, ModuleRead};
+use crate::mitm::{
+    self, Certificate, HostRow, MitmModule, ModuleRead, ResourceState, ResourceStatus,
+};
 use crate::mitm_network::{self, Change, Network, UserNetwork};
 use crate::settings_app::Effect;
 use crate::store::Settings;
@@ -43,6 +45,7 @@ struct State {
     host_issues: BTreeMap<String, String>,
     module: String,
     read: Option<Result<ModuleRead, String>>,
+    resources: Vec<ResourceStatus>,
     list: String,
     updating: BTreeSet<String>,
     loading: String,
@@ -265,12 +268,13 @@ pub fn module_sections(
     m: &MitmModule,
     read: Option<&ModuleRead>,
     network: &[(Change, bool, Option<String>)],
+    resources: &[ResourceStatus],
     updating: bool,
     updated: &str,
 ) -> Vec<SetSection> {
     let mut out = vec![section(
         "",
-        &mitm::about_footer(m),
+        &mitm::about_footer(m, read),
         vec![toggle("enabled", "已开启", m.enabled)],
     )];
     let mut source = vec![
@@ -333,6 +337,9 @@ pub fn module_sections(
         section("网络设置", "启用时会覆盖下列网络设置。", rows)
     };
     let Some(read) = read else {
+        if !resources.is_empty() {
+            out.push(resources_section(resources));
+        }
         if !network.is_empty() {
             out.push(network_section());
         }
@@ -354,6 +361,9 @@ pub fn module_sections(
             })
             .collect();
         out.push(section("参数", &mitm::arguments_footer(read), rows));
+    }
+    if !resources.is_empty() {
+        out.push(resources_section(resources));
     }
     if !network.is_empty() {
         out.push(network_section());
@@ -403,6 +413,28 @@ pub fn module_sections(
     }
     out.push(section("规则", "分流规则排在配置自身的规则之前。", rules));
     out
+}
+
+/// `_resourceItem` for each remote file, then `_fetchResourcesItem`.
+fn resources_section(resources: &[ResourceStatus]) -> SetSection {
+    let mut rows: Vec<SetRow> = resources
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let fetching = r.state == ResourceState::Fetching;
+            SetRow {
+                invalid: r.state == ResourceState::Failed,
+                ..row(
+                    &format!("res:{i}"),
+                    if fetching { "busy" } else { "resource" },
+                    &r.url,
+                    &r.label(),
+                )
+            }
+        })
+        .collect();
+    rows.push(row("res-fetch", "value", "重新下载", ""));
+    section("远程文件", "", rows)
 }
 
 /// The title and lines `_MitmModuleLinesView` shows for a list, `rules` or `ignored`.
@@ -610,6 +642,7 @@ impl App {
                         m,
                         read,
                         &network,
+                        &st.resources,
                         st.updating.contains(&m.id),
                         &crate::ago(m.updated),
                     )
@@ -1323,6 +1356,7 @@ impl App {
             let mut st = state().lock().unwrap();
             st.module = id.to_string();
             st.read = None;
+            st.resources.clear();
         }
         self.mitm_go("mitm-module");
         self.spawn(|app| {
@@ -1333,16 +1367,18 @@ impl App {
     fn reload_module_read(self: &Arc<Self>) -> Option<ModuleRead> {
         let id = state().lock().unwrap().module.clone();
         let m = self.module(&id)?;
+        let status = self.module_status();
         let read = std::fs::read_to_string(self.module_path(&m))
             .map_err(|e| e.to_string())
             .and_then(|text| self.read_text(&text, &m.arguments, &m.attachments()))
-            .map(|read| read.with_refused(&self.refused_rules(&id)));
+            .map(|read| read.with_refused(&mitm::refused_rules(&status, &id)));
         {
             let mut st = state().lock().unwrap();
             if st.module != id {
                 return None;
             }
             st.read = Some(read.clone());
+            st.resources = mitm::resource_statuses(&status, &id);
         }
         self.enabled_module_reads();
         if let Err(e) = &read {
@@ -1352,12 +1388,51 @@ impl App {
         read.ok()
     }
 
-    /// `mitmModuleStatusProvider`'s refused rules of one module; none while it is not in force.
-    fn refused_rules(&self, id: &str) -> BTreeMap<i64, String> {
+    /// `mitmModuleStatusProvider`; empty when the Core cannot answer.
+    fn module_status(&self) -> Value {
         self.bridge()
             .and_then(|b| b.call("mitm.moduleStatus", json!({}), CALL))
-            .map(|status| mitm::refused_rules(&status, id))
             .unwrap_or_default()
+    }
+
+    fn refresh_module_resources(self: &Arc<Self>, id: &str) {
+        let resources = mitm::resource_statuses(&self.module_status(), id);
+        {
+            let mut st = state().lock().unwrap();
+            if st.module != id {
+                return;
+            }
+            st.resources = resources;
+        }
+        self.mitm_publish();
+    }
+
+    /// `resourceUpdate` of kind `mitmModule`: an updated module reads again, any other step
+    /// only refreshes its files' states.
+    pub(crate) fn mitm_resource_event(self: &Arc<Self>, name: &str, phase: &str) {
+        if state().lock().unwrap().module != name {
+            return;
+        }
+        let (name, updated) = (name.to_string(), phase == "updated");
+        self.spawn(move |app| {
+            if updated {
+                app.reload_module_read();
+            } else {
+                app.refresh_module_resources(&name);
+            }
+        });
+    }
+
+    fn fetch_module_resources(self: &Arc<Self>, m: MitmModule) {
+        self.spawn(move |app| {
+            let fetched = app
+                .bridge()
+                .and_then(|b| b.call("mitm.fetchModule", json!({"name": m.id}), CALL));
+            if let Err(e) = fetched {
+                app.alert(m.name.clone(), e);
+            }
+            app.refresh_module_resources(&m.id);
+        });
     }
 
     /// `readMitmModule`: the Core reads the text with these argument values.
@@ -1479,6 +1554,7 @@ impl App {
             "edit" => self.module_action(m, "edit", "mitm-module"),
             "source" if m.is_remote() => self.module_action(m, "url", "mitm-module"),
             "att-add" => self.spawn(move |app| app.attach(m)),
+            "res-fetch" => self.fetch_module_resources(m),
             id if id.starts_with("long:att:") => {
                 let names: Vec<String> = m.attachments().into_keys().collect();
                 if let Some(i) = names.iter().position(|n| n == &id["long:att:".len()..]) {
@@ -2202,7 +2278,7 @@ mod tests {
         };
         let mut m = m;
         m.resources.insert("a.js".into(), "h.js".into());
-        let s = module_sections(&m, Some(&read), &[], false, "刚刚");
+        let s = module_sections(&m, Some(&read), &[], &[], false, "刚刚");
         assert_eq!(s.len(), 5);
         assert_eq!(titles(&s[1]), vec!["来源", "上次更新", "编辑"]);
         assert_eq!(titles(&s[2]), vec!["a.js", "添加本地文件"]);
@@ -2214,15 +2290,38 @@ mod tests {
             "bypassDomain": {"replace": true, "after": ["*.b"]},
         }));
         let states = mitm_network::change_states(&net, &[], &Default::default());
-        let s = module_sections(&m, Some(&read), &states, false, "刚刚");
+        let s = module_sections(&m, Some(&read), &states, &[], false, "刚刚");
         assert_eq!(s[4].title, "网络设置");
         assert_eq!(titles(&s[4]), vec!["Hosts", "排除域名"]);
         let bypass = s[4].rows.row_data(1).unwrap();
         assert_eq!(bypass.subtitle, "替换为 *.b");
         assert_eq!(bypass.chip, "会盖过你的设置");
-        assert_eq!(module_sections(&m, None, &[], false, "").len(), 3);
+        assert_eq!(module_sections(&m, None, &[], &[], false, "").len(), 3);
         m.url = "https://x/m".into();
-        assert_eq!(module_sections(&m, None, &[], false, "").len(), 2);
+        assert_eq!(module_sections(&m, None, &[], &[], false, "").len(), 2);
+        let files = [
+            mitm::ResourceStatus {
+                url: "https://a.test/a.js".into(),
+                state: ResourceState::Failed,
+                reason: "timeout".into(),
+                http_status: None,
+            },
+            mitm::ResourceStatus {
+                url: "https://a.test/b.js".into(),
+                state: ResourceState::Fetching,
+                ..Default::default()
+            },
+        ];
+        let s = module_sections(&m, None, &[], &files, false, "");
+        assert_eq!(s[2].title, "远程文件");
+        assert_eq!(
+            titles(&s[2]),
+            ["https://a.test/a.js", "https://a.test/b.js", "重新下载"]
+        );
+        let failed = s[2].rows.row_data(0).unwrap();
+        assert!(failed.invalid && failed.kind == "resource");
+        assert_eq!(failed.subtitle, "下载失败：服务器响应超时");
+        assert_eq!(s[2].rows.row_data(1).unwrap().kind, "busy");
         let lines = lines_sections(&read, "url-rewrite");
         assert_eq!(titles(&lines[0]), vec!["a", "b"]);
         assert_eq!(lines_of(&read, "ignored").1[0].1, "不支持此设置");

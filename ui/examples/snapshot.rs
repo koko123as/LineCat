@@ -512,7 +512,14 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
             let mut m = sample_modules()[1].clone();
             m.resources.insert("rewrite.js".into(), "0a1b.js".into());
             m.resources.insert("blank.gif".into(), "0c2d.gif".into());
-            seasoncat_ui::mitm_module_sections(&m, Some(&sample_read()), &[], false, "3 小时前")
+            seasoncat_ui::mitm_module_sections(
+                &m,
+                Some(&sample_read()),
+                &[],
+                &[],
+                false,
+                "3 小时前",
+            )
         }
         "mitm-module" => {
             let m = &sample_modules()[0];
@@ -533,7 +540,14 @@ fn settings_shot(ui: &AppWindow, width: u32, page: &str, overlay: &str) {
                 ..Default::default()
             };
             let states = seasoncat_ui::mitm_network::change_states(&net, &later, &user);
-            seasoncat_ui::mitm_module_sections(m, Some(&sample_read()), &states, false, "3 小时前")
+            seasoncat_ui::mitm_module_sections(
+                m,
+                Some(&sample_read()),
+                &states,
+                &[],
+                false,
+                "3 小时前",
+            )
         }
         "mitm-lines" => seasoncat_ui::mitm_lines_sections(&sample_read(), "url-rewrite"),
         "custom-proxies" => {

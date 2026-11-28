@@ -4501,13 +4501,13 @@ component SetRowView inherits Rectangle {
                     }
                 }
             }
-            if root.item.subtitle != "" && !root.exit: Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: root.item.invalid && (root.item.kind == "line" || root.item.kind == "host") ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
+            if root.item.subtitle != "" && !root.exit: Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: root.item.invalid && (root.item.kind == "line" || root.item.kind == "host" || root.item.kind == "resource") ? Theme.s.error : Theme.s.on-surface-variant; overflow: elide; }
             if root.item.subtitle != "" && root.exit: Text { text: root.item.subtitle; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
         }
         if root.item.trailing != "" && !root.exit: Text { text: root.item.trailing; font-size: 13px * Type.scale; color: root.item.kind == "host" ? Theme.warning : Theme.s.on-surface-variant; vertical-alignment: center; }
         // The target in monospace, red once it names nothing the profile has.
         if root.exit: Text { text: root.item.trailing; font-size: 15px * Type.scale; font-family: "monospace"; color: root.item.invalid ? Theme.s.error : Theme.s.tertiary; vertical-alignment: center; }
-        if root.item.invalid && !root.exit && root.item.kind != "issue": VerticalLayout {
+        if root.item.invalid && !root.exit && root.item.kind != "issue" && root.item.kind != "resource": VerticalLayout {
             alignment: center;
             Icon { glyph: Icons.error; size: 20px; tint: Theme.s.error; }
         }
@@ -4576,7 +4576,8 @@ component SetRowView inherits Rectangle {
     ta := TouchArea {
         width: (root.item.kind == "check" && root.item.glyph == "edit") || root.eye || (root.item.kind == "issue" && root.item.invalid) ? parent.width - 56px : root.item.kind == "switch" ? parent.width - 84px : root.item.kind == "select" ? parent.width - 52px : parent.width - self.x;
         x: root.item.lead == "remove" ? 48px : 0;
-        enabled: root.item.enabled && root.item.kind != "person";
+        // A MITM module's remote file (`_resourceItem`) is a status line, not a button.
+        enabled: root.item.enabled && root.item.kind != "person" && root.item.kind != "resource";
         pointer-event(e) => {
             if (e.kind == PointerEventKind.down) { root.long-fired = false; }
         }

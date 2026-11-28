@@ -543,12 +543,81 @@ pub fn refused_rules(status: &Value, name: &str) -> BTreeMap<i64, String> {
         .unwrap_or_default()
 }
 
+/// `MitmModuleResourceStatus`: one remote file of a module and how its last fetch went.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ResourceStatus {
+    pub url: String,
+    pub state: ResourceState,
+    pub reason: String,
+    pub http_status: Option<i64>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ResourceState {
+    Ok,
+    Failed,
+    #[default]
+    Missing,
+    Fetching,
+}
+
+impl ResourceStatus {
+    fn parse(v: &Value) -> ResourceStatus {
+        let error = v.get("error").filter(|e| e.is_object());
+        ResourceStatus {
+            url: text(v, "url"),
+            state: match v.get("state").and_then(Value::as_str) {
+                Some("ok") => ResourceState::Ok,
+                Some("failed") => ResourceState::Failed,
+                Some("fetching") => ResourceState::Fetching,
+                _ => ResourceState::Missing,
+            },
+            reason: error
+                .and_then(|e| opt_text(e, "reason"))
+                .unwrap_or_else(|| "other".into()),
+            http_status: error.and_then(|e| e.get("status")?.as_i64()),
+        }
+    }
+
+    /// `_resourceState`.
+    pub fn label(&self) -> String {
+        match (self.state, self.reason.as_str(), self.http_status) {
+            (ResourceState::Ok, ..) => "已下载".into(),
+            (ResourceState::Fetching, ..) => "正在下载".into(),
+            (ResourceState::Missing, ..) => "尚未下载".into(),
+            (_, "http", Some(status)) => format!("下载失败：服务器返回 {status}"),
+            (_, "dns", _) => "下载失败：无法解析主机名".into(),
+            (_, "tls", _) => "下载失败：无法建立安全连接".into(),
+            (_, "timeout", _) => "下载失败：服务器响应超时".into(),
+            (_, "connection", _) => "下载失败：连接中断".into(),
+            _ => "下载失败".into(),
+        }
+    }
+}
+
+/// `resources` of the module `mitm.moduleStatus` reports under `name`.
+pub fn resource_statuses(status: &Value, name: &str) -> Vec<ResourceStatus> {
+    array(status, "modules")
+        .iter()
+        .find(|m| m.get("name").and_then(Value::as_str) == Some(name))
+        .map(|m| {
+            array(m, "resources")
+                .iter()
+                .map(ResourceStatus::parse)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// `MitmModuleDetails`: what `mitm.readModule` makes of a module's text.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ModuleRead {
     pub name: Option<String>,
     pub desc: Option<String>,
     pub system: Option<String>,
+    pub requirement: Option<String>,
+    /// Set when the whole module takes no effect (`off.reason`).
+    pub off: Option<String>,
     pub arguments_desc: Option<String>,
     pub arguments: Vec<Argument>,
     pub declared_scripts: usize,
@@ -757,6 +826,8 @@ pub fn read_module(source: &str, read: &Value) -> ModuleRead {
         name: opt_text(&meta, "name"),
         desc: opt_text(&meta, "desc"),
         system: opt_text(&meta, "system"),
+        requirement: opt_text(&meta, "requirement"),
+        off: read.get("off").and_then(|o| opt_text(o, "reason")),
         arguments_desc: opt_text(&meta, "argumentsDesc"),
         arguments,
         declared_scripts: array(read, "declaredScripts").len(),
@@ -885,13 +956,21 @@ pub fn system_tip(system: &str) -> Option<String> {
 }
 
 /// `_aboutFooter`.
-pub fn about_footer(m: &MitmModule) -> String {
+pub fn about_footer(m: &MitmModule, read: Option<&ModuleRead>) -> String {
     let mut parts = Vec::new();
     if !m.description.is_empty() {
         parts.push(m.description.clone());
     }
     if let Some(tip) = system_tip(&m.system) {
         parts.push(tip);
+    }
+    if let Some(requirement) = read
+        .filter(|r| r.off.is_some())
+        .and_then(|r| r.requirement.as_ref())
+    {
+        parts.push(format!(
+            "模块要求 {requirement}，本设备不满足，可能无法按预期工作。"
+        ));
     }
     parts.join("\n\n")
 }
@@ -1198,6 +1277,57 @@ mod tests {
         assert!(rows[1].matches("已排除"));
         assert!(rows[3].matches("NOT c.com"));
         assert!(!rows[0].matches("b.com"));
+    }
+
+    #[test]
+    fn remote_files_show_their_state_and_why_a_fetch_failed() {
+        let status = json!({"modules": [{"name": "m1", "resources": [
+            {"url": "https://a.test/a.js", "state": "ok"},
+            {"url": "https://a.test/b.js", "state": "fetching"},
+            {"url": "https://a.test/c.js", "state": "missing"},
+            {"url": "https://a.test/d.js", "state": "failed", "error": {"reason": "http", "status": 404, "detail": ""}},
+            {"url": "https://a.test/e.js", "state": "failed", "error": {"reason": "dns", "detail": ""}},
+            {"url": "https://a.test/f.js", "state": "failed", "error": {"reason": "http", "detail": ""}},
+            {"url": "https://a.test/g.js", "state": "failed"},
+            {"url": "https://a.test/h.js", "state": "later"}
+        ]}]});
+        let found = resource_statuses(&status, "m1");
+        let labels: Vec<String> = found.iter().map(ResourceStatus::label).collect();
+        assert_eq!(
+            labels,
+            [
+                "已下载",
+                "正在下载",
+                "尚未下载",
+                "下载失败：服务器返回 404",
+                "下载失败：无法解析主机名",
+                "下载失败",
+                "下载失败",
+                "尚未下载",
+            ]
+        );
+        assert_eq!(found[3].state, ResourceState::Failed);
+        assert_eq!(found[0].url, "https://a.test/a.js");
+        assert!(resource_statuses(&status, "m2").is_empty());
+    }
+
+    #[test]
+    fn the_requirement_tip_shows_only_while_it_turns_the_module_off() {
+        let m = MitmModule {
+            description: "d".into(),
+            ..Default::default()
+        };
+        let mut read = ModuleRead {
+            requirement: Some("CORE_VERSION >= 9".into()),
+            ..Default::default()
+        };
+        assert_eq!(about_footer(&m, Some(&read)), "d");
+        read.off = Some("requirement".into());
+        assert_eq!(
+            about_footer(&m, Some(&read)),
+            "d\n\n模块要求 CORE_VERSION >= 9，本设备不满足，可能无法按预期工作。"
+        );
+        assert_eq!(about_footer(&m, None), "d");
     }
 
     #[test]

@@ -156,6 +156,9 @@ impl App {
                 .unwrap_or("")
                 .to_string()
         };
+        if text("type") == "resourceUpdate" && text("kind") == "mitmModule" {
+            return self.mitm_resource_event(&text("name"), &text("phase"));
+        }
         if text("type") != "resourceUpdate" || text("kind") != "geo" {
             return;
         }
