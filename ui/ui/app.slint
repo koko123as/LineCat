@@ -6562,7 +6562,7 @@ component Logs inherits Rectangle {
             back => { root.back(); }
             VerticalLayout { alignment: center; IconButton { glyph: Icons.search; tint: Theme.s.on-surface; clicked => { root.searching = true; } } }
             if root.offered.length > 0: VerticalLayout { alignment: center; IconButton { glyph: Icons.filter; tint: Theme.s.on-surface; clicked => { root.open-filters(); } } }
-            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-menu(); } } }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { Anchor.x = self.absolute-position.x; Anchor.y = self.absolute-position.y; Anchor.w = self.width; Anchor.h = self.height; root.open-menu(); } } }
         }
         if root.searching: HorizontalLayout {
             height: 56px;
@@ -6603,7 +6603,7 @@ component Logs inherits Rectangle {
                 }
             }
             if root.offered.length > 0: VerticalLayout { alignment: center; IconButton { glyph: Icons.filter; tint: Theme.s.on-surface; clicked => { root.open-filters(); } } }
-            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { root.open-menu(); } } }
+            VerticalLayout { alignment: center; IconButton { glyph: Icons.more; tint: Theme.s.on-surface; clicked => { Anchor.x = self.absolute-position.x; Anchor.y = self.absolute-position.y; Anchor.w = self.width; Anchor.h = self.height; root.open-menu(); } } }
         }
         // `_KeywordStrip`
         if root.filters.length > 0: Flickable {
@@ -7111,7 +7111,13 @@ component SwatchGrid inherits Rectangle {
         y: root.inset + floor(i / root.cols) * (44px + root.gap);
         item: sw;
         clicked => { root.picked(i); }
-        long-pressed => { root.menu(i); }
+        long-pressed => {
+            Anchor.x = self.absolute-position.x;
+            Anchor.y = self.absolute-position.y;
+            Anchor.w = self.width;
+            Anchor.h = self.height;
+            root.menu(i);
+        }
     }
     Rectangle {
         x: root.inset + mod(root.items.length, root.cols) * (44px + root.gap);

@@ -371,6 +371,7 @@ impl App {
         ];
         let title: SharedString = colors::hex(color).into();
         self.ui(move |ui| {
+            ui.set_choice_anchored(true);
             ui.set_choice_title(title);
             ui.set_choice_items(ModelRc::new(VecModel::from(items)));
             ui.set_choice_open(true);

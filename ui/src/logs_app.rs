@@ -249,6 +249,7 @@ impl App {
                 ..Default::default()
             },
         ];
+        self.ui(|ui| ui.set_choice_anchored(true));
         self.show_choice("", items);
     }
 
@@ -273,6 +274,7 @@ impl App {
                 ..Default::default()
             })
             .collect();
+        self.ui(|ui| ui.set_choice_anchored(true));
         self.show_choice("日志等级", items);
     }
 
