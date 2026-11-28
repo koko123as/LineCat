@@ -15,11 +15,27 @@ impl App {
         self.store.lock().unwrap().dir.join("boot.json")
     }
 
-    /// `BootGuard.evaluate`, before the first connection applies or runs anything.
+    /// An unfinished last launch waits for `hello`'s exit info; any other is recorded now.
     pub(crate) fn begin_boot(self: &Arc<Self>) {
         let path = self.boot_path();
         let record = boot_guard::read(&path);
-        let decision = boot_guard::resolve(record.as_ref());
+        let now = crate::requests_app::now_ms();
+        if record.as_ref().and_then(|r| r.stage) != Some(Stage::Starting) {
+            let active = self.store.lock().unwrap().state.active.clone();
+            let decision = boot_guard::Decision::default();
+            boot_guard::write(
+                &path,
+                &boot_guard::starting(record.as_ref(), &decision, active, now, None),
+            );
+        }
+        *self.boot_pending.lock().unwrap() = Some((record, now));
+    }
+
+    pub(crate) fn settle_boot(self: &Arc<Self>, exit: Option<boot_guard::ExitInfo>) {
+        let Some((record, now)) = self.boot_pending.lock().unwrap().take() else {
+            return;
+        };
+        let decision = boot_guard::resolve(record.as_ref(), exit.as_ref());
         let clear = decision.recovery == Recovery::ClearProfile;
         let active = {
             let mut store = self.store.lock().unwrap();
@@ -32,10 +48,9 @@ impl App {
         if clear {
             self.refresh_profiles();
         }
-        let now = crate::requests_app::now_ms();
         boot_guard::write(
-            &path,
-            &boot_guard::starting(record.as_ref(), &decision, active, now),
+            &self.boot_path(),
+            &boot_guard::starting(record.as_ref(), &decision, active, now, exit.as_ref()),
         );
         *self.boot.lock().unwrap() = decision;
     }

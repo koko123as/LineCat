@@ -214,6 +214,7 @@ struct App {
     /// Auto run and the update check go once per process, not on every reconnect.
     started_once: AtomicBool,
     boot: Mutex<boot_guard::Decision>,
+    boot_pending: Mutex<Option<(Option<boot_guard::Record>, i64)>>,
     /// The connection whose setup failed, kept for the start failure page's copy and exit.
     init_bridge: Mutex<Option<Bridge>>,
 }
@@ -639,6 +640,11 @@ impl App {
             }
         }));
         let hello = bridge.shell("hello", json!({}), Duration::from_secs(90))?;
+        self.settle_boot(
+            hello
+                .get("lastExit")
+                .and_then(boot_guard::ExitInfo::from_json),
+        );
         let home = hello
             .get("home")
             .and_then(Value::as_str)
@@ -2744,6 +2750,7 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
         logo_taps: Mutex::new((0, None)),
         started_once: AtomicBool::new(false),
         boot: Mutex::new(boot_guard::Decision::default()),
+        boot_pending: Mutex::new(None),
         init_bridge: Mutex::new(None),
     });
 
