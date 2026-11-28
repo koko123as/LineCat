@@ -171,7 +171,9 @@ method it calls is one the Flutter UI's `rpc_core_api.dart` calls too. 修前 is
   the release page (same signing key and a higher versionCode, so the APK installs over it and keeps data).
 - v0.9.5-rs.3 (2026-11-27, owner approved): first release built by Gradle alone, versionCode 2026114702
   (2026112702 plus the arm64 split's 2000), published by `slint-android.yaml` on the tag.
-- Next release: bump `appVersionName` and `appVersionCode` (above 2026114702) in `android/app/build.gradle.kts`, add
+- v0.9.5-rs.4 (2026-11-28, owner approved): versionCode 2026114801 (2026112801 plus the arm64 split's 2000), the
+  first release whose files are named `SeasonCat-`.
+- Next release: bump `appVersionName` and `appVersionCode` (above 2026114801) in `android/app/build.gradle.kts`, add
   `release-notes/<tag>.md`, push, wait for green, tag.
 
 ## Remaining
