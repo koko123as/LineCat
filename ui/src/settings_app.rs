@@ -565,7 +565,7 @@ impl App {
         {
             let mut store = self.store.lock().unwrap();
             f(&mut store.state.settings);
-            store.save();
+            store.save_later();
         }
         self.publish_settings();
         if effect == Effect::Reapply {

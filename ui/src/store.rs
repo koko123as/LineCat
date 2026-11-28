@@ -5,6 +5,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -508,6 +511,31 @@ pub struct State {
 pub struct Store {
     pub dir: PathBuf,
     pub state: State,
+    generation: AtomicU64,
+    written: Arc<Mutex<u64>>,
+    writer: OnceLock<Sender<Snapshot>>,
+}
+
+/// A serialized state and its generation, taken while the store was locked.
+type Snapshot = (u64, Vec<u8>);
+
+fn newest(waiting: impl IntoIterator<Item = Snapshot>) -> Option<Snapshot> {
+    waiting
+        .into_iter()
+        .max_by_key(|(generation, _)| *generation)
+}
+
+/// A write lagging behind a later save must not put the older state back.
+fn write_state(dir: &Path, written: &Mutex<u64>, (generation, bytes): Snapshot) {
+    let mut last = written.lock().unwrap();
+    if generation <= *last {
+        return;
+    }
+    *last = generation;
+    let tmp = dir.join("state.json.part");
+    if std::fs::write(&tmp, bytes).is_ok() {
+        let _ = std::fs::rename(&tmp, dir.join("state.json"));
+    }
 }
 
 pub fn mode_name(mode: i32) -> &'static str {
@@ -527,17 +555,47 @@ impl Store {
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default();
         state.settings.migrate();
-        Store { dir, state }
+        Store {
+            dir,
+            state,
+            generation: AtomicU64::new(0),
+            written: Arc::default(),
+            writer: OnceLock::new(),
+        }
+    }
+
+    fn snapshot(&self) -> Option<Snapshot> {
+        let bytes = serde_json::to_vec_pretty(&self.state).ok()?;
+        Some((self.generation.fetch_add(1, Ordering::SeqCst) + 1, bytes))
     }
 
     pub fn save(&self) {
-        let Ok(bytes) = serde_json::to_vec_pretty(&self.state) else {
+        if let Some(snapshot) = self.snapshot() {
+            write_state(&self.dir, &self.written, snapshot);
+        }
+    }
+
+    /// `save` with the file written on the store's writer thread, for callers on the UI thread.
+    pub fn save_later(&self) {
+        let Some(snapshot) = self.snapshot() else {
             return;
         };
-        let tmp = self.dir.join("state.json.part");
-        if std::fs::write(&tmp, bytes).is_ok() {
-            let _ = std::fs::rename(&tmp, self.dir.join("state.json"));
-        }
+        let writer = self.writer.get_or_init(|| {
+            let (tx, rx) = mpsc::channel::<Snapshot>();
+            let (dir, written) = (self.dir.clone(), self.written.clone());
+            let _ = std::thread::Builder::new()
+                .name("state-writer".into())
+                .spawn(move || {
+                    while let Ok(first) = rx.recv() {
+                        let waiting = std::iter::once(first).chain(rx.try_iter());
+                        if let Some(snapshot) = newest(waiting) {
+                            write_state(&dir, &written, snapshot);
+                        }
+                    }
+                });
+            tx
+        });
+        let _ = writer.send(snapshot);
     }
 
     pub fn profile_path(&self, id: &str) -> PathBuf {
@@ -587,6 +645,28 @@ mod tests {
         assert_eq!(again.state.settings.geo_update_interval, 24);
         assert_eq!(again.state, store.state);
         assert_eq!(again.active().unwrap().name, "a");
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn only_the_newest_snapshot_is_written() {
+        let home = std::env::temp_dir().join(format!("sc-store-order-{}", std::process::id()));
+        let store = Store::open(&home);
+        let read = || std::fs::read(store.dir.join("state.json")).unwrap();
+        assert_eq!(
+            newest(vec![
+                (2, b"b".to_vec()),
+                (3, b"c".to_vec()),
+                (1, b"a".to_vec())
+            ]),
+            Some((3, b"c".to_vec()))
+        );
+        assert_eq!(newest(Vec::new()), None);
+        write_state(&store.dir, &store.written, (2, b"new".to_vec()));
+        write_state(&store.dir, &store.written, (1, b"old".to_vec()));
+        assert_eq!(read(), b"new");
+        write_state(&store.dir, &store.written, (3, b"newer".to_vec()));
+        assert_eq!(read(), b"newer");
         let _ = std::fs::remove_dir_all(home);
     }
 
