@@ -9,6 +9,8 @@ pub mod app_icons;
 pub mod backup;
 mod backup_app;
 pub use backup_app::sections as backup_app_sections;
+pub mod boot_guard;
+mod boot_guard_app;
 pub mod bridge;
 pub mod ca_trust;
 mod ca_trust_app;
@@ -211,6 +213,9 @@ struct App {
     logo_taps: Mutex<(u32, Option<std::time::Instant>)>,
     /// Auto run and the update check go once per process, not on every reconnect.
     started_once: AtomicBool,
+    boot: Mutex<boot_guard::Decision>,
+    /// The connection whose setup failed, kept for the start failure page's copy and exit.
+    init_bridge: Mutex<Option<Bridge>>,
 }
 
 /// Why a profile file could not be taken in.
@@ -507,13 +512,21 @@ impl App {
         while self.alive.load(Ordering::SeqCst) {
             match Bridge::connect(&name) {
                 Ok(bridge) => {
+                    let first = !self.started_once.load(Ordering::SeqCst);
                     match self.setup(&bridge) {
                         Err(e) if self.bridge().is_err() => {
                             self.set_core(live_status::Core::Stopped, Some(e.clone()));
-                            self.toast(format!("内核连接失败: {e}"));
+                            if first {
+                                self.show_init_error(e, bridge.clone());
+                            } else {
+                                self.toast(format!("内核连接失败: {e}"));
+                            }
                         }
                         Err(e) => self.toast(format!("内核连接失败: {e}")),
-                        Ok(()) => {}
+                        Ok(()) => self.hide_init_error(),
+                    }
+                    if self.bridge().is_ok() {
+                        self.finish_boot();
                     }
                     while self.alive.load(Ordering::SeqCst) && !bridge.is_closed() {
                         std::thread::sleep(Duration::from_millis(500));
@@ -653,7 +666,9 @@ impl App {
         if engine == "configured" || engine == "running" {
             self.configured.store(true, Ordering::SeqCst);
             self.refresh_groups();
-        } else if self.store.lock().unwrap().active().is_some() {
+        } else if self.store.lock().unwrap().active().is_some()
+            && !(self.boot_degraded() && !self.started_once.load(Ordering::SeqCst))
+        {
             self.apply_active()?;
         }
         self.on_connected(&hello);
@@ -2574,6 +2589,7 @@ fn locate_offset(ui: &AppWindow, group: &str) -> f32 {
 /// activity goes away.
 pub fn run(home: PathBuf) -> Result<(), slint::PlatformError> {
     let (ui, app) = wire(home)?;
+    app.begin_boot();
     let a = app.clone();
     std::thread::Builder::new()
         .name("ui-connect".into())
@@ -2647,8 +2663,11 @@ fn wire(home: PathBuf) -> Result<(AppWindow, Arc<App>), slint::PlatformError> {
         app_version: Mutex::new(String::new()),
         logo_taps: Mutex::new((0, None)),
         started_once: AtomicBool::new(false),
+        boot: Mutex::new(boot_guard::Decision::default()),
+        init_bridge: Mutex::new(None),
     });
 
+    app.bind_init_error(&ui);
     apply_theme(&ui, &settings);
     ui.set_mode(settings.mode);
     ui.set_logs(ModelRc::new(VecModel::<LogItem>::default()));

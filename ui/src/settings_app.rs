@@ -1299,8 +1299,13 @@ impl App {
             if auto_check {
                 self.check_update(false);
             }
+            self.show_boot_tip();
             let running = self.run_state.lock().unwrap().as_str() == "STARTED";
-            if general.auto_run && !running && self.store.lock().unwrap().active().is_some() {
+            if general.auto_run
+                && !running
+                && !self.boot_degraded()
+                && self.store.lock().unwrap().active().is_some()
+            {
                 self.toggle_vpn();
             }
         }

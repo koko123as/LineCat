@@ -4409,6 +4409,97 @@ component Dialog inherits Rectangle {
     }
 }
 
+// `InitErrorScreen`: the first connection failed before the Core answered.
+component InitErrorPage inherits Rectangle {
+    in property <string> error;
+    in property <string> notice;
+    in property <bool> exiting;
+    in property <length> top-inset;
+    in property <length> bottom-inset;
+    callback clear();
+    callback copy();
+    callback exit();
+    background: Theme.s.page;
+    TouchArea { }
+    property <length> bar-h: 60px + root.bottom-inset;
+    property <length> content-w: min(720px, root.width - 32px);
+    flick := Flickable {
+        height: root.height - root.bar-h;
+        viewport-height: col.preferred-height + root.top-inset + 56px;
+        col := VerticalLayout {
+            x: (root.width - root.content-w) / 2;
+            y: root.top-inset + 32px;
+            width: root.content-w;
+            spacing: 0px;
+            HorizontalLayout {
+                alignment: start;
+                Rectangle {
+                    width: 56px;
+                    height: 56px;
+                    border-radius: 28px;
+                    background: Theme.s.error.with-alpha(0.14);
+                    Icon { glyph: Icons.warning; size: 28px; tint: Theme.s.error; }
+                }
+            }
+            Rectangle { height: 20px; }
+            Text { text: "启动失败"; font-size: 22px * Type.scale; font-weight: 700; color: Theme.s.on-surface; wrap: word-wrap; }
+            Rectangle { height: 8px; }
+            Text {
+                text: "SeasonCat 启动时出错，无法继续运行。可以复制错误详情用于反馈；如果问题反复出现，清除数据后通常可以重新启动。";
+                font-size: 15px * Type.scale;
+                color: Theme.s.on-surface-variant;
+                wrap: word-wrap;
+            }
+            Rectangle { height: 28px; }
+            Text { text: "错误详情"; font-size: 15px * Type.scale; font-weight: 700; color: Theme.s.on-surface; }
+            Rectangle { height: 8px; }
+            Rectangle {
+                background: Theme.s.error.with-alpha(0.12);
+                border-radius: 16px;
+                VerticalLayout {
+                    padding: 16px;
+                    Text { text: root.error; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.error; wrap: word-wrap; }
+                }
+            }
+        }
+    }
+    if root.notice != "": Rectangle {
+        y: root.height - root.bar-h - self.height - 16px;
+        x: (root.width - self.width) / 2;
+        width: min(root.width - 32px, notice-text.preferred-width + 32px);
+        height: notice-text.preferred-height + 24px;
+        border-radius: 12px;
+        background: Theme.s.on-surface;
+        notice-text := Text {
+            x: 16px;
+            width: parent.width - 32px;
+            text: root.notice;
+            color: Theme.s.page;
+            font-size: 15px * Type.scale;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    Rectangle {
+        y: root.height - root.bar-h;
+        height: root.bar-h;
+        background: Theme.s.page;
+        HorizontalLayout {
+            x: (root.width - root.content-w) / 2;
+            width: root.content-w;
+            height: 60px;
+            alignment: end;
+            spacing: 8px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            TextButton { text: "清除数据"; danger: true; enabled: !root.exiting; clicked => { root.clear(); } }
+            TextButton { text: "复制"; clicked => { root.copy(); } }
+            TextButton { text: "退出"; filled: true; enabled: !root.exiting; clicked => { root.exit(); } }
+        }
+    }
+}
+
 // ---------------------------------------------------------------- Tools
 
 component SetRowView inherits Rectangle {
@@ -10157,6 +10248,14 @@ export component AppWindow inherits Window {
     in-out property <string> alert-title;
     in-out property <string> alert-text;
     in-out property <bool> confirm-open;
+    // The start failure page (`InitErrorScreen`), shown while `init-error` is set.
+    in property <string> init-error;
+    in property <string> init-notice;
+    in property <bool> init-exiting;
+    in-out property <bool> init-clear-open;
+    callback init-copy(string);
+    callback init-clear();
+    callback init-exit();
     in-out property <string> confirm-title;
     in-out property <string> confirm-text;
     in-out property <string> confirm-action;
@@ -10736,6 +10835,8 @@ export component AppWindow inherits Window {
             if (event.text == Key.Back) {
                 // A search field that closes takes the focus with it; back keeps it here.
                 keys.focus();
+                if (root.init-error != "" && root.init-clear-open) { root.init-clear-open = false; return accept; }
+                if (root.init-error != "") { root.init-exit(); return accept; }
                 if (root.alert-open) { root.alert-open = false; return accept; }
                 if (root.live-open) { root.live-close(); return accept; }
                 if (root.input-open) { root.input-open = false; return accept; }
@@ -12828,6 +12929,28 @@ export component AppWindow inherits Window {
             dismiss => { root.choice-open = false; }
         }
 
+        if root.init-error != "": InitErrorPage {
+            error: root.init-error;
+            notice: root.init-notice;
+            exiting: root.init-exiting;
+            top-inset: root.top-inset;
+            bottom-inset: root.bottom-inset;
+            clear => { root.init-clear-open = true; }
+            copy => { root.init-copy(root.init-error); }
+            exit => { root.init-exit(); }
+        }
+        if root.init-error != "" && root.init-clear-open: Dialog {
+            title: "清除数据";
+            top: root.top-inset;
+            dismiss => { root.init-clear-open = false; }
+            Text { text: "将删除所有配置、设置和本地数据，随后关闭应用。重新打开即可从头开始。"; wrap: word-wrap; color: Theme.s.on-surface-variant; font-size: 15px * Type.scale; }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                TextButton { text: "取消"; clicked => { root.init-clear-open = false; } }
+                TextButton { text: "确定"; clicked => { root.init-clear(); } }
+            }
+        }
         if root.input-open: Dialog {
             title: root.input-title;
             keyboard: root.keyboard;
