@@ -1,6 +1,6 @@
 //! Pictures behind an http url (`CommonTargetIcon`'s network image): downloaded once to a
-//! disk cache, decoded as PNG and shrunk to an icon's size, kept here by url, `None` once
-//! a url turned out to hold none. A base64 `data:` url is decoded in place.
+//! disk cache, decoded (PNG, SVG) and shrunk to an icon's size, kept here by url, `None`
+//! once a url turned out to hold none. A `data:` url is decoded in place.
 
 use crate::app_icons::{decode_png, Pixels};
 use slint::{Rgba8Pixel, SharedPixelBuffer};
@@ -73,10 +73,135 @@ pub fn is_image_src(src: &str) -> bool {
     is_data_url(src) || crate::icon_sets::is_http_url(src)
 }
 
-/// `getBase64`: the payload after `base64,`, read as PNG (the only format decoded here).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Format {
+    Png,
+    Svg,
+}
+
+/// The format the bytes themselves say, whatever the url or the server called them.
+pub fn sniff(bytes: &[u8]) -> Option<Format> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some(Format::Png);
+    }
+    let head = &bytes[..bytes.len().min(1024)];
+    let head = head.strip_prefix(b"\xef\xbb\xbf").unwrap_or(head);
+    let text = String::from_utf8_lossy(head);
+    let text = text.trim_start();
+    let prolog = ["<?xml", "<!--", "<!DOCTYPE", "<!doctype"];
+    if text.starts_with("<svg")
+        || (prolog.iter().any(|p| text.starts_with(p)) && text.contains("<svg"))
+    {
+        return Some(Format::Svg);
+    }
+    None
+}
+
+fn format_of_mime(mime: &str) -> Option<Format> {
+    match mime {
+        "image/png" => Some(Format::Png),
+        "image/svg+xml" => Some(Format::Svg),
+        _ => None,
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DataUrl {
+    pub mime: String,
+    pub bytes: Vec<u8>,
+}
+
+/// `data:[<mime>][;<param>]*[;base64],<payload>`; a payload without `base64` is
+/// percent-encoded (or plain) text.
+pub fn parse_data_url(url: &str) -> Option<DataUrl> {
+    let (meta, payload) = url.strip_prefix("data:")?.split_once(',')?;
+    let mut params = meta.split(';');
+    let mime = params
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let encoded = params.any(|p| p.trim().eq_ignore_ascii_case("base64"));
+    let raw = percent_decode(payload);
+    let bytes = if encoded {
+        base64(std::str::from_utf8(&raw).ok()?)?
+    } else {
+        raw
+    };
+    (!bytes.is_empty()).then_some(DataUrl { mime, bytes })
+}
+
+pub fn percent_decode(text: &str) -> Vec<u8> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        match (bytes[i], bytes.get(i + 1), bytes.get(i + 2)) {
+            (b'%', Some(&h), Some(&l)) if hex(h).is_some() && hex(l).is_some() => {
+                out.push((hex(h).unwrap() * 16 + hex(l).unwrap()) as u8);
+                i += 3;
+            }
+            (b, _, _) => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
 pub fn decode_data_url(url: &str) -> Option<Pixels> {
-    let (_, payload) = url.split_once("base64,")?;
-    decode_png(&base64(payload)?).map(|p| shrink(&p, MAX_SIDE))
+    let data = parse_data_url(url)?;
+    let format = sniff(&data.bytes).or_else(|| format_of_mime(&data.mime))?;
+    decode_as(&data.bytes, format)
+}
+
+/// Downloaded bytes, by what they hold.
+pub fn decode(bytes: &[u8]) -> Option<Pixels> {
+    decode_as(bytes, sniff(bytes)?)
+}
+
+fn decode_as(bytes: &[u8], format: Format) -> Option<Pixels> {
+    match format {
+        Format::Png => decode_png(bytes).map(|p| shrink(&p, MAX_SIDE)),
+        Format::Svg => render_svg(bytes, MAX_SIDE),
+    }
+}
+
+/// Drawn so its longer side is `side`, however small its own size; images it names by
+/// path stay out, only those inside it as data urls are drawn.
+pub fn render_svg(bytes: &[u8], side: u32) -> Option<Pixels> {
+    use resvg::{tiny_skia, usvg};
+    let options = usvg::Options {
+        image_href_resolver: usvg::ImageHrefResolver {
+            resolve_data: usvg::ImageHrefResolver::default_data_resolver(),
+            resolve_string: Box::new(|_: &str, _: &usvg::Options| -> Option<usvg::ImageKind> {
+                None
+            }),
+        },
+        ..usvg::Options::default()
+    };
+    let tree = usvg::Tree::from_data(bytes, &options).ok()?;
+    let (w, h) = (tree.size().width(), tree.size().height());
+    if !(w > 0.0 && h > 0.0 && w.is_finite() && h.is_finite()) {
+        return None;
+    }
+    let scale = side as f32 / w.max(h);
+    let pw = ((w * scale).round() as u32).clamp(1, side);
+    let ph = ((h * scale).round() as u32).clamp(1, side);
+    let mut pixmap = tiny_skia::Pixmap::new(pw, ph)?;
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    let mut out = SharedPixelBuffer::<Rgba8Pixel>::new(pw, ph);
+    for (dst, src) in out.make_mut_slice().iter_mut().zip(pixmap.pixels()) {
+        let c = src.demultiply();
+        *dst = Rgba8Pixel::new(c.red(), c.green(), c.blue(), c.alpha());
+    }
+    Some(out)
 }
 
 /// Standard or url-safe alphabet, padding and whitespace ignored.
@@ -126,7 +251,7 @@ pub fn load(dir: &Path, url: &str) -> Option<Pixels> {
             b
         }
     };
-    decode_png(&bytes).map(|p| shrink(&p, MAX_SIDE))
+    decode(&bytes)
 }
 
 fn download(url: &str) -> Option<Vec<u8>> {
@@ -232,7 +357,7 @@ mod tests {
         let p = c.lookup(&url).unwrap();
         assert_eq!((p.width(), p.height()), (2, 1));
         assert!(!c.has_pending());
-        assert!(c.lookup("data:image/svg+xml;base64,PHN2Zz4=").is_none());
+        assert!(c.lookup("data:image/svg+xml;base64,PGh0bWw+").is_none());
         assert!(is_image_src(&url) && is_image_src("https://h.example/a.png"));
         assert!(!is_image_src("a.png"));
     }
@@ -247,6 +372,78 @@ mod tests {
             }
         }
         out
+    }
+
+    const SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="5"><rect width="10" height="5" fill="#ff0000"/></svg>"##;
+
+    #[test]
+    fn formats_are_told_by_their_bytes() {
+        assert_eq!(sniff(b"\x89PNG\r\n\x1a\nrest"), Some(Format::Png));
+        assert_eq!(sniff(SVG.as_bytes()), Some(Format::Svg));
+        assert_eq!(
+            sniff(b"\xef\xbb\xbf\n  <?xml version=\"1.0\"?>\n<!-- x -->\n<svg/>"),
+            Some(Format::Svg)
+        );
+        assert_eq!(sniff(b"<!DOCTYPE svg><svg/>"), Some(Format::Svg));
+        assert_eq!(sniff(b"<?xml version=\"1.0\"?><html/>"), None);
+        assert_eq!(sniff(b"<html><svg/></html>"), None);
+        assert_eq!(sniff(b""), None);
+    }
+
+    #[test]
+    fn data_urls_read_base64_percent_and_plain_payloads() {
+        let plain = parse_data_url("data:image/svg+xml;utf8,<svg a='#1'/>").unwrap();
+        assert_eq!(plain.mime, "image/svg+xml");
+        assert_eq!(plain.bytes, b"<svg a='#1'/>");
+        let pct = parse_data_url("data:image/svg+xml,%3Csvg%20a%3D%271%27%2F%3E").unwrap();
+        assert_eq!(pct.bytes, b"<svg a='1'/>");
+        let b64 = parse_data_url("data:Image/SVG+XML;charset=utf-8;BASE64,PHN2Zy8+").unwrap();
+        assert_eq!(b64.mime, "image/svg+xml");
+        assert_eq!(b64.bytes, b"<svg/>");
+        assert_eq!(percent_decode("a%2"), b"a%2");
+        assert_eq!(percent_decode("%zz%41"), b"%zzA");
+        assert!(parse_data_url("data:image/png;base64,").is_none());
+        assert!(parse_data_url("data:image/png;base64,a*b").is_none());
+        assert!(parse_data_url("image/png;base64,aGk=").is_none());
+        assert!(parse_data_url("data:text/plain").is_none());
+    }
+
+    #[test]
+    fn svg_draws_at_the_icon_size() {
+        let p = render_svg(SVG.as_bytes(), MAX_SIDE).unwrap();
+        assert_eq!((p.width(), p.height()), (MAX_SIDE, MAX_SIDE / 2));
+        assert_eq!(p.as_slice()[0], Rgba8Pixel::new(255, 0, 0, 255));
+        let p = decode(SVG.as_bytes()).unwrap();
+        assert_eq!(p.width(), MAX_SIDE);
+        assert!(render_svg(b"<svg", MAX_SIDE).is_none());
+        let external = r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="4" height="4"><image width="4" height="4" xlink:href="/etc/hostname"/></svg>"#;
+        let p = render_svg(external.as_bytes(), 8).unwrap();
+        assert!(p.as_slice().iter().all(|px| px.a == 0));
+    }
+
+    #[test]
+    fn svg_data_urls_decode_in_any_encoding() {
+        let encoded: String = SVG
+            .bytes()
+            .map(|b| match b {
+                b'<' | b'>' | b'"' | b'#' | b' ' => format!("%{b:02X}"),
+                _ => (b as char).to_string(),
+            })
+            .collect();
+        let urls = [
+            format!("data:image/svg+xml;base64,{}", encode(SVG.as_bytes())),
+            format!("data:image/svg+xml;charset=utf-8,{encoded}"),
+            format!("data:image/svg+xml;utf8,{SVG}"),
+            format!(
+                "data:application/octet-stream;base64,{}",
+                encode(SVG.as_bytes())
+            ),
+        ];
+        let mut c = Cache::default();
+        for url in &urls {
+            let p = c.lookup(url).unwrap_or_else(|| panic!("{url}"));
+            assert_eq!((p.width(), p.height()), (MAX_SIDE, MAX_SIDE / 2), "{url}");
+        }
     }
 
     #[test]

@@ -3623,6 +3623,7 @@ dependencies = [
  "libc",
  "png 0.17.16",
  "qrcode",
+ "resvg",
  "rquickjs",
  "serde",
  "serde_json",
