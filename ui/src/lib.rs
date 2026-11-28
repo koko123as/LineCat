@@ -1417,6 +1417,16 @@ impl App {
 
     /// `putProfile`: added at the end; the first profile becomes the current one.
     fn put_new(self: &Arc<Self>, p: store::Profile) {
+        if self.insert_new(p) {
+            if let Err(e) = self.apply_active() {
+                self.toast(e);
+            }
+        }
+    }
+
+    /// Adds the profile and makes it current when there was none; true then, and the caller
+    /// applies it.
+    fn insert_new(self: &Arc<Self>, p: store::Profile) -> bool {
         let first = {
             let mut store = self.store.lock().unwrap();
             let first = store.state.active.is_none();
@@ -1428,11 +1438,7 @@ impl App {
             first
         };
         self.refresh_profiles();
-        if first {
-            if let Err(e) = self.apply_active() {
-                self.toast(e);
-            }
-        }
+        first
     }
 
     /// `_fromShareLinks`: the links' proxies as one local profile.

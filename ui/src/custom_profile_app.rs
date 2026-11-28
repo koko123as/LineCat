@@ -73,11 +73,19 @@ impl App {
         self.bind_profile_rules(ui);
     }
 
-    /// `_toAddCustom`: an unnamed custom profile, opened as new.
+    /// `_toAddCustom`: an unnamed custom profile, opened as new; the first one is applied
+    /// behind the page, as the inspect and apply can take up to the apply timeout.
     fn add_custom_profile(self: &Arc<Self>) {
         let id = self.new_id();
-        self.put_new(cp::new_profile(id.clone(), "未命名", now_secs()));
+        let first = self.insert_new(cp::new_profile(id.clone(), "未命名", now_secs()));
         self.open_custom(id, true);
+        if first {
+            self.spawn(|app| {
+                if let Err(e) = app.apply_active() {
+                    app.toast(e);
+                }
+            });
+        }
     }
 
     pub(crate) fn open_custom(self: &Arc<Self>, id: String, is_new: bool) {
