@@ -296,10 +296,6 @@ impl ReqState {
             .collect()
     }
 
-    pub fn is_searching(&self) -> bool {
-        !self.query.trim().is_empty() || self.filters().is_filtering()
-    }
-
     /// The list's null status: its label and description.
     pub fn empty(&self, no_host: bool) -> (String, String) {
         if !self.query.trim().is_empty() || !self.filters().conditions.is_empty() {

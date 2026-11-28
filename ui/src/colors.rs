@@ -277,7 +277,6 @@ const GRID_HUES: [f64; 12] = [
 ];
 const GRID_TONES: [f64; 9] = [25.0, 33.0, 41.0, 49.0, 57.0, 65.0, 73.0, 81.0, 89.0];
 pub const GRID_COLUMNS: usize = GRID_HUES.len();
-pub const GRID_ROWS: usize = GRID_TONES.len() + 1;
 
 /// `_ColorGrid._rows`, row by row: grays first, then the hues from dark to light.
 pub fn grid() -> Vec<u32> {
@@ -468,7 +467,7 @@ mod tests {
     #[test]
     fn grid_runs_white_to_black_then_hues() {
         let g = grid();
-        assert_eq!(g.len(), GRID_ROWS * GRID_COLUMNS);
+        assert_eq!(g.len(), (GRID_TONES.len() + 1) * GRID_COLUMNS);
         assert_eq!(g[0], 0xffffff);
         assert_eq!(g[GRID_COLUMNS - 1], 0);
     }

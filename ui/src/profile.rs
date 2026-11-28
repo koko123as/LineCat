@@ -323,18 +323,6 @@ fn clean_name(name: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_string())
 }
 
-/// The URL's host, as a label for a profile whose server names none.
-pub fn url_label(url: &str) -> String {
-    let rest = url.split("://").nth(1).unwrap_or(url);
-    let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
-    let host = host.rsplit('@').next().unwrap_or(host);
-    if host.is_empty() {
-        "配置".into()
-    } else {
-        host.to_string()
-    }
-}
-
 const PRIVATE_ROUTES: [&str; 11] = [
     "0.0.0.0/8",
     "10.0.0.0/8",
@@ -770,14 +758,6 @@ mod tests {
             Some("机场")
         );
         assert_eq!(disposition_name("inline"), None);
-    }
-
-    #[test]
-    fn labels_from_urls() {
-        assert_eq!(
-            url_label("https://user:pw@sub.example.com/api?token=1"),
-            "sub.example.com"
-        );
     }
 
     #[test]

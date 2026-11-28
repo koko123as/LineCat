@@ -191,10 +191,6 @@ impl Filters {
             self.conditions.remove(index);
         }
     }
-
-    pub fn is_filtering(&self) -> bool {
-        self.status != 0 || !self.conditions.is_empty()
-    }
 }
 
 /// One line of the condition block: a field's widening conditions together, each

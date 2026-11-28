@@ -1005,10 +1005,6 @@ impl Issue {
     pub fn is_incomplete(&self) -> bool {
         matches!(self, Issue::EmptyName | Issue::CoreRejected(_))
     }
-
-    pub fn is_name(&self) -> bool {
-        !matches!(self, Issue::CoreRejected(_))
-    }
 }
 
 /// `issues.getMessage`: one alone, else each on its own bulleted line.

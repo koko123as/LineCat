@@ -923,23 +923,6 @@ pub fn profile_stats(inspect: &serde_json::Value, providers: &[serde_json::Value
     ]
 }
 
-/// A provider's row under 外部资源: its name over "代理 · http · 12" (kind, vehicle, count).
-pub fn provider_row(p: &serde_json::Value) -> (String, String) {
-    let get = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("");
-    let kind = if get("type") == "rule" {
-        "规则"
-    } else {
-        "代理"
-    };
-    let count = p.get("count").and_then(|c| c.as_i64()).unwrap_or(0);
-    let mut parts = vec![kind.to_string()];
-    if !get("vehicleType").is_empty() {
-        parts.push(get("vehicleType").to_string());
-    }
-    parts.push(count.to_string());
-    (get("name").to_string(), parts.join(" · "))
-}
-
 /// `_handleRelease`'s banner: what was freed, else that memory was released.
 pub fn released_text(before: i64, after: i64) -> String {
     let freed = (before - after).max(0);
@@ -1197,10 +1180,6 @@ mod tests {
             serde_json::json!({"name": "r", "type": "rule", "vehicleType": "File", "count": 900}),
         ];
         assert_eq!(profile_stats(&inspect, &providers), [3, 15, 120, 2]);
-        assert_eq!(
-            provider_row(&providers[0]),
-            ("a".to_string(), "代理 · HTTP · 5".to_string())
-        );
     }
 
     #[test]

@@ -539,22 +539,6 @@ pub fn random_secret(len: usize) -> String {
         .collect()
 }
 
-/// A tag like `v1.2.3` or `1.2.3-pre.1` as comparable numbers; None when it is no version.
-pub fn version_parts(tag: &str) -> Option<Vec<u64>> {
-    let core = tag.trim().trim_start_matches('v');
-    let core = core.split(['-', '+']).next()?;
-    let parts: Option<Vec<u64>> = core.split('.').map(|p| p.parse().ok()).collect();
-    parts.filter(|p| !p.is_empty())
-}
-
-/// Whether the release `tag` is newer than the installed `version`.
-pub fn is_newer(tag: &str, version: &str) -> bool {
-    match (version_parts(tag), version_parts(version)) {
-        (Some(a), Some(b)) => a > b,
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
@@ -670,13 +654,9 @@ mod tests {
     }
 
     #[test]
-    fn secrets_and_versions() {
+    fn random_secrets() {
         let s = random_secret(16);
         assert_eq!(s.len(), 16);
         assert!(s.chars().all(|c| c.is_ascii_alphanumeric()));
-        assert!(is_newer("v0.9.6", "0.9.5"));
-        assert!(is_newer("v1.0.0-pre.1", "0.9.5"));
-        assert!(!is_newer("v0.9.5", "0.9.5"));
-        assert!(!is_newer("latest", "0.9.5"));
     }
 }
