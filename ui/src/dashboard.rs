@@ -754,6 +754,104 @@ pub fn resident_memory() -> Option<i64> {
     Some(kb * 1024)
 }
 
+/// `CoreMemoryStats` from `core.stats`: its `rss`, and the runtime figures when it reports them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CoreMemory {
+    pub rss: i64,
+    pub heap_inuse: i64,
+    pub heap_idle: i64,
+    pub stack_inuse: i64,
+    pub runtime_other: i64,
+}
+
+impl CoreMemory {
+    pub fn parse(v: &Value) -> CoreMemory {
+        let int = |k: &str| v.get(k).and_then(Value::as_i64).unwrap_or(0);
+        CoreMemory {
+            rss: int("rss"),
+            heap_inuse: int("heap-inuse"),
+            heap_idle: int("heap-idle"),
+            stack_inuse: int("stack-inuse"),
+            runtime_other: int("runtime-other"),
+        }
+    }
+
+    pub fn runtime_total(&self) -> i64 {
+        self.heap_inuse + self.heap_idle + self.stack_inuse + self.runtime_other
+    }
+}
+
+/// `MemorySnapshot`; `core` is None while the Core is not connected.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MemorySnapshot {
+    pub app: i64,
+    pub core_total: i64,
+    pub core: Option<CoreMemory>,
+    pub core_in_process: bool,
+}
+
+impl MemorySnapshot {
+    /// `resolve`: a Core in the app's process (Android) is carved out of the process RSS.
+    pub fn resolve(rss: i64, core: Option<CoreMemory>, core_in_process: bool) -> MemorySnapshot {
+        let Some(core) = core else {
+            return MemorySnapshot {
+                app: rss,
+                core_in_process,
+                ..Default::default()
+            };
+        };
+        if core_in_process {
+            let runtime = core.runtime_total();
+            return MemorySnapshot {
+                app: (rss - runtime).max(0),
+                core_total: runtime,
+                core: Some(core),
+                core_in_process,
+            };
+        }
+        MemorySnapshot {
+            app: rss,
+            core_total: core.rss,
+            core: Some(core),
+            core_in_process,
+        }
+    }
+
+    pub fn total(&self) -> i64 {
+        self.app + self.core_total
+    }
+
+    /// `_coreItems`: None reads 内核未运行; an empty list leaves the 内核 section out.
+    pub fn core_rows(&self) -> Option<Vec<(&'static str, i64)>> {
+        let core = self.core?;
+        let runtime = core.runtime_total();
+        let other = (self.core_total - runtime).max(0);
+        let rows = [
+            ("堆内存使用中", core.heap_inuse),
+            ("堆内存空闲", core.heap_idle),
+            ("协程栈", core.stack_inuse),
+            ("运行时开销", core.runtime_other),
+            (
+                if runtime > 0 {
+                    "其他"
+                } else {
+                    "常驻内存"
+                },
+                other,
+            ),
+        ];
+        Some(rows.into_iter().filter(|(_, b)| *b > 0).collect())
+    }
+
+    pub fn estimate_text(&self) -> &'static str {
+        if self.core_in_process && self.core_total > 0 {
+            "内核与应用运行在同一进程，内核部分按运行时统计估算，其余计入应用及共享内存。"
+        } else {
+            "基于进程常驻内存估算，可能与系统显示的数值不同。"
+        }
+    }
+}
+
 /// The profile card's usage line: "42%" and "42.0 GB / 100.0 GB" with the share used.
 pub fn usage(used: i64, total: i64) -> Option<(String, String, f32)> {
     if total <= 0 {
@@ -936,6 +1034,35 @@ mod tests {
             Err(SourceStatus::RateLimited)
         );
         assert_eq!(SourceStatus::IpMismatch.label(), "出站 IP 不一致");
+    }
+
+    #[test]
+    fn memory_follows_flclash_rs() {
+        let none = MemorySnapshot::resolve(100, None, true);
+        assert_eq!((none.app, none.total(), none.core_rows()), (100, 100, None));
+        let rss_only =
+            MemorySnapshot::resolve(100, Some(CoreMemory::parse(&json!({"rss": 60}))), true);
+        assert_eq!((rss_only.app, rss_only.core_total), (100, 0));
+        assert_eq!(rss_only.core_rows(), Some(vec![]));
+        assert!(rss_only.estimate_text().starts_with("基于"));
+        let core = CoreMemory {
+            heap_inuse: 10,
+            stack_inuse: 5,
+            ..Default::default()
+        };
+        let shared = MemorySnapshot::resolve(100, Some(core), true);
+        assert_eq!((shared.app, shared.core_total), (85, 15));
+        assert_eq!(
+            shared.core_rows(),
+            Some(vec![("堆内存使用中", 10), ("协程栈", 5)])
+        );
+        assert!(shared.estimate_text().starts_with("内核与应用"));
+        let apart = MemorySnapshot::resolve(100, Some(CoreMemory { rss: 40, ..core }), false);
+        assert_eq!((apart.app, apart.total()), (100, 140));
+        assert_eq!(
+            apart.core_rows(),
+            Some(vec![("堆内存使用中", 10), ("协程栈", 5), ("其他", 25)])
+        );
     }
 
     #[test]

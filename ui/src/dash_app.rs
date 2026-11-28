@@ -7,14 +7,14 @@ use crate::drag;
 use crate::settings_app::Effect;
 use crate::{
     App, AppWindow, DashAdd, DashCell, DashCol, DashProfileDetail, DashRow, DashService, DashStats,
-    DashStatus, ProviderRow, ServiceManageRow,
+    DashStatus, MemoryDetail, MemoryRow, ProviderRow, ServiceManageRow,
 };
 use serde_json::{json, Value};
 use slint::{ModelRc, VecModel};
 use std::collections::BTreeMap;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// One service's last answer: the Core's status, delay, where it saw the request from and
 /// the node it left through; `failed` when the call failed.
@@ -36,6 +36,49 @@ pub(crate) struct Services {
 }
 
 use dashboard::service_shown as shown_count;
+
+static MEMORY_SHOWN: AtomicBool = AtomicBool::new(false);
+static MEMORY_BUSY: AtomicBool = AtomicBool::new(false);
+static MEMORY_POLLED: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn memory_detail(snap: &dashboard::MemorySnapshot) -> MemoryDetail {
+    let total = snap.total();
+    let ratio = |bytes: i64| {
+        if total > 0 {
+            (bytes as f64 / total as f64) as f32
+        } else {
+            0.0
+        }
+    };
+    let core_rows = snap.core_rows();
+    let core_total = snap.core_total;
+    let rows: Vec<MemoryRow> = core_rows
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(label, bytes)| MemoryRow {
+            label: label.into(),
+            value: crate::size(bytes).into(),
+            ratio: if core_total > 0 {
+                bytes as f32 / core_total as f32
+            } else {
+                0.0
+            },
+        })
+        .collect();
+    MemoryDetail {
+        total: crate::size(total).into(),
+        app: crate::size(snap.app).into(),
+        shared: snap.core_in_process,
+        app_ratio: ratio(snap.app),
+        estimate: snap.estimate_text().into(),
+        core_shown: core_rows.as_ref().is_none_or(|r| !r.is_empty()),
+        core_running: core_rows.is_some(),
+        core_total: crate::size(core_total).into(),
+        core_rows: ModelRc::new(VecModel::from(rows)),
+        ready: true,
+    }
+}
 
 /// `ConnectionsTableCard`'s state: its feed, the header sort, the table's width, whether
 /// the dashboard shows it, and a column drag's starting widths and overrides.
@@ -227,6 +270,8 @@ impl App {
         let a = self.clone();
         ui.on_open_memory(move || a.publish_memory());
         let a = self.clone();
+        ui.on_memory_shown(move |shown| a.memory_shown(shown));
+        let a = self.clone();
         ui.on_open_profile_detail(move || {
             let custom = a
                 .store
@@ -272,6 +317,7 @@ impl App {
     /// `MemorySnapshot.resolve` on Android: the Core shares the process, so the process
     /// RSS is the app and shared total.
     pub(crate) fn publish_memory(self: &Arc<Self>) {
+        self.poll_memory_detail();
         let rss = dashboard::resident_memory().unwrap_or(0);
         let text = if rss > 0 {
             crate::size(rss)
@@ -287,6 +333,45 @@ impl App {
         });
     }
 
+    /// `MemoryDetailSheet.poll`: `core.stats` every two seconds while the sheet shows, off
+    /// the thread that called.
+    fn poll_memory_detail(self: &Arc<Self>) {
+        if !MEMORY_SHOWN.load(Ordering::SeqCst) {
+            return;
+        }
+        {
+            let mut last = MEMORY_POLLED.lock().unwrap();
+            if last.is_some_and(|t| t.elapsed() < Duration::from_secs(2))
+                || MEMORY_BUSY.swap(true, Ordering::SeqCst)
+            {
+                return;
+            }
+            *last = Some(Instant::now());
+        }
+        self.spawn(|app| {
+            let core = match app.bridge() {
+                Err(_) => Some(None),
+                Ok(b) => b
+                    .call("core.stats", json!({}), Duration::from_secs(5))
+                    .ok()
+                    .map(|v| Some(dashboard::CoreMemory::parse(&v))),
+            };
+            MEMORY_BUSY.store(false, Ordering::SeqCst);
+            let Some(core) = core else { return };
+            let rss = dashboard::resident_memory().unwrap_or(0);
+            let snap = dashboard::MemorySnapshot::resolve(rss, core, true);
+            app.ui(move |ui| ui.set_mem_detail(memory_detail(&snap)));
+        });
+    }
+
+    fn memory_shown(self: &Arc<Self>, shown: bool) {
+        MEMORY_SHOWN.store(shown, Ordering::SeqCst);
+        if shown {
+            MEMORY_POLLED.lock().unwrap().take();
+            self.poll_memory_detail();
+        }
+    }
+
     /// `_handleRelease`: `core.releaseMemory`, then the banner with what was freed.
     fn release_memory(self: &Arc<Self>) {
         let app = self.clone();
@@ -298,6 +383,7 @@ impl App {
                 .and_then(|b| b.call("core.releaseMemory", json!({}), Duration::from_secs(10)));
             std::thread::sleep(Duration::from_millis(500));
             let after = dashboard::resident_memory().unwrap_or(0);
+            MEMORY_POLLED.lock().unwrap().take();
             app.publish_memory();
             app.ui(|ui| ui.set_mem_releasing(false));
             match result {

@@ -244,6 +244,27 @@ export struct DashMemory {
     shared: bool,
 }
 
+// `MemoryDetailSheet` from `core.stats`: `core-shown` false leaves 内核 out, and
+// `core-running` false reads 内核未运行 in it.
+export struct MemoryRow {
+    label: string,
+    value: string,
+    ratio: float,
+}
+
+export struct MemoryDetail {
+    ready: bool,
+    total: string,
+    app: string,
+    shared: bool,
+    app-ratio: float,
+    estimate: string,
+    core-shown: bool,
+    core-running: bool,
+    core-total: string,
+    core-rows: [MemoryRow],
+}
+
 // `ProfileDetailSheet`: the counts are empty until the profile is read, "-" when it fails.
 export struct DashProfileDetail {
     groups: string,
@@ -10207,6 +10228,12 @@ export component AppWindow inherits Window {
     callback live-discard();
     in property <string> dash-faults-text;
     in-out property <bool> mem-sheet-open;
+    in property <MemoryDetail> mem-detail;
+    property <string> mem-total: root.mem-detail.ready ? root.mem-detail.total : root.dash-mem.total;
+    property <string> mem-app: root.mem-detail.ready ? root.mem-detail.app : root.dash-mem.app;
+    property <bool> mem-shared: root.mem-detail.ready ? root.mem-detail.shared : root.dash-mem.shared;
+    callback memory-shown(bool);
+    changed mem-sheet-open => { root.memory-shown(self.mem-sheet-open); }
     in property <DashMemory> dash-mem;
     in property <bool> mem-releasing;
     callback open-memory();
@@ -12497,23 +12524,30 @@ export component AppWindow inherits Window {
                 padding-top: 8px;
                 spacing: 6px;
                 Text { text: "总计"; font-size: 15px * Type.scale; color: Theme.s.on-surface-variant; }
-                Text { text: root.dash-mem.total == "" ? "—" : root.dash-mem.total; font-size: 28px * Type.scale; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 28px * 0.62) * 1.1; }
-                Rectangle { height: 8px; border-radius: 4px; background: Theme.s.primary; }
+                Text { text: root.mem-total == "" ? "—" : root.mem-total; font-size: 28px * Type.scale; font-weight: 700; color: Theme.s.on-surface; min-width: max(self.preferred-width, self.text.character-count * 28px * 0.62) * 1.1; }
+                // `ProportionBar`: the app's share, then the Core's.
+                Rectangle {
+                    height: 8px;
+                    border-radius: 4px;
+                    background: Theme.s.tertiary;
+                    clip: true;
+                    Rectangle { x: 0; width: root.mem-detail.ready ? parent.width * root.mem-detail.app-ratio : parent.width; background: Theme.s.primary; }
+                }
                 HorizontalLayout {
                     spacing: 6px;
                     alignment: start;
                     VerticalLayout { alignment: center; Rectangle { width: 8px; height: 8px; border-radius: 4px; background: Theme.s.primary; } }
-                    Text { text: root.dash-mem.shared ? "应用及共享" : "应用"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; }
-                    Text { text: root.dash-mem.app; font-size: 12px * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
+                    Text { text: root.mem-shared ? "应用及共享" : "应用"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; }
+                    Text { text: root.mem-app; font-size: 12px * Type.scale; font-weight: 600; color: Theme.s.on-surface; }
                 }
-                Text { text: "基于进程常驻内存估算，可能与系统显示的数值不同。"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
+                Text { text: root.mem-detail.ready ? root.mem-detail.estimate : "基于进程常驻内存估算，可能与系统显示的数值不同。"; font-size: 12px * Type.scale; color: Theme.s.on-surface-variant; wrap: word-wrap; }
             }
             Rectangle { height: 4px; }
             HorizontalLayout {
                 padding-left: 4px;
                 padding-right: 4px;
-                Text { text: root.dash-mem.shared ? "应用及共享" : "应用"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; horizontal-stretch: 1; }
-                Text { text: root.dash-mem.app; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+                Text { text: root.mem-shared ? "应用及共享" : "应用"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; horizontal-stretch: 1; }
+                Text { text: root.mem-app; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
             }
             Rectangle {
                 background: Theme.s.card;
@@ -12523,8 +12557,35 @@ export component AppWindow inherits Window {
                     padding-left: 16px;
                     padding-right: 16px;
                     padding-bottom: 12px;
-                    SheetRow { label: "常驻内存"; value: root.dash-mem.app; }
+                    SheetRow { label: "常驻内存"; value: root.mem-app; }
                     Rectangle { height: 4px; border-radius: 2px; background: Theme.s.primary; }
+                }
+            }
+            if root.mem-detail.ready && root.mem-detail.core-shown: Rectangle { height: 4px; }
+            if root.mem-detail.ready && root.mem-detail.core-shown: HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 4px;
+                Text { text: "内核"; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; horizontal-stretch: 1; }
+                Text { text: root.mem-detail.core-total; font-size: 13px * Type.scale; color: Theme.s.on-surface-variant; }
+            }
+            if root.mem-detail.ready && root.mem-detail.core-shown: Rectangle {
+                background: Theme.s.card;
+                border-radius: 16px;
+                height: self.preferred-height;
+                VerticalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    if !root.mem-detail.core-running: SheetRow { label: "内核未运行"; value: ""; }
+                    for r in root.mem-detail.core-rows: VerticalLayout {
+                        padding-bottom: 12px;
+                        SheetRow { label: r.label; value: r.value; }
+                        Rectangle {
+                            height: 4px;
+                            border-radius: 2px;
+                            background: Theme.s.block;
+                            Rectangle { x: 0; width: parent.width * r.ratio; border-radius: 2px; background: Theme.s.tertiary; }
+                        }
+                    }
                 }
             }
         }
