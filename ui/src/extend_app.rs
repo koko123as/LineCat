@@ -30,6 +30,8 @@ struct ExtUi {
     query: String,
     /// The outbounds are still being read from the Core.
     loading: bool,
+    /// `scriptOutboundsProvider`'s error: the profile's script failed to run.
+    script_error: Option<String>,
 }
 
 /// The exit sheet waiting for the outbounds: its profile and exit.
@@ -44,6 +46,7 @@ static EXT: Mutex<ExtUi> = Mutex::new(ExtUi {
     applying: false,
     query: String::new(),
     loading: false,
+    script_error: None,
 });
 
 static MODULES: Mutex<Vec<(String, String, ModuleRead)>> = Mutex::new(Vec::new());
@@ -273,6 +276,7 @@ impl App {
             ext.applying = false;
             ext.query.clear();
             ext.loading = true;
+            ext.script_error = None;
         }
         self.rules_unhost(true);
         self.publish_ext();
@@ -307,21 +311,20 @@ impl App {
     fn read_extend(self: &Arc<Self>, id: &str, path: &Path) {
         if let Ok(bridge) = self.bridge() {
             if self.profile_script(id).is_some() {
-                let (outbounds, fallback) = match self.scripted_profile(&bridge, id, path) {
+                let (outbounds, fallback, error) = match self.scripted_profile(&bridge, id, path) {
                     Ok(Some((_, config))) => (
                         Some(extend::config_outbounds(&config)),
                         extend::match_target(&crate::script::match_lines(&config)),
+                        None,
                     ),
-                    Ok(None) => (None, None),
-                    Err(e) => {
-                        self.toast(e);
-                        (None, None)
-                    }
+                    Ok(None) => (None, None, None),
+                    Err(e) => (None, None, Some(e)),
                 };
                 let mut ext = EXT.lock().unwrap();
                 if ext.profile == id {
                     ext.outbounds = outbounds;
                     ext.fallback = fallback;
+                    ext.script_error = error;
                 }
                 drop(ext);
                 self.module_exits();
@@ -352,6 +355,7 @@ impl App {
             if ext.profile == id {
                 ext.outbounds = outbounds;
                 ext.fallback = fallback;
+                ext.script_error = None;
             }
         }
         self.module_exits();
@@ -575,6 +579,26 @@ impl App {
         let Some(p) = state.profiles.iter().find(|p| p.id == profile_id) else {
             return;
         };
+        let script_error = {
+            let ext = EXT.lock().unwrap();
+            ext.script_error
+                .clone()
+                .filter(|_| ext.profile == profile_id)
+        };
+        if let Some(error) = script_error {
+            *EXIT_SHEET.lock().unwrap() = None;
+            let title: SharedString = exit.into();
+            let pick: SharedString = format!("ext-exit:{profile_id}\t{exit}\t").into();
+            self.ui(move |ui| {
+                ui.set_choice_title(title);
+                ui.set_choice_items(ModelRc::default());
+                ui.set_choice_loading(false);
+                ui.set_choice_error(error.into());
+                ui.set_choice_error_pick(pick);
+                ui.set_choice_open(true);
+            });
+            return;
+        }
         let current = p.exit_targets.get(exit).cloned().unwrap_or_default();
         let (outbounds, fallback) = self.outbounds_for(&state, profile_id);
         let loading = outbounds.is_none() && {
@@ -621,6 +645,7 @@ impl App {
             ui.set_choice_title(title);
             ui.set_choice_items(ModelRc::new(VecModel::from(items)));
             ui.set_choice_loading(loading);
+            ui.set_choice_error("".into());
             ui.set_choice_open(true);
         });
     }

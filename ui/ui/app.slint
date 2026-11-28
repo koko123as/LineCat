@@ -4255,6 +4255,7 @@ component NullStatus inherits Rectangle {
     in property <string> description;
     // `TonalButton` under the text, when given.
     in property <string> action;
+    in property <string> action-glyph: Icons.add-circle;
     callback act();
     VerticalLayout {
         alignment: center;
@@ -4274,7 +4275,7 @@ component NullStatus inherits Rectangle {
                 nsa-row := HorizontalLayout {
                     alignment: center;
                     spacing: 8px;
-                    VerticalLayout { alignment: center; Icon { glyph: Icons.add-circle; size: 20px; tint: Theme.s.on-primary-container; } }
+                    if root.action-glyph != "": VerticalLayout { alignment: center; Icon { glyph: root.action-glyph; size: 20px; tint: Theme.s.on-primary-container; } }
                     Text { text: root.action; font-size: 15px * Type.scale; font-weight: 600; color: Theme.s.on-primary-container; vertical-alignment: center; }
                 }
                 nsa := TouchArea { clicked => { root.act(); } }
@@ -9325,6 +9326,9 @@ component ActionSheet inherits Rectangle {
     in property <length> bottom-inset;
     // `SelectionSheet.loadingStatus`: the list loads late; the picked row is still revealed.
     in property <bool> loading;
+    // `ExitsSection._handleSelect`'s 脚本运行失败 page; its 默认 picks `error-pick`.
+    in property <string> error;
+    in property <string> error-pick;
     callback picked(string);
     callback dismiss();
     hold := LoadingHold { loading: root.loading; }
@@ -9332,12 +9336,28 @@ component ActionSheet inherits Rectangle {
     TouchArea { clicked => { root.dismiss(); } }
     Rectangle {
         y: parent.height - self.height;
-        height: min((hold.shown ? 12px + (root.title != "" ? 40px : 0px) + 160px : sheet-col.preferred-height) + root.bottom-inset, parent.height - 48px);
+        height: min((root.error != "" ? 12px + 40px + 280px : hold.shown ? 12px + (root.title != "" ? 40px : 0px) + 160px : sheet-col.preferred-height) + root.bottom-inset, parent.height - 48px);
         background: Theme.s.card;
         border-top-left-radius: 24px;
         border-top-right-radius: 24px;
         TouchArea { }
-        if hold.shown: VerticalLayout {
+        if root.error != "": VerticalLayout {
+            height: parent.height - root.bottom-inset;
+            padding-top: 12px;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                Text { text: root.title; font-size: 16px * Type.scale; color: Theme.s.on-surface-variant; height: 40px; vertical-alignment: center; overflow: elide; }
+            }
+            NullStatus {
+                label: "脚本运行失败";
+                description: root.error;
+                action: "默认";
+                action-glyph: "";
+                act => { root.picked(root.error-pick); }
+            }
+        }
+        if hold.shown && root.error == "": VerticalLayout {
             height: parent.height - root.bottom-inset;
             padding-top: 12px;
             if root.title != "": HorizontalLayout {
@@ -9352,7 +9372,7 @@ component ActionSheet inherits Rectangle {
         }
         sheet-flick := Flickable {
             property <bool> revealed;
-            visible: !hold.shown;
+            visible: !hold.shown && root.error == "";
             height: parent.height - root.bottom-inset;
             content-height: sheet-col.preferred-height;
             sheet-col := VerticalLayout {
@@ -10743,6 +10763,8 @@ export component AppWindow inherits Window {
     in-out property <bool> choice-open;
     in property <string> choice-title;
     in-out property <bool> choice-loading;
+    in-out property <string> choice-error;
+    in property <string> choice-error-pick;
     in property <[ActionItem]> choice-items;
     callback choice-picked(string);
     in-out property <bool> input-open;
@@ -10814,7 +10836,7 @@ export component AppWindow inherits Window {
         root.tools-page-changed();
     }
     changed choice-open => {
-        if (!root.choice-open) { root.choice-loading = false; }
+        if (!root.choice-open) { root.choice-loading = false; root.choice-error = ""; }
     }
     changed cond-value => { root.cond-changed(); }
     changed res-dialog-value => {
@@ -13067,6 +13089,8 @@ export component AppWindow inherits Window {
             title: root.choice-title;
             items: root.choice-items;
             loading: root.choice-loading;
+            error: root.choice-error;
+            error-pick: root.choice-error-pick;
             bottom-inset: root.bottom-inset;
             picked(id) => { root.choice-open = false; root.choice-picked(id); }
             dismiss => { root.choice-open = false; }
