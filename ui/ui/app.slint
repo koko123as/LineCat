@@ -8730,6 +8730,8 @@ component ReqList inherits Rectangle {
     if root.rows.length == 0: NullStatus { label: root.empty; description: root.empty-desc; }
     lv := ListView {
         visible: root.rows.length > 0;
+        y: 0;
+        height: parent.height - root.bottom-gap;
         vertical-scrollbar-policy: always-off;
         scrolled => {
             root.following = self.content-y >= -0.5px;
@@ -8746,7 +8748,8 @@ component ReqList inherits Rectangle {
         visible: root.rows.length > 0;
         content-height: lv.content-height;
         content-y <=> lv.content-y;
-        bottom-gap: root.bottom-gap;
+        y: 0;
+        height: lv.height;
         hint: root.rows.length > 0 ? root.rows[clamp(round(self.fraction * (root.rows.length - 1)), 0, root.rows.length - 1)].time : "";
         dragged => { root.following = lv.content-y >= -0.5px; }
     }
@@ -8939,6 +8942,8 @@ component AccessPage inherits Rectangle {
 // The connections, HTTP requests and DNS queries of this run; beside the list on a wide
 // page the selection's detail, else a sheet. FlClash: lib/views/connection/requests.dart.
 component RequestsPage inherits Rectangle {
+    // Room for the floating dock under the list on the requests tab.
+    in property <length> bottom-gap;
     in property <bool> mobile;
     in property <bool> can-back;
     in property <int> segment;
@@ -9048,6 +9053,7 @@ component RequestsPage inherits Rectangle {
         }
         if !root.split: ReqList {
             vertical-stretch: 1;
+            bottom-gap: root.bottom-gap;
             rows: root.rows;
             segment: root.segment;
             shift: root.shift;
@@ -11778,6 +11784,7 @@ export component AppWindow inherits Window {
                     authorize: root.acc-authorize;
                     status: root.acc-status;
                     count: root.acc-count;
+                    bottom-gap: Dock.pad;
                     searching <=> root.acc-searching;
                     query <=> root.acc-query;
                     back => { root.acc-back(); }
@@ -11803,6 +11810,7 @@ export component AppWindow inherits Window {
                     logo-tapped => { root.about-logo-tapped(); }
                 }
                 if root.req-tab-visible: RequestsPage {
+                    bottom-gap: Dock.pad;
                     width: parent.width;
                     height: parent.height;
                     mobile: !root.wide;
